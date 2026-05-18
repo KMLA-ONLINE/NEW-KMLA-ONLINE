@@ -111,9 +111,11 @@ For multi-step tasks, state a brief plan:
 
 ## Supabase / Data Model
 
-- `@supabase/supabase-js` is installed, but there is no local Supabase client, `supabase/` directory, or migration history in this repo yet.
+- `@supabase/supabase-js` is installed, but there is no local Supabase client wired yet.
 - `docs/SCHEMA.md` is a DBML-style Supabase-oriented schema reference, not an applied migration; it explicitly calls out required future RLS policies, checks, indexes, triggers/RPCs, and `pgcrypto`/`gen_random_uuid()` setup.
 - Do not create `auth.users` manually in migration SQL; `docs/SCHEMA.md` marks it as Supabase Auth-managed visual reference only.
+- Migration SQL files live in `docs/migrations/` as a manual record only; they are not executed by CLI and exist purely as a changelog. File naming: `YYYYMMDD_description.sql`.
+- Do not apply migrations programmatically; all schema changes are applied via the Supabase dashboard and then recorded in `supabase/migrations/` by hand.
 
 ## Hooks
 
