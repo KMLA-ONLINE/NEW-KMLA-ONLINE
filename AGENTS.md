@@ -1,3 +1,9 @@
+- Always ask the user upfront if you prefer a TDD approach before writing any code.
+- Ask clarifying questions as plain text
+- Always read files as UTF-8.
+- Do not use excessive skills for simple tasks.
+- Before modifying the DB, clearly state your intended action and expected result to the user, and ask for confirmation.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
@@ -74,35 +80,42 @@ For multi-step tasks, state a brief plan:
 
 ```
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-# Repository Instructions
-
-## Project Shape
-- This is a single Vite app, not a monorepo. Root `package.json` and `package-lock.json` are the source of truth for scripts and package manager; use npm.
-- App entry is `index.html` -> `src/main.tsx`. There is currently no `src/App.tsx`; add one and render it from `src/main.tsx` when building app UI.
-- The `@` alias points to `src` in both `vite.config.ts` and `tsconfig.app.json`.
-- Shared UI lives under `src/components` using `atoms`, `molecules`, `organisms`, and `cross-cutting` folders. Components mostly import sibling layers with relative paths.
+# AGENTS.md
 
 ## Commands
-- `npm run dev` starts the Vite dev server.
-- `npm run build` runs `tsc -b` and then `vite build`; use it for full verification.
-- `npx tsc -b` is the focused typecheck command when you do not need a Vite production build.
-- `npm run lint` runs ESLint over the repo. `npm run lint:fix` applies ESLint fixes.
-- `npm run format` runs Prettier only on `src/`.
-- There is no test script configured yet; do not invent test commands without adding the tooling first.
 
-## Styling
+- Use npm; this repo has `package-lock.json` lockfileVersion 3 and no pnpm/yarn lockfile.
+- Install with `npm ci` for a clean checkout, or `npm install` when intentionally updating the lockfile.
+- `npm run dev` starts Vite.
+- `npm run build` is the typecheck/build gate: it runs `tsc -b && vite build`.
+- `npx tsc -b` is the focused typecheck command when a production build is unnecessary.
+- `npm run lint` runs ESLint for the whole repo; warnings are allowed by config and currently do not fail the command.
+- `npm run lint:fix` runs `eslint . --fix`; `npm run format` runs Prettier only on `src/`.
+- There is currently no test script or test config; do not invent `npm test` as a verification step.
+
+## App Wiring
+
+- Runtime entrypoint is `index.html` -> `src/main.tsx`; it currently mounts an empty `<StrictMode>` and there is no `App.tsx`, router, query client, or Supabase client wired yet.
+- Vite and TypeScript both map `@` / `@/*` to `src`; existing component files mostly use relative imports inside `src/components`.
+- `noUnusedLocals`, `noUnusedParameters`, and `erasableSyntaxOnly` are enabled, so unused values and non-erasable TypeScript syntax fail `npm run build` even if ESLint only warns.
+
+## Components And Styling
+
+- Components are organized under `src/components/{atoms,molecules,organisms,cross-cutting}`; each component folder generally re-exports from an `index.ts`.
+- Follow the existing Radix + `class-variance-authority` component style for variants and `asChild`/`Slot` patterns where already used.
 - Tailwind v4 is loaded through `@tailwindcss/vite`; there is no `tailwind.config.*` file.
-- Global styles and design tokens are in `src/styles/global.css`, imported directly by `src/main.tsx`. Do not import a missing `src/index.css`.
-- `src/styles/global.css` also imports `tw-animate-css`; keep it loaded for component classes such as `animate-in`, `fade-in-0`, and `zoom-in-95`.
-- Prettier uses `prettier-plugin-tailwindcss`, double quotes, no semicolons, 2-space indentation, trailing commas, and LF endings.
+- Design tokens live in `src/styles/global.css` as Tailwind v4 `@theme` variables; prefer semantic `var(--color-...)` tokens over ad hoc colors, and do not import a missing `src/index.css`.
+- `src/styles/global.css` imports `tw-animate-css`; keep it loaded for classes such as `animate-in`, `fade-in-0`, and `zoom-in-95`.
+- Prettier uses double quotes, no semicolons, width 100, LF endings, and `prettier-plugin-tailwindcss` for class ordering.
+- `src/components/molecules/MessageBubble/README.md` defines `MessageBubble` as a message-page product component, not a generic chat primitive; callers own realtime state, Supabase subscriptions, read receipts, and grouping calculations.
 
-## Lint And Commit Hooks
-- ESLint uses flat config in `eslint.config.js`; Prettier is enforced through `eslint-plugin-prettier/recommended`.
-- `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-explicit-any`, `@typescript-eslint/no-empty-object-type`, and `react-refresh/only-export-components` are warnings, not errors.
-- Husky pre-commit runs `npx lint-staged`; staged `src/**/*.{ts,tsx}` files get `eslint --fix` and `prettier --write`.
+## Supabase / Data Model
 
-## TypeScript Gotchas
-- `tsconfig.app.json` includes only `src`; `tsconfig.node.json` includes only `vite.config.ts`.
-- `noUnusedLocals`, `noUnusedParameters`, and `erasableSyntaxOnly` are enabled, so type-only imports/exports and unused parameters matter during `npm run build`.
+- `@supabase/supabase-js` is installed, but there is no local Supabase client, `supabase/` directory, or migration history in this repo yet.
+- `docs/SCHEMA.md` is a DBML-style Supabase-oriented schema reference, not an applied migration; it explicitly calls out required future RLS policies, checks, indexes, triggers/RPCs, and `pgcrypto`/`gen_random_uuid()` setup.
+- Do not create `auth.users` manually in migration SQL; `docs/SCHEMA.md` marks it as Supabase Auth-managed visual reference only.
+
+## Hooks
+
+- Husky `pre-commit` runs `npx lint-staged`; lint-staged only targets `src/**/*.{ts,tsx}` with ESLint fix and Prettier write.
+- ESLint uses flat config in `eslint.config.js`; `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-explicit-any`, `@typescript-eslint/no-empty-object-type`, and `react-refresh/only-export-components` are warnings, not errors.
