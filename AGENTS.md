@@ -3,6 +3,8 @@
 - Always read files as UTF-8.
 - Do not use excessive skills for simple tasks.
 - Before modifying the DB, clearly state your intended action and expected result to the user, and ask for confirmation.
+- Must support responsive layouts across desktop, tablet, and mobile.
+- Compose from existing organisms, molecules, and atoms; avoid introducing new components.
 
 ## 1. Think Before Coding
 
@@ -86,18 +88,19 @@ For multi-step tasks, state a brief plan:
 
 - Use npm; this repo has `package-lock.json` lockfileVersion 3 and no pnpm/yarn lockfile.
 - Install with `npm ci` for a clean checkout, or `npm install` when intentionally updating the lockfile.
-- `npm run dev` starts Vite.
-- `npm run build` is the typecheck/build gate: it runs `tsc -b && vite build`.
-- `npx tsc -b` is the focused typecheck command when a production build is unnecessary.
+- `npm run dev` starts React Router framework dev server.
+- `npm run build` runs `react-router build` and emits the SPA build under `build/client`.
+- `npm run typecheck` runs `react-router typegen && tsc -b` and is the focused typecheck command.
 - `npm run lint` runs ESLint for the whole repo; warnings are allowed by config and currently do not fail the command.
-- `npm run lint:fix` runs `eslint . --fix`; `npm run format` runs Prettier only on `src/`.
+- `npm run lint:fix` runs `eslint . --fix`; `npm run format` runs Prettier on `app/` and `src/`.
 - There is currently no test script or test config; do not invent `npm test` as a verification step.
 
 ## App Wiring
 
-- Runtime entrypoint is `index.html` -> `src/main.tsx`; it currently mounts an empty `<StrictMode>` and there is no `App.tsx`, router, query client, or Supabase client wired yet.
-- Vite and TypeScript both map `@` / `@/*` to `src`; existing component files mostly use relative imports inside `src/components`.
-- `noUnusedLocals`, `noUnusedParameters`, and `erasableSyntaxOnly` are enabled, so unused values and non-erasable TypeScript syntax fail `npm run build` even if ESLint only warns.
+- Runtime entrypoint is React Router framework mode: `app/root.tsx` plus the route list in `app/routes.ts`.
+- `app/routes.ts` is the single source of truth for URL paths and route module files.
+- Vite and TypeScript both map `@` / `@/*` to `src`; shared design-system code remains under `src/components`, and route modules live under `app/routes`.
+- `noUnusedLocals`, `noUnusedParameters`, and `erasableSyntaxOnly` are enabled, so unused values and non-erasable TypeScript syntax fail `npm run typecheck` even if ESLint only warns.
 
 ## Components And Styling
 
@@ -111,7 +114,7 @@ For multi-step tasks, state a brief plan:
 
 ## Supabase / Data Model
 
-- `@supabase/supabase-js` is installed, but there is no local Supabase client wired yet.
+- `@supabase/supabase-js` is installed, and the browser client lives in `src/lib/supabase.ts`; it is not wired into route guards yet.
 - `docs/SCHEMA.md` is a DBML-style Supabase-oriented schema reference, not an applied migration; it explicitly calls out required future RLS policies, checks, indexes, triggers/RPCs, and `pgcrypto`/`gen_random_uuid()` setup.
 - Do not create `auth.users` manually in migration SQL; `docs/SCHEMA.md` marks it as Supabase Auth-managed visual reference only.
 - Migration SQL files live in `docs/migrations/` as a manual record only; they are not executed by CLI and exist purely as a changelog. File naming: `YYYYMMDD_description.sql`.
@@ -119,5 +122,5 @@ For multi-step tasks, state a brief plan:
 
 ## Hooks
 
-- Husky `pre-commit` runs `npx lint-staged`; lint-staged only targets `src/**/*.{ts,tsx}` with ESLint fix and Prettier write.
+- Husky `pre-commit` runs `npx lint-staged`; lint-staged targets `{app,src}/**/*.{ts,tsx}` with ESLint fix and Prettier write.
 - ESLint uses flat config in `eslint.config.js`; `@typescript-eslint/no-unused-vars`, `@typescript-eslint/no-explicit-any`, `@typescript-eslint/no-empty-object-type`, and `react-refresh/only-export-components` are warnings, not errors.

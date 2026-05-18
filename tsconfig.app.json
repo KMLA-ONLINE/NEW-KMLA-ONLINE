@@ -4,7 +4,8 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
+    "rootDirs": [".", "./.react-router/types"],
     "skipLibCheck": true,
     "paths": {
       "@": ["./src"],
@@ -25,5 +26,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["app", "src", ".react-router/types/**/*"]
 }
