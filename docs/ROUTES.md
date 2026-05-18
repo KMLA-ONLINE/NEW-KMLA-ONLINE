@@ -100,7 +100,7 @@ app/
 | `/403`                                | `app/routes/errors/forbidden.tsx`               | none                 | Access denied.                                                        |
 | `/404`                                | `app/routes/errors/not-found.tsx`               | none                 | Page not found.                                                       |
 | `/500`                                | `app/routes/errors/server-error.tsx`            | none                 | Server error.                                                         |
-| `*`                                   | `app/routes/errors/not-found.tsx`               | none                 | Catch-all fallback.                                                   |
+| `*`                                   | `app/routes/errors/catch-all.tsx`               | none                 | Catch-all fallback.                                                   |
 
 ## Future Auth Wiring
 
