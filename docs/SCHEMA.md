@@ -4,33 +4,8 @@ Project school_community {
   Note: '''
   Supabase-oriented schema.
 
-  Decisions reflected:
-  - auth.users is managed by Supabase Auth.
-  - profiles.id references auth.users.id.
-  - New users start as status = none.
-  - After onboarding/survey is completed, application logic or admin/RPC changes status to pending.
-  - role/status/user_permissions are admin-controlled.
-  - dorm_room is used instead of ambiguous room.
-  - Official groups have unique names; non-official groups may duplicate names.
-  - Personal groups are hidden/list-unlisted and limited to one per user.
-  - Groups are archived instead of hard-deleted.
-  - Every group should have exactly one owner.
-  - Comments support one-level replies.
-  - post.comment_count includes top-level comments and replies.
-  - Deleted comments with children should render as "deleted comment" instead of removing children.
-  - Hard delete is admin-only.
-  - A user can have only one reaction per target; changing reaction updates the existing row.
-  - One-to-one chat duplicates are prevented by direct_chat_pairs.
-  - Chat uses both message_reads and chat_room_read_states.
-  - Messages support one-level reply only.
-  - Gongang reservations must not overlap.
-  - Gongang slot duration is application-defined for now; current intended duration is 2 hours.
-  - A user cannot reserve overlapping gongang slots.
-  - Club applications are one-off survey-like data grouped by application round.
-  - Notification level "mentions" means mentions/announcements only.
-
   Actual Supabase migration should add:
-  - enable pgcrypto or use gen_random_uuid()
+  - create extension if not exists "pg_uuidv7"
   - RLS policies for every public table
   - CHECK constraints noted below
   - partial unique indexes noted below
@@ -76,7 +51,7 @@ Enum group_member_role {
   member
 }
 
-Enum notification_level {
+Enum group_setting {
   none
   mentions
   all
@@ -96,15 +71,6 @@ Enum club_type {
   general
 }
 
-Enum notification_type {
-  mention
-  announcement
-  post_comment
-  comment_reply
-  message
-  system
-}
-
 /* =========================================================
    Profiles / Permissions
    ========================================================= */
@@ -113,16 +79,16 @@ Table profiles {
   id uuid [pk, ref: > auth.users.id]
   name text [not null, note: 'Initial display name from OAuth profile']
   role app_role [not null, default: 'user', note: 'Admin-controlled only']
-  student_number int4 [null]
+  student_number int4 [not null, unique]
   class_no int2 [null, note: 'Class number']
-  grade int2 [null, note: 'School year']
+  grade int2 [not null, note: 'School year']
   gender profile_gender [null]
-  phone_number text [null]
+  phone_number text [not null]
   avatar_url text [null, note: 'Avatar URL or Supabase Storage path']
   birthday date [null]
   description text [null]
   status profile_status [not null, default: 'none', note: 'none -> pending after onboarding/survey -> accepted/rejected by admin']
-  dorm_room int2 [null, note: 'Dormitory room number']
+  dorm_room int2 [null]
   onboarding_completed_at timestamptz [null, note: 'Set when required survey/onboarding is completed']
   status_updated_at timestamptz [null]
   status_updated_by uuid [null, ref: > profiles.id]
@@ -135,6 +101,7 @@ Table profiles {
   - CHECK (class_no IS NULL OR class_no > 0)
   - CHECK (student_number IS NULL OR student_number > 0)
   - CHECK (dorm_room IS NULL OR dorm_room > 0)
+  - UNIQUE (student_number)
 
   RLS:
   - User may update safe profile fields only.
@@ -170,7 +137,7 @@ Table user_permissions {
    ========================================================= */
 
 Table groups {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   name text [not null, note: 'Official group names should be unique by partial unique index']
   description text [null]
   is_official boolean [not null, default: false]
@@ -199,7 +166,7 @@ Table group_members {
   group_id uuid [not null, ref: > groups.id]
   user_id uuid [not null, ref: > profiles.id]
   role group_member_role [not null, default: 'member']
-  noti notification_level [not null, default: 'mentions', note: 'mentions = mentions/announcements only']
+  setting group_setting [not null, default: 'mentions']
   joined_at timestamptz [not null, default: `now()`]
 
   Note: '''
@@ -220,12 +187,12 @@ Table group_members {
    ========================================================= */
 
 Table posts {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   group_id uuid [not null, ref: > groups.id]
   author_id uuid [not null, ref: > profiles.id]
   title text [not null]
   content text [not null]
-  comment_count int4 [not null, default: 0, note: 'Cached count; includes top-level comments and replies']
+  comment_count int4 [not null, default: 0, note: 'Cached count; includes all comments and replies at every depth']
   reaction_count int4 [not null, default: 0, note: 'Cached count from post_reactions']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
@@ -249,7 +216,7 @@ Table posts {
 }
 
 Table post_images {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   post_id uuid [not null, ref: > posts.id]
   storage_path text [not null, note: 'Supabase Storage object path']
   sort_order int4 [not null, default: 0, note: 'Stable image order within a post']
@@ -269,28 +236,36 @@ Table post_images {
 }
 
 Table post_comments {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   post_id uuid [not null, ref: > posts.id]
   author_id uuid [not null, ref: > profiles.id]
-  parent_id uuid [null, ref: > post_comments.id, note: 'One-level replies only']
-  depth int2 [not null, default: 0, note: '0 = top-level comment, 1 = reply']
+  parent_id uuid [null, ref: > post_comments.id, note: 'Null for top-level comments; points to direct parent for replies']
+  depth int2 [not null, default: 0, note: '0 = top-level comment; max 4. Determines nesting level in UI.']
   content text [not null]
   reply_count int4 [not null, default: 0, note: 'Cached direct child count']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
-  deleted_at timestamptz [null, note: 'Soft delete; if reply_count > 0, render as deleted comment']
+  deleted_at timestamptz [null, note: 'Soft delete; if reply_count > 0, render as deleted placeholder']
   deleted_by uuid [null, ref: > profiles.id]
 
   Note: '''
+  Supports up to depth 4 (5 levels total: 0-4).
+  Querying a full subtree requires recursive CTE:
+    WITH RECURSIVE tree AS (
+      SELECT * FROM post_comments WHERE id = $root_id
+      UNION ALL
+      SELECT c.* FROM post_comments c JOIN tree t ON c.parent_id = t.id
+    )
+
   Actual DB migration should add:
   - CHECK (parent_id IS NULL OR parent_id <> id)
-  - CHECK (depth IN (0, 1))
-  - CHECK ((depth = 0 AND parent_id IS NULL) OR (depth = 1 AND parent_id IS NOT NULL))
-  - Parent comment and child comment must share the same post_id.
-  - Parent of a reply must be a top-level comment.
+  - CHECK (depth BETWEEN 0 AND 4)
+  - CHECK ((depth = 0 AND parent_id IS NULL) OR (depth > 0 AND parent_id IS NOT NULL))
+  - depth must equal parent.depth + 1; enforce via trigger or RPC.
+  - Parent comment and child comment must share the same post_id; enforce via trigger or RPC.
   - CHECK (reply_count >= 0)
-  - Soft-delete policy: deleted parent comments with children stay as placeholder.
-  - post.comment_count should include both comments and replies.
+  - Soft-delete policy: deleted comments with children stay as placeholder.
+  - post.comment_count should include all descendants at every depth.
   '''
 
   indexes {
@@ -305,7 +280,7 @@ Table post_comments {
    ========================================================= */
 
 Table post_reactions {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   post_id uuid [not null, ref: > posts.id]
   user_id uuid [not null, ref: > profiles.id]
   type reaction_type [not null]
@@ -327,7 +302,7 @@ Table post_reactions {
 }
 
 Table comment_reactions {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   comment_id uuid [not null, ref: > post_comments.id]
   user_id uuid [not null, ref: > profiles.id]
   type reaction_type [not null]
@@ -353,7 +328,7 @@ Table comment_reactions {
    ========================================================= */
 
 Table chat_rooms {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   name text [null, note: 'Null means one-to-one chat']
   is_group boolean [not null, default: false]
   created_by uuid [null, ref: > profiles.id, note: 'On user deletion, set null']
@@ -375,11 +350,16 @@ Table direct_chat_pairs {
   created_at timestamptz [not null, default: `now()`]
 
   Note: '''
-  Actual DB migration should add:
+  CRITICAL: Actual DB migration MUST add:
   - CHECK (user1_id < user2_id)
+    Without this, the same two users can create duplicate rooms
+    by swapping user1_id and user2_id. Always enforce user1_id < user2_id
+    before insert (in RPC or application layer) so UNIQUE (user1_id, user2_id)
+    is effective.
   - UNIQUE (user1_id, user2_id)
   - room_id should reference a chat_rooms row where is_group = false.
-  - A controlled RPC should create chat_rooms, direct_chat_pairs, and two chat_room_members together.
+  - A controlled RPC should create chat_rooms, direct_chat_pairs,
+    and two chat_room_members atomically.
   '''
 
   indexes {
@@ -401,7 +381,7 @@ Table chat_room_members {
 }
 
 Table messages {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   room_id uuid [not null, ref: > chat_rooms.id]
   sender_id uuid [not null, ref: > profiles.id]
   parent_id uuid [null, ref: > messages.id, note: 'One-level message reply only']
@@ -429,7 +409,7 @@ Table messages {
 }
 
 Table message_reactions {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   message_id uuid [not null, ref: > messages.id]
   user_id uuid [not null, ref: > profiles.id]
   type reaction_type [not null]
@@ -492,10 +472,9 @@ Table chat_room_read_states {
    ========================================================= */
 
 Table notifications {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   recipient_id uuid [not null, ref: > profiles.id]
   actor_id uuid [null, ref: > profiles.id, note: 'Null for system notifications']
-  type notification_type [not null]
   title text [null]
   body text [null]
   group_id uuid [null, ref: > groups.id]
@@ -509,11 +488,6 @@ Table notifications {
   Minimal in-app notification table.
   Add only if app needs notification list, unread badge, or notification history.
   This table is not a push token table.
-
-  notification_level behavior:
-  - none: no normal group notifications
-  - mentions: mentions and announcements only
-  - all: all supported group notifications
   '''
 
   indexes {
@@ -528,8 +502,8 @@ Table notifications {
    ========================================================= */
 
 Table gongangs {
-  id uuid [pk, default: `gen_random_uuid()`]
-  gongang text [not null, note: 'Space identifier']
+  id uuid [pk, default: `uuid_generate_v7()`]
+  location text [not null, note: 'Space identifier']
   owner_id uuid [not null, ref: > profiles.id]
   week_start date [not null, note: 'Week start date']
   day_of_week int2 [not null, note: '0-6']
@@ -547,19 +521,19 @@ Table gongangs {
   - CHECK (end_minute BETWEEN 1 AND 1440)
   - CHECK (start_minute < end_minute)
   - Optional if fixed 2-hour slots are final: CHECK (end_minute - start_minute = 120)
-  - Prevent overlapping reservations for the same gongang using exclusion constraint.
+  - Prevent overlapping reservations for the same location using exclusion constraint.
   - Prevent overlapping reservations by the same owner using exclusion constraint.
   '''
 
   indexes {
-    (gongang, week_start, day_of_week, start_minute, end_minute) [unique]
+    (location, week_start, day_of_week, start_minute, end_minute) [unique]
     (owner_id, week_start) [name: 'idx_gongangs_owner_week_start']
-    (gongang, week_start, day_of_week, start_minute) [name: 'idx_gongangs_space_time']
+    (location, week_start, day_of_week, start_minute) [name: 'idx_gongangs_space_time']
   }
 }
 
 Table song_requests {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   requester_id uuid [not null, ref: > profiles.id]
   url text [not null]
   requested_at timestamptz [not null, default: `now()`]
@@ -575,14 +549,14 @@ Table song_requests {
    ========================================================= */
 
 Table clubs {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   name text [not null, unique]
   type club_type [not null, default: 'major']
   created_at timestamptz [not null, default: `now()`]
 }
 
 Table club_apply_rounds {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   name text [not null, note: 'e.g. 2026 first semester club survey']
   starts_at timestamptz [null]
   ends_at timestamptz [null]
@@ -598,7 +572,7 @@ Table club_apply_rounds {
 }
 
 Table clubs_apply {
-  id uuid [pk, default: `gen_random_uuid()`]
+  id uuid [pk, default: `uuid_generate_v7()`]
   round_id uuid [not null, ref: > club_apply_rounds.id]
   user_id uuid [not null, ref: > profiles.id]
   club_id uuid [not null, ref: > clubs.id]
