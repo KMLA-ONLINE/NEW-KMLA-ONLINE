@@ -1,58 +1,87 @@
-# NEW KMLA ONLINE
+# Welcome to React Router!
 
-React Router v7 Framework Mode 기반의 KMLA 온라인 커뮤니티 SPA입니다.
+A modern, production-ready template for building full-stack React applications using React Router.
 
-## Stack
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
 
-- React 19
-- React Router 7 Framework Mode with SPA mode
-- TypeScript 6
-- Vite 8
-- Tailwind CSS 4
-- Supabase JS
-- TanStack Query 5
-- React Hook Form
-- Zod
-- Zustand
-- ESLint, Prettier, Husky, lint-staged
+## Features
 
-## Commands
+- 🚀 Server-side rendering
+- ⚡️ Hot Module Replacement (HMR)
+- 📦 Asset bundling and optimization
+- 🔄 Data loading and mutations
+- 🔒 TypeScript by default
+- 🎉 TailwindCSS for styling
+- 📖 [React Router docs](https://reactrouter.com/)
+
+## Getting Started
+
+### Installation
+
+Install the dependencies:
 
 ```bash
 npm install
+```
+
+### Development
+
+Start the development server with HMR:
+
+```bash
 npm run dev
-npm run typecheck
+```
+
+Your application will be available at `http://localhost:5173`.
+
+## Building for Production
+
+Create a production build:
+
+```bash
 npm run build
-npm run lint
 ```
 
-- `npm run dev`: starts the React Router framework dev server.
-- `npm run typecheck`: runs `react-router typegen && tsc -b`.
-- `npm run build`: emits the SPA build under `build/client`.
-- `npm run lint`: runs ESLint. Existing warnings are allowed by config.
+## Deployment
 
-There is currently no test script or test config.
+### Docker Deployment
 
-## App Structure
+To build and run using Docker:
 
-```txt
-app/
-  root.tsx        # framework root document and outlet
-  routes.ts       # single source of truth for URL paths
-  guards/         # route layout guards, currently pass-through
-  routes/         # route modules
+```bash
+docker build -t my-app .
 
-src/
-  components/     # shared design-system components
-  lib/            # shared libraries, including Supabase client
-  styles/         # global Tailwind v4 theme and CSS
+# Run the container
+docker run -p 3000:3000 my-app
 ```
 
-Do not add a new `index.html`, `src/main.tsx`, or `src/routes/router.tsx`. Framework mode owns the app entrypoint through `app/root.tsx` and `app/routes.ts`.
+The containerized application can be deployed to any platform that supports Docker, including:
 
-## Docs
+- AWS ECS
+- Google Cloud Run
+- Azure Container Apps
+- Digital Ocean App Platform
+- Fly.io
+- Railway
 
-- `docs/ROUTES.md`: route map and routing conventions.
-- `docs/SUPABASE_SETUP.md`: Supabase environment and dashboard setup notes.
-- `docs/SUPABASE_GOOGLE_OAUTH.md`: Google OAuth setup through Supabase Auth.
-- `docs/SCHEMA.md`: DBML-style schema reference.
+### DIY Deployment
+
+If you're familiar with deploying Node applications, the built-in app server is production-ready.
+
+Make sure to deploy the output of `npm run build`
+
+```
+├── package.json
+├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
+├── build/
+│   ├── client/    # Static assets
+│   └── server/    # Server-side code
+```
+
+## Styling
+
+This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+
+---
+
+Built with ❤️ using React Router.
