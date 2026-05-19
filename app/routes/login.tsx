@@ -9,7 +9,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const origin = new URL(request.url).origin
 
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "github",
+    provider: "google",
     options: {
       redirectTo: `${origin}/auth/oauth?next=/protected`,
     },
@@ -46,7 +46,7 @@ export default function Login() {
                 <div className="flex flex-col gap-6">
                   {error && <p className="text-destructive-500 text-sm">{error}</p>}
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Logging in..." : "Continue with GitHub"}
+                    {loading ? "Logging in..." : "Continue with Google"}
                   </Button>
                 </div>
               </fetcher.Form>
