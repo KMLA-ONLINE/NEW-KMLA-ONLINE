@@ -32,7 +32,8 @@
 - The only verified TS path alias is `~/* -> app/*` in `tsconfig.json`.
 - Do not assume `@/*` works. `components.json` advertises `@/...` aliases, but `tsconfig.json` does not define them.
 - Several route files currently import from `@/registry/default/...`, but there is no matching alias or local `registry/default` directory. Treat those imports as suspect and verify before reusing them.
-- Local UI components live in `app/components/ui/`.
+- `app/components/ui/` is reserved for atom-level UI primitives.
+- Service/domain components must live in `app/components/`, not `app/components/ui/`.
 
 ## Env
 - Required env vars are listed in `.env.example`:
