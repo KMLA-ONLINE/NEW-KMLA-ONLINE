@@ -1,6 +1,6 @@
 # Supabase Google OAuth Setup
 
-Reference for setting up Google login with Supabase Auth in this React Vite app.
+Reference for setting up Google login with Supabase Auth in this React Router framework SPA.
 
 Last checked against Supabase docs and changelog on 2026-05-18.
 
@@ -103,7 +103,7 @@ Use exact production URLs where possible. Keep wildcards mainly for local develo
 
 The `redirectTo` value passed from app code must match this allow list.
 
-## React Vite Sign-In Code
+## React Router SPA Sign-In Code
 
 Basic Google sign-in:
 
@@ -126,7 +126,7 @@ export const signInWithGoogle = async () => {
 }
 ```
 
-For a browser-only Vite app using the default Supabase client flow, Supabase handles the session after redirect. A dedicated callback route is still useful for showing loading/error UI and forwarding users based on profile approval state.
+For this React Router SPA using the default Supabase client flow, Supabase handles the session after redirect. A dedicated callback route is still useful for showing loading/error UI and forwarding users based on profile approval state.
 
 ## Recommended App Flow For This Project
 
@@ -155,7 +155,7 @@ Client-side checks are only UX. They are not access control.
 
 ## Vercel Notes
 
-Vercel environment variables for this Vite app remain:
+Vercel environment variables for this React Router/Vite app remain:
 
 ```text
 VITE_SUPABASE_URL

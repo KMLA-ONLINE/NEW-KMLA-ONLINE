@@ -1,11 +1,13 @@
-import { PlaceholderPage } from "../components/PlaceholderPage"
+import type { Route } from "./+types/home";
+import { Welcome } from "../welcome/welcome";
 
-export default function HomeRoute() {
-  return (
-    <PlaceholderPage
-      title="Home"
-      description="Main page with profile summary, favorites, meals, and menu shortcuts."
-      access="Accepted users. Future root logic should redirect unauthenticated or incomplete users."
-    />
-  )
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "New React Router App" },
+    { name: "description", content: "Welcome to React Router!" },
+  ];
+}
+
+export default function Home() {
+  return <Welcome />;
 }

@@ -1,6 +1,6 @@
 # Supabase Setup
 
-This project uses React, Vite, Supabase, and Vercel. Database changes are not applied from this repo; create or update the Supabase project in the dashboard, then record schema changes separately.
+This project uses React Router v7 Framework Mode in SPA mode, Vite, Supabase, and Vercel. Database changes are not applied from this repo; create or update the Supabase project in the dashboard, then record schema changes separately.
 
 ## Local Environment
 
@@ -17,7 +17,7 @@ Add the same public client variables in Vercel Project Settings for Production, 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-If using the Vercel Supabase integration, do not rely on `NEXT_PUBLIC_*` variables for this Vite app. Vite only exposes variables prefixed with `VITE_`.
+If using the Vercel Supabase integration, do not rely on `NEXT_PUBLIC_*` variables for this React Router/Vite app. Vite only exposes variables prefixed with `VITE_`.
 
 ## Auth Redirect URLs
 
@@ -59,4 +59,4 @@ Run:
 npm run build
 ```
 
-The app will throw at runtime if `VITE_SUPABASE_URL` or `VITE_SUPABASE_PUBLISHABLE_KEY` is missing, so configure `.env.local` before starting Vite.
+The app will throw at runtime if `VITE_SUPABASE_URL` or `VITE_SUPABASE_PUBLISHABLE_KEY` is missing, so configure `.env.local` before starting the React Router dev server.
