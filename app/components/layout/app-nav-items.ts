@@ -1,4 +1,4 @@
-import { HomeIcon, MenuIcon, MessageSquareIcon, MessagesSquareIcon, ShapesIcon } from "lucide-react"
+import { HomeIcon, MenuIcon, UsersIcon, MessagesSquareIcon, ShapesIcon } from "lucide-react"
 import type { ComponentType } from "react"
 
 export type AppNavItem = {
@@ -11,7 +11,7 @@ export type AppNavItem = {
 export const appNavItems: AppNavItem[] = [
   { to: "/", label: "Home", icon: HomeIcon, end: true },
   { to: "/groups", label: "Groups", icon: ShapesIcon },
-  { to: "/community", label: "Community", icon: MessageSquareIcon },
+  { to: "/community", label: "Community", icon: UsersIcon },
   { to: "/messenger", label: "Messenger", icon: MessagesSquareIcon },
   { to: "/menu", label: "Menu", icon: MenuIcon },
 ]
