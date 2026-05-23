@@ -6,7 +6,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -17,12 +16,11 @@ export function AppSidebar() {
   const location = useLocation()
 
   return (
-    <Sidebar collapsible="offcanvas" className="md:top-14 md:h-[calc(100svh-3.5rem)]">
-      <SidebarContent>
+    <Sidebar variant="floating" collapsible="icon" className="md:top-14 md:h-[calc(100svh-3.5rem)]">
+      <SidebarContent className="py-2">
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-5 pt-6">
               {appNavItems.map((item) => {
                 const isActive = isAppNavItemActive(location.pathname, item)
 
@@ -32,10 +30,12 @@ export function AppSidebar() {
                       <NavLink
                         to={item.to}
                         end={item.end}
-                        className="text-sidebar-foreground flex items-center gap-2"
+                        className="text-sidebar-foreground flex items-center gap-3"
                       >
-                        <item.icon strokeWidth={isActive ? 2.5 : 2} />
-                        <span>{item.label}</span>
+                        <item.icon className="size-5" strokeWidth={isActive ? 2.5 : 2} />
+                        <span className="overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:-translate-x-1 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-32 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:translate-x-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
+                          {item.label}
+                        </span>
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -46,7 +46,9 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <p className="text-muted-foreground px-2 py-1 text-xs">Official and community spaces</p>
+        <p className="text-muted-foreground overflow-hidden px-2 py-1 text-xs whitespace-nowrap transition-[max-width,opacity] duration-200 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-48 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
+          Official and community spaces
+        </p>
       </SidebarFooter>
     </Sidebar>
   )

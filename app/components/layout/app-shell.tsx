@@ -11,7 +11,7 @@ type AppShellProps = {
 
 export function AppShell({ email }: AppShellProps) {
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <div className="flex h-svh w-full flex-1 flex-col overflow-hidden">
         <AppHeader email={email} />
         <div className="flex min-h-0 flex-1">
