@@ -14,6 +14,7 @@ import { appNavItems, isAppNavItemActive } from "~/components/layout/app-nav-ite
 
 export function AppSidebar() {
   const location = useLocation()
+  const year = new Date().getFullYear()
 
   return (
     <Sidebar variant="floating" collapsible="icon" className="md:top-14 md:h-[calc(100svh-3.5rem)]">
@@ -46,8 +47,8 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <p className="text-muted-foreground overflow-hidden px-2 py-1 text-xs whitespace-nowrap transition-[max-width,opacity] duration-200 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-48 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
-          Official and community spaces
+        <p className="text-muted-foreground overflow-hidden px-2 py-1 text-xs whitespace-nowrap transition-[max-width,opacity] duration-200 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-full md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
+          © {year} from Dept. of SW &amp; Tech
         </p>
       </SidebarFooter>
     </Sidebar>
