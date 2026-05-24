@@ -27,14 +27,18 @@ export function AppSidebar() {
 
                 return (
                   <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild isActive={isActive}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground"
+                    >
                       <NavLink
                         to={item.to}
                         end={item.end}
                         className="text-sidebar-foreground flex items-center"
                       >
-                        <item.icon className="ml-0.5 size-5" strokeWidth={isActive ? 2.5 : 2} />
-                        <span className="ml-3 overflow-hidden whitespace-nowrap transition-[margin,max-width,opacity,transform] duration-250 ease-out md:group-data-[collapsible=icon]:ml-0 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:-translate-x-0.5 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:ml-3 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-32 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:translate-x-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
+                        <item.icon className="ml-0.5 size-5" strokeWidth={2} />
+                        <span className="ml-3 overflow-hidden whitespace-nowrap transition-[margin,max-width,opacity,transform] duration-200 ease-out md:group-data-[collapsible=icon]:ml-0 md:group-data-[collapsible=icon]:max-w-0 md:group-data-[collapsible=icon]:-translate-x-0.5 md:group-data-[collapsible=icon]:opacity-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:ml-3 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:max-w-32 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:translate-x-0 md:group-data-[collapsible=icon]:group-data-[hovered=true]/sidebar:opacity-100">
                           {item.label}
                         </span>
                       </NavLink>
