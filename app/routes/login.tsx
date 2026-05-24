@@ -11,7 +11,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/oauth?next=/protected`,
+      redirectTo: `${origin}/auth/oauth?next=/`,
     },
   })
 
