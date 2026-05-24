@@ -27,7 +27,7 @@ export function AppHeader({ email }: AppHeaderProps) {
   }, [isMobileSearchOpen])
 
   return (
-    <header className="bg-background/95 sticky top-0 z-10 grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 backdrop-blur sm:px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+    <header className="bg-background/95 fixed top-0 z-10 grid h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 backdrop-blur sm:px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
       <div className="flex items-center gap-2">
         <p className="text-sm font-semibold tracking-wide">KMLA</p>
       </div>
