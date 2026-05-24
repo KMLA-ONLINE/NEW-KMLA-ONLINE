@@ -21,7 +21,7 @@ export function FeedPostActionButton({
       type="button"
       variant="ghost"
       size="sm"
-      className={cn("text-muted-foreground h-7 px-2 text-xs", className)}
+      className={cn("text-muted-foreground h-7 px-0 text-xs sm:px-2", className)}
       aria-label={count === undefined ? label : `${label} ${count}`}
     >
       <Icon className="size-3.5" aria-hidden="true" />

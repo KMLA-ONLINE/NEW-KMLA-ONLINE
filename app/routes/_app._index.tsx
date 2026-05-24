@@ -1,3 +1,4 @@
+import { Separator } from "~/components/ui/separator"
 import { FeedPostList } from "~/components/layout/feed-post-list"
 
 const feedItems = [
@@ -53,7 +54,9 @@ const feedItems = [
 
 export default function AppHomePage() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-1">
+      <h1 className="px-4 py-1 text-xl font-semibold sm:text-2xl">Posts</h1>
+      <Separator className="my-1" />
       <FeedPostList items={feedItems} className="flex flex-col" />
     </div>
   )

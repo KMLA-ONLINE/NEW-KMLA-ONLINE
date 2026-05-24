@@ -24,8 +24,11 @@ export function FeedPostCard({
   isFeatured = false,
 }: FeedPostCardProps) {
   return (
-    <Card className="hover:bg-muted/60 dark:hover:bg-muted/40 border-0 bg-transparent shadow-none ring-0 transition-colors">
-      <CardHeader className="gap-2">
+    <Card
+      size="sm"
+      className="hover:bg-muted/60 dark:hover:bg-muted/40 border-0 bg-transparent shadow-none ring-0 transition-colors"
+    >
+      <CardHeader className="gap-1.5 px-4 sm:gap-2 sm:px-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {isFeatured ? <Badge>Featured</Badge> : null}
@@ -33,15 +36,15 @@ export function FeedPostCard({
           </div>
           <p className="text-muted-foreground text-xs">{time}</p>
         </div>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription className="text-sm">{description}</CardDescription>
+        <CardTitle className="text-sm sm:text-base">{title}</CardTitle>
+        <CardDescription className="line-clamp-2 text-sm">{description}</CardDescription>
       </CardHeader>
-      <CardContent className="text-muted-foreground flex items-center justify-between gap-2 text-xs">
+      <CardContent className="text-muted-foreground flex flex-col items-start gap-2 px-4 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <p>Posted by {author}</p>
         <PostActionBar
           comments={comments}
           likes={likes}
-          className="flex flex-wrap items-center justify-end gap-1"
+          className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-1"
         />
       </CardContent>
     </Card>

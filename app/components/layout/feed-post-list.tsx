@@ -16,7 +16,7 @@ export function FeedPostList({ items, className, showSeparators = true }: FeedPo
         return (
           <div key={`${item.source}-${item.title}-${index}`}>
             <FeedPostCard {...item} />
-            {showSeparators && !isLast ? <Separator className="my-3" /> : null}
+            {showSeparators && !isLast ? <Separator className="my-1" /> : null}
           </div>
         )
       })}
