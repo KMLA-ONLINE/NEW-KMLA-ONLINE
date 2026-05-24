@@ -21,7 +21,7 @@ export function FeedPostCard({
   isFeatured = false,
 }: FeedPostCardProps) {
   return (
-    <Card className="border-0 shadow-none ring-0">
+    <Card className="hover:bg-muted/60 dark:hover:bg-muted/40 border-0 bg-transparent shadow-none ring-0 transition-colors">
       <CardHeader className="gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
