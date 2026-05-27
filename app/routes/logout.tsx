@@ -1,6 +1,6 @@
-import { redirect, type ActionFunctionArgs } from 'react-router'
+import { redirect, type ActionFunctionArgs } from "react-router"
 
-import { createClient } from '@/registry/default/clients/react-router/lib/supabase/server'
+import { createClient } from "@/registry/default/clients/react-router/lib/supabase/server"
 
 export async function loader({ request }: ActionFunctionArgs) {
   const { supabase, headers } = createClient(request)
@@ -13,5 +13,5 @@ export async function loader({ request }: ActionFunctionArgs) {
   }
 
   // Redirect to dashboard or home page after successful sign-in
-  return redirect('/', { headers })
+  return redirect("/", { headers })
 }

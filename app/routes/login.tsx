@@ -1,21 +1,21 @@
-import { redirect, useFetcher, type ActionFunctionArgs } from 'react-router'
+import { redirect, useFetcher, type ActionFunctionArgs } from "react-router"
 
-import { createClient } from '@/registry/default/clients/react-router/lib/supabase/server'
-import { Button } from '@/registry/default/components/ui/button'
+import { createClient } from "@/registry/default/clients/react-router/lib/supabase/server"
+import { Button } from "@/registry/default/components/ui/button"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/registry/default/components/ui/card'
+} from "@/registry/default/components/ui/card"
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { supabase } = createClient(request)
   const origin = new URL(request.url).origin
 
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'github',
+    provider: "github",
     options: {
       redirectTo: `${origin}/auth/oauth?next=/protected`,
     },
@@ -27,7 +27,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (error) {
     return {
-      error: error instanceof Error ? error.message : 'An error occurred',
+      error: error instanceof Error ? error.message : "An error occurred",
     }
   }
 }
@@ -36,7 +36,7 @@ export default function Login() {
   const fetcher = useFetcher<typeof action>()
 
   const error = fetcher.data?.error
-  const loading = fetcher.state === 'submitting'
+  const loading = fetcher.state === "submitting"
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -50,9 +50,9 @@ export default function Login() {
             <CardContent>
               <fetcher.Form method="post">
                 <div className="flex flex-col gap-6">
-                  {error && <p className="text-sm text-destructive-500">{error}</p>}
+                  {error && <p className="text-destructive-500 text-sm">{error}</p>}
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? 'Logging in...' : 'Continue with GitHub'}
+                    {loading ? "Logging in..." : "Continue with GitHub"}
                   </Button>
                 </div>
               </fetcher.Form>
