@@ -6,24 +6,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { supabase } = createClient(request)
-  const origin = new URL(request.url).origin
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "github",
-    options: {
-      redirectTo: `${origin}/auth/oauth?next=/protected`,
-    },
-  })
+  const formData = await request.formData()
+  const email = String(formData.get("email") ?? "")
+  const password = String(formData.get("password") ?? "")
 
-  if (data.url) {
-    return redirect(data.url)
-  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
     return {
       error: error instanceof Error ? error.message : "An error occurred",
     }
   }
+
+  return redirect("/")
 }
 
 export default function Login() {
@@ -45,8 +41,24 @@ export default function Login() {
               <fetcher.Form method="post">
                 <div className="flex flex-col gap-6">
                   {error && <p className="text-destructive-500 text-sm">{error}</p>}
+                  <div className="flex flex-col gap-2">
+                    <input
+                      name="email"
+                      type="email"
+                      placeholder="Email"
+                      required
+                      className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    />
+                    <input
+                      name="password"
+                      type="password"
+                      placeholder="Password"
+                      required
+                      className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    />
+                  </div>
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Logging in..." : "Continue with GitHub"}
+                    {loading ? "Logging in..." : "Sign in"}
                   </Button>
                 </div>
               </fetcher.Form>

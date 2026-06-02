@@ -3,7 +3,7 @@ import globals from "globals"
 import reactHooks from "eslint-plugin-react-hooks"
 import reactRefresh from "eslint-plugin-react-refresh"
 import tseslint from "typescript-eslint"
-import prettierConfig from "eslint-plugin-prettier/recommended"
+import eslintConfigPrettier from "eslint-config-prettier"
 import { defineConfig, globalIgnores } from "eslint/config"
 
 export default defineConfig([
@@ -15,7 +15,7 @@ export default defineConfig([
       tseslint.configs.recommended,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
-      prettierConfig, // 반드시 마지막
+      eslintConfigPrettier,
     ],
     languageOptions: {
       globals: globals.browser,
@@ -25,17 +25,12 @@ export default defineConfig([
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-empty-object-type": "warn", // error → warn
       "react-refresh/only-export-components": "warn", // error → warn
-      "prettier/prettier": [
-        "error",
-        {
-          singleQuote: false,
-          semi: false,
-          tabWidth: 2,
-          trailingComma: "es5",
-          printWidth: 100,
-          endOfLine: "lf",
-        },
-      ],
+    },
+  },
+  {
+    files: ["app/root.tsx", "app/routes/**/*.tsx", "app/components/ui/**/*.tsx"],
+    rules: {
+      "react-refresh/only-export-components": "off",
     },
   },
 ])
