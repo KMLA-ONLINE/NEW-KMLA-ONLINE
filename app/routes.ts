@@ -10,7 +10,6 @@ export default [
     route("profile", "./routes/_app.profile.tsx"),
   ]),
   route("login", "./routes/login.tsx"),
+  route("signup", "./routes/signup.tsx"),
   route("logout", "./routes/logout.tsx"),
-  route("auth/oauth", "./routes/auth.oauth.tsx"),
-  route("auth/error", "./routes/auth.error.tsx"),
 ] satisfies RouteConfig
