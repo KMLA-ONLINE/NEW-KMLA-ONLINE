@@ -18,15 +18,16 @@ Project school_community {
   ID 전략:
 
 - 내부 테이블은 bigserial PK 사용 (성능)
-- 외부 노출이 필요한 테이블(profiles, groups, communities, posts)은 uuid pub_id 컬럼 추가
+- 외부 노출이 필요한 테이블(profiles, spaces, posts)은 uuid pub_id 컬럼 추가
 - profiles.auth_user_id는 auth.users.id (uuid) 참조
 - DBML `ref`에 ON DELETE 생략 — 각 테이블 Notes에 명시된 대로 마이그레이션 SQL에서 직접 추가
 
-  Group vs Community:
+  Spaces (통합):
 
 - group: 앱 관리자가 관리하는 공식 그룹 (행정위 등)
 - community: 사용자가 생성하는 비공식 그룹 (먹사팔 등)
-- 구조는 같지만 다른 정책 적용을 위해 별도 테이블로 분리
+- 구조는 거의 동일하며 space_type enum으로 구분하여 하나의 spaces 테이블로 관리
+- 정책 차이는 RLS와 CHECK 제약으로 처리
   '''
   }
 
@@ -45,8 +46,7 @@ Table auth.users {
 
 // 생성할 Storage 버킷:
 // - avatars: 프로필 이미지
-// - group-images: 공식 그룹 대표 이미지
-// - community-images: 커뮤니티 대표 이미지
+// - space-images: 공간 대표 이미지 (group/community 모두)
 // - post-files: 게시물 첨부파일
 // - message-files: 메시지 첨부파일
 //
@@ -103,6 +103,11 @@ Enum gongang_location {
   two
   four
   ten
+}
+
+Enum space_type {
+  group [note: '앱 관리자가 관리하는 공식 그룹']
+  community [note: '사용자가 생성하는 비공식 그룹']
 }
 
 Enum club_type {
@@ -195,33 +200,37 @@ Table user_permissions {
 }
 
 /* =========================================================
-   Groups (공식 그룹)
+   Spaces (통합 공간)
    ========================================================= */
 
-Table groups {
+Table spaces {
   id bigserial [pk]
   pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
-  name text [not null, unique, note: '공식 그룹 이름은 전역 고유']
+  type space_type [not null, note: 'group = 공식 그룹, community = 사용자 생성']
+  name text [not null]
   description text [null]
-  image_url text [null, note: '그룹 이미지 (group-images 버킷)']
+  image_url text [null, note: '공간 이미지 (space-images 버킷)']
   visibility visibility [not null, default: 'public', note: 'public = 누구나 가입, invite_only = 초대 전용']
   created_by bigint [null, ref: > profiles.id]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
 
   Note: '''
-  앱 관리자가 관리하는 공식 그룹 (반, 학교 동아리, 공식 조직).
+  group과 community를 통합한 단일 테이블.
+  space_type으로 구분하며 정책은 RLS와 CHECK로 처리.
 
   마이그레이션 추가사항:
 
-- 관리자만 생성/삭제 가능
-- 정확히 1명의 owner 필요 (partial unique index + 트리거)
-- created_by: ON DELETE SET NULL
+  - group: 관리자만 생성/삭제 가능, 이름 전역 고유
+  - community: 승인된 사용자라면 누구나 생성 가능, 이름 중복 가능
+  - UNIQUE (name) WHERE type = 'group' (partial unique index)
+  - 정확히 1명의 owner 필요 (partial unique index + 트리거, space 단위)
+  - created_by: ON DELETE SET NULL
   '''
 }
 
-Table group_members {
-  group_id bigint [not null, ref: > groups.id]
+Table space_members {
+  space_id bigint [not null, ref: > spaces.id]
   user_id bigint [not null, ref: > profiles.id]
   role member_role [not null, default: 'member']
   notification_setting notification_setting [not null, default: 'mentions']
@@ -231,66 +240,16 @@ Table group_members {
   joined_at timestamptz [not null, default: `now()`]
 
   Note: '''
-  - Partial unique index: UNIQUE (group_id) WHERE role = 'owner'
-  - RLS: 멤버만 그룹 데이터 접근 가능
-  - banned_at 설정 시 그룹 및 게시물 접근 불가
+  - Partial unique index: UNIQUE (space_id) WHERE role = 'owner'
+  - RLS: 멤버만 공간 데이터 접근 가능
+  - banned_at 설정 시 공간 및 게시물 접근 불가
   - owner/admin만 차단 가능
   '''
 
   indexes {
-    (group_id, user_id) [pk]
-    (user_id, joined_at) [name: 'idx_group_members_user_joined_at']
-    (group_id, role) [name: 'idx_group_members_group_role']
-  }
-}
-
-/* =========================================================
-   Communities (사용자 생성)
-   ========================================================= */
-
-Table communities {
-  id bigserial [pk]
-  pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
-  name text [not null]
-  description text [null]
-  image_url text [null, note: '커뮤니티 이미지 (community-images 버킷)']
-  visibility visibility [not null, default: 'public', note: 'public = 누구나 가입, invite_only = 초대 전용']
-  created_by bigint [null, ref: > profiles.id]
-  created_at timestamptz [not null, default: `now()`]
-  updated_at timestamptz [null]
-
-  Note: '''
-  사용자가 생성하는 비공식 그룹 + 먹사팔 등.
-
-  마이그레이션 추가사항:
-
-- 승인된 사용자라면 누구나 생성 가능
-- 정확히 1명의 owner 필요
-- created_by: ON DELETE SET NULL
-- 이름 전역 고유 아님 (중복 가능)
-  '''
-}
-
-Table community_members {
-  community_id bigint [not null, ref: > communities.id]
-  user_id bigint [not null, ref: > profiles.id]
-  role member_role [not null, default: 'member']
-  notification_setting notification_setting [not null, default: 'mentions']
-  banned_at timestamptz [null, note: '설정 시 해당 사용자 차단']
-  banned_by bigint [null, ref: > profiles.id]
-  ban_reason text [null, note: '차단 사유']
-  joined_at timestamptz [not null, default: `now()`]
-
-  Note: '''
-  - Partial unique index: UNIQUE (community_id) WHERE role = 'owner'
-  - RLS: 멤버만 데이터 접근 가능
-  - banned_at 설정 시 접근 불가
-  '''
-
-  indexes {
-    (community_id, user_id) [pk]
-    (user_id, joined_at) [name: 'idx_community_members_user_joined_at']
-    (community_id, role) [name: 'idx_community_members_community_role']
+    (space_id, user_id) [pk]
+    (user_id, joined_at) [name: 'idx_space_members_user_joined_at']
+    (space_id, role) [name: 'idx_space_members_space_role']
   }
 }
 
@@ -301,14 +260,14 @@ Table community_members {
 Table posts {
   id bigserial [pk]
   pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
-  group_id bigint [null, ref: > groups.id]
-  community_id bigint [null, ref: > communities.id]
+  space_id bigint [null, ref: > spaces.id]
+  space_type space_type [null, note: 'space_id가 가리키는 공간의 타입 (비정규화, 인덱스용)']
   author_id bigint [not null, ref: > profiles.id]
   title text [not null]
   content text [not null]
   is_anonymous boolean [not null, default: false, note: 'true면 anonymous_username으로 표시']
   search_vector tsvector [null, note: 'title+content → to_tsvector STORED']
-  is_pinned boolean [not null, default: false, note: '그룹/커뮤니티 내 고정 공지']
+  is_pinned boolean [not null, default: false, note: '공간 내 고정 공지']
   pinned_at timestamptz [null]
   pinned_by bigint [null, ref: > profiles.id]
   comment_count int4 [not null, default: 0, note: '댓글 수 캐시 (답글 포함)']
@@ -319,39 +278,37 @@ Table posts {
   deleted_by bigint [null, ref: > profiles.id]
 
   Note: '''
-  하나의 게시물은 group 또는 community 중 하나에만 속함.
+  모든 게시물은 하나의 space에 속함.
 
   마이그레이션 추가사항:
 
-- CHECK (group_id IS NOT NULL OR community_id IS NOT NULL)
-- CHECK (group_id IS NULL OR community_id IS NULL)
-- CHECK (is_pinned 관련 일관성)
-- CHECK (comment_count >= 0, reaction_count >= 0)
-- search_vector = to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')) STORED
-- ⚠ to_tsvector('simple')은 한글 형태소 분석 불가. pg_trgm ILIKE 검색을 함께 사용할 것
-- author는 그룹/커뮤니티의 멤버여야 함
-- owner/admin/manager만 핀 고정 가능
-- Partial index: (group_id, pinned_at DESC) WHERE group_id IS NOT NULL AND ...
-- Partial index: (community_id, pinned_at DESC) WHERE community_id IS NOT NULL AND ...
+  - CHECK (space_id IS NOT NULL)
+  - CHECK (is_pinned 관련 일관성)
+  - CHECK (comment_count >= 0, reaction_count >= 0)
+  - space_type 비정규화: INSERT/UPDATE 트리거로 spaces.type에서 자동 설정
+  - search_vector = to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')) STORED
+  - ⚠ to_tsvector('simple')은 한글 형태소 분석 불가. pg_trgm ILIKE 검색을 함께 사용할 것
+  - author는 space의 멤버여야 함
+  - owner/admin/manager만 핀 고정 가능
+  - Partial index: (space_id, pinned_at DESC) WHERE is_pinned = true
 
   익명:
 
-- is_anonymous = true면 anonymous_username으로 표시
-- author_id는 그대로 저장 (소유권/RLS용)
-- owner/admin은 실제 작성자 확인 가능
+  - is_anonymous = true면 anonymous_username으로 표시
+  - author_id는 그대로 저장 (소유권/RLS용)
+  - owner/admin은 실제 작성자 확인 가능
 
   수정/삭제:
 
-- 작성자는 제목/내용/첨부파일 무제한 수정 가능
-- is_pinned 등은 owner/admin만 변경
-- 소프트 삭제 (deleted_at IS NULL 필터링)
+  - 작성자는 제목/내용/첨부파일 무제한 수정 가능
+  - is_pinned 등은 owner/admin만 변경
+  - 소프트 삭제 (deleted_at IS NULL 필터링)
   '''
 
   indexes {
-    (group_id, created_at) [name: 'idx_posts_group_created_at']
-    (group_id, is_pinned, pinned_at, created_at) [name: 'idx_posts_group_pinned_created_at']
-    (community_id, created_at) [name: 'idx_posts_community_created_at']
-    (community_id, is_pinned, pinned_at, created_at) [name: 'idx_posts_community_pinned_created_at']
+    (space_id, space_type, created_at) [name: 'idx_posts_space_created_at']
+    (space_id, is_pinned, pinned_at, created_at) [name: 'idx_posts_space_pinned_created_at']
+    (space_type, created_at) [name: 'idx_posts_space_type_created_at']
     (author_id, created_at) [name: 'idx_posts_author_created_at']
     (deleted_at, created_at) [name: 'idx_posts_deleted_created_at']
     (search_vector) [name: 'idx_posts_search_vector']
@@ -651,8 +608,8 @@ Table notifications {
   actor_id bigint [null, ref: > profiles.id, note: 'null = 시스템 알림']
   title text [null]
   body text [null]
-  group_id bigint [null, ref: > groups.id]
-  community_id bigint [null, ref: > communities.id]
+  space_id bigint [null, ref: > spaces.id]
+  space_type space_type [null, note: '비정규화, 인덱스용']
   post_id bigint [null, ref: > posts.id]
   comment_id bigint [null, ref: > comments.id]
   message_id bigint [null, ref: > messages.id]
@@ -661,13 +618,13 @@ Table notifications {
 
   Note: '''
   인앱 알림 최소 테이블. 푸시 토큰 테이블 아님.
+  space_type은 posts.space_type과 동일한 방식으로 비정규화.
   '''
 
   indexes {
     (recipient_id, created_at) [name: 'idx_notifications_recipient_created_at']
     (recipient_id, read_at, created_at) [name: 'idx_notifications_recipient_read_created_at']
-    (group_id, created_at) [name: 'idx_notifications_group_created_at']
-    (community_id, created_at) [name: 'idx_notifications_community_created_at']
+    (space_id, space_type, created_at) [name: 'idx_notifications_space_created_at']
   }
 }
 
@@ -765,7 +722,7 @@ Table clubs_apply {
 // pg_trgm 확장 기반의 ILIKE 검색이 한글에서 더 정확하므로
 // to_tsvector('simple', ...) GIN 검색과 함께 병용.
 //
-// RPC: search_posts(query text, space_type text, space_id bigint)
+// RPC: search_posts(query text, space_type space_type, space_id bigint)
 //   - space_type: 'group' | 'community' | null (전체)
 //   - space_id: 특정 공간으로 제한
 //   - posts.title/content + comments.content 에서 ILIKE '%query%' 매칭
@@ -788,14 +745,9 @@ TableGroup identity {
   user_permissions
 }
 
-TableGroup official {
-  groups
-  group_members
-}
-
-TableGroup unofficial {
-  communities
-  community_members
+TableGroup spaces {
+  spaces
+  space_members
 }
 
 TableGroup content {
