@@ -48,16 +48,10 @@ supabase init
 supabase start
 ```
 
-실행이 완료되면 터미널에 아래와 같은 정보가 출력됩니다:
+실행이 완료되면 터미널에 Studio, API, Database, Auth Keys, Storage 등의 정보가 출력됩니다.
+전체 서비스 URL 목록은 아래 **[9. 로컬 서비스 URL 한눈에 보기](#9-로컬-서비스-url-한눈에-보기)** 를 참고하세요.
 
-| 서비스 | 주소 |
-|---|---|
-| API URL | `http://127.0.0.1:54321` |
-| Studio | `http://127.0.0.1:54323` |
-| anon key | (로컬 전용 값) |
-| service_role key | (로컬 전용 값) |
-
-> 이 값은 **로컬 전용**입니다. remote 프로젝트의 키와 혼동하지 마세요.
+> 출력되는 모든 값은 **로컬 전용**입니다. remote 프로젝트의 키와 혼동하지 마세요.
 
 ---
 
@@ -98,11 +92,11 @@ supabase status
 
 `.env.local` 파일에서 다음 값을 교체합니다:
 
-| 변수 | remote 값 | local 값 |
-|---|---|---|
-| `VITE_SUPABASE_URL` | `https://<ref>.supabase.co` | `http://127.0.0.1:54321` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | remote anon key | `supabase status`의 local anon key |
-| (필요시) service_role key | remote secret | `supabase status`의 local service_role key |
+| 변수                              | remote 값                     | local 값                                     |
+| --------------------------------- | ----------------------------- | -------------------------------------------- |
+| `VITE_SUPABASE_URL`             | `https://<ref>.supabase.co` | `http://127.0.0.1:54321`                   |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | remote anon key               | `supabase status`의 local anon key         |
+| (필요시) service_role key         | remote secret                 | `supabase status`의 local service_role key |
 
 > 배포 환경에서는 remote 값을 사용해야 하므로, 환경 변수는 반드시 `.env` 파일로 분리해서 관리하세요.
 
@@ -128,66 +122,35 @@ supabase db pull --schema auth      # auth 스키마 (RLS 정책 등)
 
 ---
 
-## 8. OAuth (Google) 로컬 설정
+## 8. 자주 실수하는 지점
 
-> remote 환경에서 이미 Google OAuth를 사용 중이고, 이를 로컬에서도 동작하게 하는 방법입니다.
-> 초기 설정이 필요하다면 [Supabase Social Login 문서](https://supabase.com/docs/guides/auth/social-login)를 참고하세요.
-
-공식 문서: [Use Auth Locally](https://supabase.com/docs/guides/local-development/overview#use-auth-locally)
-
-### 8.1 config.toml 설정
-
-`supabase/config.toml`에서 Google OAuth를 활성화합니다:
-
-```toml
-[auth.external.google]
-enabled = true
-client_id = "env(GOOGLE_CLIENT_ID)"
-secret = "env(GOOGLE_CLIENT_SECRET)"
-redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
-```
-
-> `client_id`와 `secret`은 평문으로 적지 말고 `env(...)`로 참조하세요.
-> `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 환경 변수를 로컬에 설정해야 합니다.
-
-### 8.2 환경 변수 설정
-
-`.env.local` 또는 셜 환경 변수에 추가:
-
-```env
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-```
-
-### 8.3 Google Cloud Console — OAuth 클라이언트 수정
-
-Google Cloud Console > APIs & Services > Credentials > OAuth 클라이언트 편집:
-
-- **Authorized JavaScript origins**: `http://localhost` 추가
-- **Authorized redirect URIs**: `http://127.0.0.1:54321/auth/v1/callback` 추가
-
-> remote 환경의 redirect URI (`https://<ref>.supabase.co/auth/v1/callback`)는 별도로 유지됩니다.
-> 로컬용 URI를 **추가**하는 것이지, 기존 URI를 지우면 안 됩니다.
-
-### 8.4 재시작 및 RLS 동기화
-
-```bash
-supabase stop
-supabase start
-supabase db pull --schema auth
-```
+| 상황                   | 설명                                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `supabase link` 실패 | `config.toml`의 설정이 remote와 불일치. 터미널 diff를 보고 맞춘 후 재시도            |
+| 로컬에서 auth가 안 됨 | Provider의 콜백 URL에 `http://127.0.0.1:54321/auth/v1/callback`이 등록되었는지 확인 |
+| "Keys don't match"     | `.env.local`에 아직 remote 키가 남아있음. `supabase status`로 local 키로 교체      |
+| Studio가 안 열림       | `supabase start`가 정상 종료되었는지 확인. Docker 데스크탑이 실행 중인지 확인        |
+| migration 충돌         | `supabase db pull`로 최신 상태 유지                                                  |
 
 ---
 
-## 9. 자주 실수하는 지점
+## 9. 로컬 서비스 URL 한눈에 보기
 
-| 상황 | 설명 |
-|---|---|
-| `supabase link` 실패 | `config.toml`의 설정이 remote와 불일치. 터미널 diff를 보고 맞춘 후 재시도 |
-| 로컬에서 auth가 안 됨 | Google Cloud Console에 `http://127.0.0.1:54321/auth/v1/callback`이 등록되었는지 확인 |
-| "Keys don't match" | `.env.local`에 아직 remote 키가 남아있음. `supabase status`로 local 키로 교체 |
-| Studio가 안 열림 | `supabase start`가 정상 종료되었는지 확인. Docker 데스크탑이 실행 중인지 확인 |
-| migration 충돌 | `supabase db pull`로 최신 상태 유지 |
+`supabase start` 실행 후 접속할 수 있는 서비스입니다.
+
+| 구분 | 서비스                | URL                                                         |
+| ---- | --------------------- | ----------------------------------------------------------- |
+| 🔧   | Studio                | http://127.0.0.1:54323                                      |
+| 🔧   | Mailpit (이메일 확인) | http://127.0.0.1:54324                                      |
+| 🌐   | Project URL           | http://127.0.0.1:54321                                      |
+| 🌐   | REST API              | http://127.0.0.1:54321/rest/v1                              |
+| 🌐   | GraphQL               | http://127.0.0.1:54321/graphql/v1                           |
+| 🌐   | Edge Functions        | http://127.0.0.1:54321/functions/v1                         |
+| ⛁   | Database (직접 연결)  | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
+| 📦   | Storage S3            | http://127.0.0.1:54321/storage/v1/s3                        |
+
+> 인증 키(`anon key`, `service_role key`)는 `supabase status` 명령어로 확인하세요.
+> 로컬 키는 실행할 때마다 달라질 수 있습니다. 절대 버전 관리에 포함하지 마세요.
 
 ---
 
