@@ -145,4 +145,24 @@ body {
   html {
     @apply font-sans;
   }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  [data-slot="input"]:-webkit-autofill,
+  [data-slot="input"]:-webkit-autofill:hover,
+  [data-slot="input"]:-webkit-autofill:focus,
+  [data-slot="input"]:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px inset var(--background) !important;
+    -webkit-text-fill-color: var(--foreground) !important;
+    caret-color: var(--foreground) !important;
+    transition: background-color 999999s ease-in-out 0s;
+    animation: autofill-fix 0s forwards;
+  }
+
+  @keyframes autofill-fix {
+    from { background-color: transparent; }
+    to { background-color: transparent; }
+  }
 }
