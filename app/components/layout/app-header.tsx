@@ -29,7 +29,12 @@ export function AppHeader({ email }: AppHeaderProps) {
   return (
     <header className="bg-background/95 fixed top-0 z-10 grid h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 backdrop-blur sm:px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
       <div className="flex items-center gap-2">
-        <p className="text-sm font-semibold tracking-wide">KMLA</p>
+        <a
+          href="/"
+          className="hover:text-primary text-sm font-semibold tracking-wide transition-colors"
+        >
+          KMLA Online
+        </a>
       </div>
       <div className="relative mx-auto hidden w-full max-w-xl md:col-start-2 md:block">
         <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2" />
