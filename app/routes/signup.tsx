@@ -76,7 +76,11 @@ export default function Signup() {
                 className="flex flex-col gap-5"
               >
                 {error && (
-                  <p className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium">
+                  <p
+                    role="alert"
+                    aria-live="polite"
+                    className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium"
+                  >
                     {error}
                   </p>
                 )}
@@ -115,10 +119,14 @@ export default function Signup() {
                     <button
                       type="button"
                       onClick={() => setShowPw((v) => !v)}
-                      tabIndex={-1}
+                      aria-label={showPw ? "Hide password" : "Show password"}
                       className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
                     >
-                      {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showPw ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -140,10 +148,14 @@ export default function Signup() {
                     <button
                       type="button"
                       onClick={() => setShowConfirm((v) => !v)}
-                      tabIndex={-1}
+                      aria-label={showConfirm ? "Hide password" : "Show password"}
                       className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
                     >
-                      {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showConfirm ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
                     </button>
                   </div>
                 </div>

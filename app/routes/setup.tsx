@@ -61,15 +61,24 @@ function OptionalText({ recommended = false }: { recommended?: boolean }) {
   )
 }
 
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate()
+}
+
 function isValidBirthday(year: string, month: string, day: string) {
   if (!/^\d{4}$/.test(year) || !/^\d{1,2}$/.test(month) || !/^\d{1,2}$/.test(day)) {
     return false
   }
 
+  const yearNumber = Number(year)
   const monthNumber = Number(month)
   const dayNumber = Number(day)
 
-  return monthNumber >= 1 && monthNumber <= 12 && dayNumber >= 1 && dayNumber <= 31
+  if (monthNumber < 1 || monthNumber > 12 || dayNumber < 1) {
+    return false
+  }
+
+  return dayNumber <= daysInMonth(yearNumber, monthNumber)
 }
 
 function BirthdayFields({
@@ -173,6 +182,20 @@ export default function Setup() {
     (!isAlumni || (/^\d{2}$/.test(formData.cohort) && (!hasBirthdayInput || hasValidBirthday))) &&
     (!isTeacher || hasValidPhoneNumber)
 
+  const fieldErrors = {
+    studentNumber:
+      formData.studentNumber && !/^\d{6}$/.test(formData.studentNumber)
+        ? "학번은 6자리 숫자여야 합니다."
+        : "",
+    cohort:
+      formData.cohort && !/^\d{2}$/.test(formData.cohort) ? "기수는 2자리 숫자여야 합니다." : "",
+    phoneNumber:
+      formData.phoneNumber && !/^\d{10,11}$/.test(formData.phoneNumber)
+        ? "전화번호는 10~11자리 숫자여야 합니다."
+        : "",
+    birthday: hasBirthdayInput && !hasValidBirthday ? "올바른 생년월일을 입력하세요." : "",
+  }
+
   const profileInitial = formData.name.trim().charAt(0).toUpperCase() || "K"
 
   const submitMockProfile = () => {
@@ -224,7 +247,7 @@ export default function Setup() {
                     value={formData.type}
                     onValueChange={(value) => updateField("type", value as ProfileType)}
                   >
-                    <SelectTrigger id="type">
+                    <SelectTrigger id="type" className="w-full">
                       <SelectValue placeholder="구분을 선택하세요" />
                     </SelectTrigger>
                     <SelectContent>
@@ -245,7 +268,7 @@ export default function Setup() {
                     value={formData.gender}
                     onValueChange={(value) => updateField("gender", value)}
                   >
-                    <SelectTrigger id="gender">
+                    <SelectTrigger id="gender" className="w-full">
                       <SelectValue placeholder="성별을 선택하세요" />
                     </SelectTrigger>
                     <SelectContent>
@@ -265,6 +288,15 @@ export default function Setup() {
                 >
                   다음
                 </Button>
+                {!canProceedFromProfile && (
+                  <p
+                    role="alert"
+                    aria-live="polite"
+                    className="text-destructive text-center text-xs"
+                  >
+                    이름, 구분, 성별을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
+                  </p>
+                )}
               </div>
             )}
 
@@ -301,7 +333,13 @@ export default function Setup() {
                           )
                         }
                         required
+                        aria-invalid={!!fieldErrors.studentNumber}
                       />
+                      {fieldErrors.studentNumber && (
+                        <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                          {fieldErrors.studentNumber}
+                        </p>
+                      )}
                     </div>
 
                     <BirthdayFields
@@ -311,6 +349,11 @@ export default function Setup() {
                       day={formData.birthDay}
                       onChange={updateField}
                     />
+                    {fieldErrors.birthday && (
+                      <p role="alert" aria-live="polite" className="text-destructive -mt-3 text-xs">
+                        {fieldErrors.birthday}
+                      </p>
+                    )}
                   </>
                 )}
 
@@ -328,18 +371,31 @@ export default function Setup() {
                         updateField("cohort", event.target.value.replace(/\D/g, "").slice(0, 2))
                       }
                       required
+                      aria-invalid={!!fieldErrors.cohort}
                     />
+                    {fieldErrors.cohort && (
+                      <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                        {fieldErrors.cohort}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {isAlumni && (
-                  <BirthdayFields
-                    required={false}
-                    year={formData.birthYear}
-                    month={formData.birthMonth}
-                    day={formData.birthDay}
-                    onChange={updateField}
-                  />
+                  <>
+                    <BirthdayFields
+                      required={false}
+                      year={formData.birthYear}
+                      month={formData.birthMonth}
+                      day={formData.birthDay}
+                      onChange={updateField}
+                    />
+                    {fieldErrors.birthday && (
+                      <p role="alert" aria-live="polite" className="text-destructive -mt-3 text-xs">
+                        {fieldErrors.birthday}
+                      </p>
+                    )}
+                  </>
                 )}
 
                 {(isStudent || isTeacher) && (
@@ -360,7 +416,13 @@ export default function Setup() {
                           event.target.value.replace(/\D/g, "").slice(0, 11)
                         )
                       }
+                      aria-invalid={!!fieldErrors.phoneNumber}
                     />
+                    {fieldErrors.phoneNumber && (
+                      <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                        {fieldErrors.phoneNumber}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -392,11 +454,7 @@ export default function Setup() {
                         placeholder="예: 3"
                         value={formData.classNo}
                         onChange={(event) => {
-                          const value = event.target.value
-                          updateField(
-                            "classNo",
-                            value === "" ? "" : String(Math.min(10, Math.max(1, Number(value))))
-                          )
+                          updateField("classNo", event.target.value)
                         }}
                       />
                     </div>

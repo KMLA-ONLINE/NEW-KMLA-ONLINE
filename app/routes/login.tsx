@@ -48,7 +48,11 @@ export default function Login() {
             <div className="p-6 md:p-8">
               <fetcher.Form method="post" className="flex flex-col gap-5">
                 {error && (
-                  <p className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium">
+                  <p
+                    role="alert"
+                    aria-live="polite"
+                    className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium"
+                  >
                     {error}
                   </p>
                 )}
@@ -75,7 +79,7 @@ export default function Login() {
                       비밀번호
                     </Label>
                     <a
-                      href="#"
+                      href="/forgot-password"
                       className="text-primary hover:text-primary/80 text-xs font-medium underline-offset-2 hover:underline"
                     >
                       비밀번호 찾기
@@ -94,10 +98,14 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={() => setShowPw((v) => !v)}
-                      tabIndex={-1}
+                      aria-label={showPw ? "Hide password" : "Show password"}
                       className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
                     >
-                      {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showPw ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
                     </button>
                   </div>
                 </div>
