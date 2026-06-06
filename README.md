@@ -50,4 +50,4 @@ npm run typecheck
 
 ## Deployment
 
-Deployment is currently planned for Vercel.
+Deployment is currently deployed using Netlify.
