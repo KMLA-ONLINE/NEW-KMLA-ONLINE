@@ -107,6 +107,7 @@ function BirthdayFields({
             onChange("birthYear", event.target.value.replace(/\D/g, "").slice(0, 4))
           }
           required={required}
+          spellCheck={false}
         />
         <Input
           aria-label="출생 월"
@@ -117,6 +118,7 @@ function BirthdayFields({
             onChange("birthMonth", event.target.value.replace(/\D/g, "").slice(0, 2))
           }
           required={required}
+          spellCheck={false}
         />
         <Input
           aria-label="출생 일"
@@ -127,6 +129,7 @@ function BirthdayFields({
             onChange("birthDay", event.target.value.replace(/\D/g, "").slice(0, 2))
           }
           required={required}
+          spellCheck={false}
         />
       </div>
     </div>

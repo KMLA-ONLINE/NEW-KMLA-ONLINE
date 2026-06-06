@@ -1,3 +1,4 @@
+import { Link } from "react-router"
 import { MailQuestion } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
@@ -37,7 +38,7 @@ export default function ForgotPassword() {
 
         <CardFooter className="flex-col gap-2">
           <Button asChild variant="default" className="w-full">
-            <a href="/login">로그인으로 돌아가기</a>
+            <Link to="/login">로그인으로 돌아가기</Link>
           </Button>
         </CardFooter>
       </Card>

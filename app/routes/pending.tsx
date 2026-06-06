@@ -1,4 +1,4 @@
-import { useLocation } from "react-router"
+import { Link, useLocation } from "react-router"
 import { Clock3, ShieldCheck } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
@@ -31,7 +31,7 @@ export default function Pending() {
           </CardHeader>
           <CardFooter>
             <Button asChild variant="outline" className="w-full">
-              <a href="/setup">프로필 설정하기</a>
+              <Link to="/setup">프로필 설정하기</Link>
             </Button>
           </CardFooter>
         </Card>
@@ -65,7 +65,7 @@ export default function Pending() {
 
         <CardFooter>
           <Button asChild variant="outline" className="w-full">
-            <a href="/setup">프로필 설정 목업으로 돌아가기</a>
+            <Link to="/setup">프로필 설정 목업으로 돌아가기</Link>
           </Button>
         </CardFooter>
       </Card>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { redirect, useFetcher, type ActionFunctionArgs } from "react-router"
+import { Link, redirect, useFetcher, type ActionFunctionArgs } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 
 import { createClient } from "~/lib/supabase/server"
@@ -69,6 +69,7 @@ export default function Login() {
                     placeholder="name@example.com"
                     autoComplete="email"
                     required
+                    spellCheck={false}
                     className="h-10"
                   />
                 </div>
@@ -118,12 +119,12 @@ export default function Login() {
 
               <p className="text-muted-foreground mt-6 text-center text-sm">
                 아직 계정이 없으신가요?{" "}
-                <a
-                  href="/signup"
+                <Link
+                  to="/signup"
                   className="text-primary hover:text-primary/80 font-medium underline-offset-2 hover:underline"
                 >
                   회원가입
-                </a>
+                </Link>
               </p>
             </div>
           </div>

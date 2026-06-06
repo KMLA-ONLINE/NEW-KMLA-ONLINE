@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useFetcher, useNavigate, type ActionFunctionArgs } from "react-router"
+import { Link, useFetcher, useNavigate, type ActionFunctionArgs } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -97,6 +97,7 @@ export default function Signup() {
                     placeholder="name@example.com"
                     autoComplete="email"
                     required
+                    spellCheck={false}
                     className="h-10"
                   />
                 </div>
@@ -168,12 +169,12 @@ export default function Signup() {
 
               <p className="text-muted-foreground mt-6 text-center text-sm">
                 이미 계정이 있으신가요?{" "}
-                <a
-                  href="/login"
+                <Link
+                  to="/login"
                   className="text-primary hover:text-primary/80 font-medium underline-offset-2 hover:underline"
                 >
                   로그인
-                </a>
+                </Link>
               </p>
             </div>
           </div>
