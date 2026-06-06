@@ -1,321 +1,488 @@
-import { useState } from "react"
-import {
-  redirect,
-  useFetcher,
-  useLoaderData,
-  type ActionFunctionArgs,
-  type LoaderFunctionArgs,
-} from "react-router"
-import { ChevronLeft, Loader2 } from "lucide-react"
+import { useEffect, useState, type ChangeEvent } from "react"
+import { useNavigate } from "react-router"
+import { Camera, ChevronLeft, Upload } from "lucide-react"
 
-import { createClient } from "~/lib/supabase/server"
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select"
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  // const { supabase } = createClient(request)
-  // const { data, error } = await supabase.auth.getUser()
-  // if (error || !data?.user) {
-  //   return redirect("/login")
-  // }
-  // return { email: data.user.email ?? "" }
-  return { email: "test@kmla.org" }
+type ProfileType = "student" | "teacher" | "alumni"
+
+type SetupFormData = {
+  name: string
+  type: ProfileType | ""
+  gender: string
+  studentNumber: string
+  cohort: string
+  classNo: string
+  birthYear: string
+  birthMonth: string
+  birthDay: string
+  phoneNumber: string
+  dormRoom: string
 }
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { supabase, headers } = createClient(request)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+const initialFormData: SetupFormData = {
+  name: "",
+  type: "",
+  gender: "",
+  studentNumber: "",
+  cohort: "",
+  classNo: "",
+  birthYear: "",
+  birthMonth: "",
+  birthDay: "",
+  phoneNumber: "",
+  dormRoom: "",
+}
 
-  if (!user) {
-    return { error: "Not authenticated" }
+function RequiredMark() {
+  return (
+    <span className="text-destructive" aria-label="필수">
+      *
+    </span>
+  )
+}
+
+function OptionalText({ recommended = false }: { recommended?: boolean }) {
+  return (
+    <span className="text-muted-foreground text-xs font-normal">
+      ({recommended ? "매우 권장" : "선택"})
+    </span>
+  )
+}
+
+function isValidBirthday(year: string, month: string, day: string) {
+  if (!/^\d{4}$/.test(year) || !/^\d{1,2}$/.test(month) || !/^\d{1,2}$/.test(day)) {
+    return false
   }
 
-  const formData = await request.formData()
-  const name = String(formData.get("name") ?? "")
-  const type = String(formData.get("type") ?? "")
-  const gender = String(formData.get("gender") ?? "")
-  const studentNumber = String(formData.get("studentNumber") ?? "")
-  const cohort = formData.get("cohort") ? Number(formData.get("cohort")) : null
-  const classNo = formData.get("classNo") ? Number(formData.get("classNo")) : null
-  const birthday = String(formData.get("birthday") ?? "")
-  const phoneNumber = String(formData.get("phoneNumber") ?? "")
-  const dormRoom = formData.get("dormRoom") ? Number(formData.get("dormRoom")) : null
+  const monthNumber = Number(month)
+  const dayNumber = Number(day)
 
-  const { error } = await supabase.from("profiles").upsert({
-    auth_user_id: user.id,
-    name,
-    type,
-    gender: gender || null,
-    student_number: studentNumber || null,
-    cohort,
-    class_no: classNo,
-    birthday: birthday || null,
-    phone_number: phoneNumber || null,
-    dorm_room: dormRoom,
-    status: "pending",
-    onboarding_completed_at: new Date().toISOString(),
-  })
+  return monthNumber >= 1 && monthNumber <= 12 && dayNumber >= 1 && dayNumber <= 31
+}
 
-  if (error) {
-    return { error: error.message }
-  }
-
-  return redirect("/?onboarding=pending")
+function BirthdayFields({
+  required,
+  year,
+  month,
+  day,
+  onChange,
+}: {
+  required: boolean
+  year: string
+  month: string
+  day: string
+  onChange: (field: "birthYear" | "birthMonth" | "birthDay", value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>생년월일 {required ? <RequiredMark /> : <OptionalText />}</Label>
+      <div className="grid grid-cols-3 gap-2">
+        <Input
+          aria-label="출생 연도"
+          inputMode="numeric"
+          placeholder="년"
+          value={year}
+          onChange={(event) =>
+            onChange("birthYear", event.target.value.replace(/\D/g, "").slice(0, 4))
+          }
+          required={required}
+        />
+        <Input
+          aria-label="출생 월"
+          inputMode="numeric"
+          placeholder="월"
+          value={month}
+          onChange={(event) =>
+            onChange("birthMonth", event.target.value.replace(/\D/g, "").slice(0, 2))
+          }
+          required={required}
+        />
+        <Input
+          aria-label="출생 일"
+          inputMode="numeric"
+          placeholder="일"
+          value={day}
+          onChange={(event) =>
+            onChange("birthDay", event.target.value.replace(/\D/g, "").slice(0, 2))
+          }
+          required={required}
+        />
+      </div>
+    </div>
+  )
 }
 
 export default function Setup() {
-  const { email } = useLoaderData<typeof loader>()
-  const fetcher = useFetcher<typeof action>()
-
+  const navigate = useNavigate()
   const [step, setStep] = useState(1)
-  const [formData, setFormData] = useState({
-    name: "",
-    type: "",
-    gender: "",
-    studentNumber: "",
-    cohort: "",
-    classNo: "",
-    birthday: "",
-    phoneNumber: "",
-    dormRoom: "",
-  })
+  const [formData, setFormData] = useState<SetupFormData>(initialFormData)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState("")
 
-  const loading = fetcher.state === "submitting"
-  const error = fetcher.data?.error
   const isStudent = formData.type === "student"
+  const isAlumni = formData.type === "alumni"
+  const isTeacher = formData.type === "teacher"
 
-  const updateField = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const canProceed = () => {
-    if (!formData.name.trim()) return false
-    if (!formData.type) return false
-    return true
-  }
-
-  const canSubmit = () => {
-    if (isStudent) {
-      if (!formData.studentNumber || formData.studentNumber.length !== 6) return false
-      if (!formData.cohort) return false
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview)
     }
-    return true
+  }, [avatarPreview])
+
+  const updateField = <Field extends keyof SetupFormData>(
+    field: Field,
+    value: SetupFormData[Field]
+  ) => {
+    setFormData((previous) => ({ ...previous, [field]: value }))
+  }
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    setAvatarFile(file)
+    setAvatarPreview(file ? URL.createObjectURL(file) : "")
+  }
+
+  const canProceedFromProfile = Boolean(formData.name.trim() && formData.type && formData.gender)
+  const hasValidPhoneNumber = !formData.phoneNumber || /^\d{10,11}$/.test(formData.phoneNumber)
+  const hasBirthdayInput = Boolean(formData.birthYear || formData.birthMonth || formData.birthDay)
+  const hasValidBirthday = isValidBirthday(
+    formData.birthYear,
+    formData.birthMonth,
+    formData.birthDay
+  )
+  const canProceedFromDetails =
+    (!isStudent ||
+      Boolean(
+        /^\d{6}$/.test(formData.studentNumber) &&
+        /^\d{2}$/.test(formData.cohort) &&
+        hasValidBirthday &&
+        hasValidPhoneNumber
+      )) &&
+    (!isAlumni || (/^\d{2}$/.test(formData.cohort) && (!hasBirthdayInput || hasValidBirthday))) &&
+    (!isTeacher || hasValidPhoneNumber)
+
+  const profileInitial = formData.name.trim().charAt(0).toUpperCase() || "K"
+
+  const submitMockProfile = () => {
+    navigate("/pending", { state: { name: formData.name.trim() } })
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-4 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-8">
-          <div className="text-center">
-            <p className="text-foreground text-2xl font-bold tracking-tight">KMLA Online</p>
-            <p className="text-muted-foreground mt-1.5 text-sm">Set up your profile</p>
-          </div>
+    <main className="flex min-h-svh w-full items-center justify-center p-4 md:p-10">
+      <div className="flex w-full max-w-md flex-col gap-8">
+        <header className="text-center">
+          <p className="text-foreground text-2xl font-bold tracking-tight">KMLA Online</p>
+          <p className="text-muted-foreground mt-1.5 text-sm">프로필을 설정하세요</p>
+        </header>
 
-          <div className="bg-card text-card-foreground rounded-xl border shadow-xs">
-            <div className="p-6 md:p-8">
-              <div className="mb-6 flex gap-1.5">
+        <section className="bg-card text-card-foreground rounded-xl border shadow-xs">
+          <div className="p-6 md:p-8">
+            <div className="mb-7 flex gap-1.5" aria-label={`3단계 중 ${step}단계`}>
+              {[1, 2, 3].map((progressStep) => (
                 <div
-                  className={`h-1.5 flex-1 rounded-full transition-colors ${step >= 1 ? "bg-primary" : "bg-muted"}`}
+                  key={progressStep}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                    step >= progressStep ? "bg-primary" : "bg-muted"
+                  }`}
                 />
-                <div
-                  className={`h-1.5 flex-1 rounded-full transition-colors ${step >= 2 ? "bg-primary" : "bg-muted"}`}
-                />
-              </div>
+              ))}
+            </div>
 
-              {step === 1 && (
-                <div className="flex flex-col gap-5">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="name" className="text-sm font-medium">
-                      Name
-                    </Label>
-                    <Input
-                      id="name"
-                      placeholder="Your full name"
-                      value={formData.name}
-                      onChange={(e) => updateField("name", e.target.value)}
-                      autoFocus
-                      required
-                      className="h-10"
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="type" className="text-sm font-medium">
-                      I am a...
-                    </Label>
-                    <Select value={formData.type} onValueChange={(v) => updateField("type", v)}>
-                      <SelectTrigger id="type" className="h-10">
-                        <SelectValue placeholder="Select your role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="student">Student</SelectItem>
-                        <SelectItem value="teacher">Teacher</SelectItem>
-                        <SelectItem value="alumni">Alumni</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="gender" className="text-sm font-medium">
-                      Gender
-                    </Label>
-                    <Select value={formData.gender} onValueChange={(v) => updateField("gender", v)}>
-                      <SelectTrigger id="gender" className="h-10">
-                        <SelectValue placeholder="Select your gender" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="male">Male</SelectItem>
-                        <SelectItem value="female">Female</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Button
-                    type="button"
-                    className="h-10 w-full"
-                    disabled={!canProceed()}
-                    onClick={() => setStep(2)}
-                  >
-                    Next
-                  </Button>
+            {step === 1 && (
+              <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="name">
+                    이름 <RequiredMark />
+                  </Label>
+                  <Input
+                    id="name"
+                    placeholder="이름을 입력하세요"
+                    value={formData.name}
+                    onChange={(event) => updateField("name", event.target.value)}
+                    autoFocus
+                    required
+                  />
                 </div>
-              )}
 
-              {step === 2 && (
-                <fetcher.Form method="post" className="flex flex-col gap-5">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="type">
+                    구분 <RequiredMark />
+                  </Label>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(value) => updateField("type", value as ProfileType)}
+                  >
+                    <SelectTrigger id="type">
+                      <SelectValue placeholder="구분을 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="student">재학생</SelectItem>
+                        <SelectItem value="alumni">졸업생</SelectItem>
+                        <SelectItem value="teacher">선생님</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="gender">
+                    성별 <RequiredMark />
+                  </Label>
+                  <Select
+                    value={formData.gender}
+                    onValueChange={(value) => updateField("gender", value)}
+                  >
+                    <SelectTrigger id="gender">
+                      <SelectValue placeholder="성별을 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="male">남성</SelectItem>
+                        <SelectItem value="female">여성</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={!canProceedFromProfile}
+                  onClick={() => setStep(2)}
+                >
+                  다음
+                </Button>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="flex flex-col gap-5">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="text-muted-foreground hover:text-foreground mb-1 -ml-1 rounded-lg p-1 transition-colors"
+                    className="text-muted-foreground hover:text-foreground -ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors"
+                    aria-label="이전 단계로"
                   >
-                    <ChevronLeft className="size-5" />
+                    <ChevronLeft />
                   </button>
+                  <h1 className="text-lg font-semibold">
+                    {isStudent ? "재학생 정보" : isAlumni ? "졸업생 정보" : "선생님 정보"}
+                  </h1>
+                </div>
 
-                  {error && (
-                    <p className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium">
-                      {error}
-                    </p>
-                  )}
+                {isStudent && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="studentNumber">
+                        학번 <RequiredMark />
+                      </Label>
+                      <Input
+                        id="studentNumber"
+                        inputMode="numeric"
+                        value={formData.studentNumber}
+                        onChange={(event) =>
+                          updateField(
+                            "studentNumber",
+                            event.target.value.replace(/\D/g, "").slice(0, 6)
+                          )
+                        }
+                        required
+                      />
+                    </div>
 
-                  <input type="hidden" name="name" value={formData.name} />
-                  <input type="hidden" name="type" value={formData.type} />
-                  <input type="hidden" name="gender" value={formData.gender} />
+                    <BirthdayFields
+                      required
+                      year={formData.birthYear}
+                      month={formData.birthMonth}
+                      day={formData.birthDay}
+                      onChange={updateField}
+                    />
+                  </>
+                )}
 
-                  {isStudent && (
-                    <>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="studentNumber" className="text-sm font-medium">
-                          Student number <span className="text-muted-foreground">(6 digits)</span>
-                        </Label>
-                        <Input
-                          id="studentNumber"
-                          name="studentNumber"
-                          placeholder="e.g. 250001"
-                          value={formData.studentNumber}
-                          onChange={(e) => updateField("studentNumber", e.target.value)}
-                          maxLength={6}
-                          required
-                          className="h-10"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="cohort" className="text-sm font-medium">
-                          Cohort (기수)
-                        </Label>
-                        <Input
-                          id="cohort"
-                          name="cohort"
-                          type="number"
-                          placeholder="e.g. 28"
-                          value={formData.cohort}
-                          onChange={(e) => updateField("cohort", e.target.value)}
-                          required
-                          className="h-10"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="classNo" className="text-sm font-medium">
-                          Class number (반)
-                        </Label>
-                        <Input
-                          id="classNo"
-                          name="classNo"
-                          type="number"
-                          placeholder="e.g. 3"
-                          value={formData.classNo}
-                          onChange={(e) => updateField("classNo", e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="dormRoom" className="text-sm font-medium">
-                          Dorm room
-                        </Label>
-                        <Input
-                          id="dormRoom"
-                          name="dormRoom"
-                          type="number"
-                          placeholder="e.g. 302"
-                          value={formData.dormRoom}
-                          onChange={(e) => updateField("dormRoom", e.target.value)}
-                          className="h-10"
-                        />
-                      </div>
-                    </>
-                  )}
-
+                {(isStudent || isAlumni) && (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="birthday" className="text-sm font-medium">
-                      Birthday
+                    <Label htmlFor="cohort">
+                      기수 <RequiredMark />
                     </Label>
                     <Input
-                      id="birthday"
-                      name="birthday"
-                      type="date"
-                      value={formData.birthday}
-                      onChange={(e) => updateField("birthday", e.target.value)}
-                      className="h-10"
+                      id="cohort"
+                      inputMode="numeric"
+                      placeholder="예: 28"
+                      value={formData.cohort}
+                      onChange={(event) =>
+                        updateField("cohort", event.target.value.replace(/\D/g, "").slice(0, 2))
+                      }
+                      required
                     />
                   </div>
+                )}
 
+                {isAlumni && (
+                  <BirthdayFields
+                    required={false}
+                    year={formData.birthYear}
+                    month={formData.birthMonth}
+                    day={formData.birthDay}
+                    onChange={updateField}
+                  />
+                )}
+
+                {(isStudent || isTeacher) && (
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="phoneNumber" className="text-sm font-medium">
-                      Phone number <span className="text-muted-foreground">(recommended)</span>
+                    <Label htmlFor="phoneNumber">
+                      전화번호 <OptionalText recommended={isStudent} />
                     </Label>
                     <Input
                       id="phoneNumber"
-                      name="phoneNumber"
                       type="tel"
-                      placeholder="e.g. 010-1234-5678"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      placeholder="예: 01012345678"
                       value={formData.phoneNumber}
-                      onChange={(e) => updateField("phoneNumber", e.target.value)}
-                      className="h-10"
+                      onChange={(event) =>
+                        updateField(
+                          "phoneNumber",
+                          event.target.value.replace(/\D/g, "").slice(0, 11)
+                        )
+                      }
                     />
                   </div>
+                )}
 
-                  <Button type="submit" className="h-10 w-full" disabled={loading || !canSubmit()}>
-                    {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
-                    {loading ? "Submitting..." : "Complete setup"}
-                  </Button>
-                </fetcher.Form>
-              )}
-            </div>
+                {isStudent && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="dormRoom">
+                        기숙사 방 <OptionalText />
+                      </Label>
+                      <Input
+                        id="dormRoom"
+                        type="number"
+                        min={1}
+                        placeholder="예: 302"
+                        value={formData.dormRoom}
+                        onChange={(event) => updateField("dormRoom", event.target.value)}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="classNo">
+                        반 <OptionalText />
+                      </Label>
+                      <Input
+                        id="classNo"
+                        type="number"
+                        min={1}
+                        max={10}
+                        placeholder="예: 3"
+                        value={formData.classNo}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          updateField(
+                            "classNo",
+                            value === "" ? "" : String(Math.min(10, Math.max(1, Number(value))))
+                          )
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={!canProceedFromDetails}
+                  onClick={() => setStep(3)}
+                >
+                  다음
+                </Button>
+              </div>
+            )}
+
+            {step === 3 && (
+              <form
+                className="flex flex-col gap-6"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  submitMockProfile()
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="text-muted-foreground hover:text-foreground -ml-1 w-fit rounded-lg p-1 transition-colors"
+                  aria-label="이전 단계로"
+                >
+                  <ChevronLeft />
+                </button>
+
+                <div className="text-center">
+                  <h1 className="text-lg font-semibold">프로필 이미지를 선택하세요</h1>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    건너뛰고 나중에 추가할 수도 있습니다.
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-center gap-4">
+                  <div className="relative">
+                    <Avatar className="size-28">
+                      {avatarPreview ? (
+                        <AvatarImage src={avatarPreview} alt="선택한 프로필 이미지 미리보기" />
+                      ) : null}
+                      <AvatarFallback className="text-3xl font-semibold">
+                        {profileInitial}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="bg-primary text-primary-foreground ring-background absolute right-0 bottom-0 flex size-8 items-center justify-center rounded-full ring-4">
+                      <Camera />
+                    </span>
+                  </div>
+
+                  <Label
+                    htmlFor="avatar"
+                    className="border-input hover:bg-accent hover:text-accent-foreground inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border px-4 text-sm font-medium transition-colors"
+                  >
+                    <Upload />
+                    {avatarFile ? "다른 이미지 선택" : "이미지 선택"}
+                  </Label>
+                  <Input
+                    id="avatar"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleAvatarChange}
+                    className="sr-only"
+                  />
+
+                  {avatarFile ? (
+                    <p className="text-muted-foreground max-w-full truncate text-xs">
+                      {avatarFile.name}
+                    </p>
+                  ) : null}
+                </div>
+
+                <Button type="submit" className="w-full">
+                  승인 요청하기
+                </Button>
+              </form>
+            )}
           </div>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
