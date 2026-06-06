@@ -31,7 +31,7 @@ cp .env.example .env
 npm run dev
 ```
 
-The app runs locally at `http://localhost:5173`.
+The app runs locally at `http://localhost:3000`.
 
 ## Environment Variables
 
