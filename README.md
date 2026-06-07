@@ -50,4 +50,4 @@ npm run typecheck
 
 ## Deployment
 
-Deployment is currently deployed using Netlify.
+Deployment is currently deployed using Vercel.
