@@ -90,7 +90,7 @@ Pull Request 생성:
 feature/* → dev
 ```
 
-코드 리뷰 후 병합한다.
+코드 리뷰 후 병합한다. 병합은 Squash and Merge 사용을 권장한다.
 
 ---
 
