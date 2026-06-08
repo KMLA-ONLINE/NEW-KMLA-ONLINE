@@ -8,6 +8,7 @@ updates:
       day: "wednesday"
       time: "01:00"
       timezone: "Asia/Seoul"
+    target-branch: "dev"
     groups:
       prod-deps:
         dependency-type: "production"
