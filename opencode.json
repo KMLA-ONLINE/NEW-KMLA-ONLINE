@@ -3,11 +3,12 @@
   "mcp": {
     "shadcn": {
       "type": "local",
-      "command": [
-        "npx",
-        "shadcn@latest",
-        "mcp"
-      ],
+      "command": ["npx", "shadcn@latest", "mcp"],
+      "enabled": true
+    },
+    "supabase": {
+      "type": "remote",
+      "url": "http://127.0.0.1:54321/mcp",
       "enabled": true
     }
   }

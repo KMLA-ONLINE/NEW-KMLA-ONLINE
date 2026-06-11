@@ -46,8 +46,14 @@
 - Repo-local skills are vendored upstream in `.agents/skills/`; they are general-purpose aids, not app-specific architecture docs.
 - Use `react-router-framework-mode` for route modules, `loader`/`action`, redirects, auth flow, `root.tsx`, route-generated `./+types/*`, or `react-router.config.ts` changes.
 - Use `shadcn` whenever touching `components.json`, adding/updating shadcn components, or composing UI from the existing `app/components/ui/*` primitives.
-- This repo has `opencode.json` wired to the shadcn MCP server. Prefer MCP registry search/view tools for discovery; use `npx shadcn@latest ...` only when you need CLI project info or to actually install/update code.
+- Use `supabase` for auth, schema, migrations, RLS, storage, local Supabase config, or MCP-backed Supabase work.
 - Before installing or updating shadcn components, inspect project info first and verify the resolved aliases. Do not copy registry code that assumes `@/components/ui/...` without fixing imports for this repo.
 - Use `frontend-design` only for explicit page/component redesign work. Preserve the repo's existing Tailwind v4 + shadcn token setup unless the user asks for a broader visual change.
 - Use `vercel-react-best-practices` selectively for React performance work. Ignore Next.js-specific guidance that does not apply to this React Router app.
 - Use `web-design-guidelines` only for UI/a11y/design review requests; it is an audit skill, not an implementation guide.
+
+## MCP
+- `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
+- `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54321/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
+- For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
+- This repo has local Supabase config in `supabase/config.toml` and migrations in `supabase/migrations/`.
