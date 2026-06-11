@@ -96,8 +96,8 @@ Enum notification_setting {
   all
 }
 
-Enum visibility {
-  public
+Enum space_join_policy {
+  auto_join
   invite_only
 }
 
@@ -215,7 +215,8 @@ Table spaces {
   name text [not null]
   description text [null]
   image_url text [null, note: '공간 이미지 (space-images 버킷)']
-  visibility visibility [not null, default: 'public', note: 'public = 누구나 가입, invite_only = 초대 전용']
+  join_policy space_join_policy [not null, default: 'auto_join', note: 'auto_join = 요청 즉시 가입, invite_only = 관리자 초대만 가입']
+  member_count int4 [not null, default: 0, note: '현재 멤버 수 캐시']
   created_by bigint [null, ref: > profiles.id]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
@@ -232,9 +233,15 @@ Table spaces {
   - community: 승인된 사용자라면 누구나 생성 가능, 이름 중복 가능
   - UNIQUE (name) WHERE type = 'group' (partial unique index)
   - 정확히 1명의 owner 필요 (partial unique index + 트리거, space 단위)
+  - 승인 사용자는 가입 여부와 무관하게 활성 space의 이름, 설명, 회원 수, 가입 방식을 조회 가능
+  - member_count는 space_members INSERT/DELETE 트리거로 갱신
   - created_by: ON DELETE SET NULL
   - 직접 DELETE 금지. soft_delete_space RPC로 deleted_at/deleted_by만 갱신
   '''
+
+  indexes {
+    (join_policy, member_count) [name: 'idx_spaces_active_directory']
+  }
 }
 
 Table space_members {
@@ -268,12 +275,12 @@ Table space_members {
 Table posts {
   id bigserial [pk]
   pub_id uuid [not null, unique, default: `gen_random_uuid()`, note: '외부 노출용 식별자']
-  space_id bigint [null, ref: > spaces.id]
-  space_type space_type [null, note: 'space_id가 가리키는 공간의 타입 (비정규화, 인덱스용)']
+  space_id bigint [not null, ref: > spaces.id]
+  space_type space_type [not null, note: 'space_id가 가리키는 공간의 타입 (비정규화, 인덱스용)']
   author_id bigint [not null, ref: > profiles.id]
   title text [not null]
   content text [not null]
-  is_anonymous boolean [not null, default: false, note: 'true면 anonymous_username으로 표시']
+  is_anonymous boolean [not null, default: false, note: 'true면 anonymous_username, NULL이면 익명 {author_id}로 표시']
   search_vector tsvector [null, note: 'title+content → to_tsvector STORED']
   is_pinned boolean [not null, default: false, note: '공간 내 고정 공지']
   pinned_at timestamptz [null]
@@ -302,7 +309,7 @@ Table posts {
 
   익명:
 
-  - is_anonymous = true면 anonymous_username으로 표시
+  - is_anonymous = true면 anonymous_username을 우선 표시하고, NULL이면 '익명 {author_id}' 표시
   - author_id는 그대로 저장하며 DB에서 마스킹하지 않음
   - is_anonymous는 UI 표시 규칙
 
@@ -355,7 +362,7 @@ Table comments {
   parent_id bigint [null, ref: > comments.id, note: 'null=최상위, non-null=1레벨 답글']
   content text [not null]
   search_vector tsvector [null, note: '전문 검색용 generated column']
-  is_anonymous boolean [not null, default: false]
+  is_anonymous boolean [not null, default: false, note: 'true면 anonymous_username, NULL이면 익명 {author_id}로 표시']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
   deleted_at timestamptz [null, note: '소프트 삭제; 답글이 있으면 placeholder 유지']
@@ -431,6 +438,7 @@ Table comment_reactions {
   Note: '''
   사용자당 댓글당 1개의 리액션만 가능.
   comment_id: ON DELETE RESTRICT.
+  댓글 리액션 수는 캐시하지 않고 필요 시 comment_reactions에서 집계.
   '''
 
   indexes {
@@ -652,6 +660,10 @@ Table gongangs {
   day_of_week int2 [not null, note: '0-6 (일=0, 월=1, ...)']
   start_minute int2 [not null, note: '00:00 기준 분 (540 = 09:00)']
   end_minute int2 [not null, note: '종료 분 (exclusive). 기본 120분.']
+  valid_from date [not null, note: '반복 일정 시작일']
+  valid_until date [not null, note: '반복 일정 종료일']
+  time_range int4range [not null, note: 'start_minute/end_minute 기반 generated stored column']
+  validity_range daterange [not null, note: 'valid_from/valid_until 기반 generated stored column']
   created_at timestamptz [not null, default: `now()`]
 
   Note: '''
@@ -659,11 +671,10 @@ Table gongangs {
   location 값: floor_b1, floor_2, floor_4, floor_10
 
   CHECK: day_of_week 0-6, start_minute 0-1439, end_minute 1-1440, start < end
-  동일 위치/소유자의 중복 예약은 exclusion constraint로 방지
+  동일 위치/day/time_range/validity_range 중복 예약은 exclusion constraint로 방지
   '''
 
   indexes {
-    (location, day_of_week, start_minute, end_minute) [unique]
     (owner_id) [name: 'idx_gongangs_owner']
     (location, day_of_week, start_minute) [name: 'idx_gongangs_location_time']
   }
@@ -696,16 +707,47 @@ Table clubs {
 Table club_apply_rounds {
   id bigserial [pk]
   name text [not null, note: '예: 2026 1학기 동아리 신청']
-  starts_at timestamptz [null]
-  ends_at timestamptz [null]
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null]
+  apply_range tstzrange [not null, note: 'starts_at/ends_at 기반 generated stored column']
   created_by bigint [null, ref: > profiles.id]
   created_at timestamptz [not null, default: `now()`]
 
   Note: '''
   라운드 방식 — 상태 대신 라운드 시작/종료로 신청 기간 관리.
   is_active 제거 (starts_at/ends_at으로 추론).
-  활성 라운드는 starts_at NOT NULL 권장.
+  starts_at < ends_at CHECK 적용.
+  apply_range가 겹치는 round는 exclusion constraint로 차단.
   '''
+}
+
+/* =========================================================
+   Private cleanup queue
+   ========================================================= */
+
+Table private.attachment_cleanup_queue {
+  id bigserial [pk]
+  storage_bucket text [not null]
+  storage_path text [not null]
+  requested_by bigint [null, ref: > profiles.id]
+  requested_at timestamptz [not null, default: `now()`]
+  available_at timestamptz [not null, default: `now()`]
+  attempts int4 [not null, default: 0]
+  last_error text [null]
+  processed_at timestamptz [null]
+
+  Note: '''
+  Data API 비노출 private schema.
+  request_attachment_removal RPC만 enqueue하고 service_role worker만 dequeue/상태 갱신.
+  Storage object 삭제 성공 후 대응 attachment 행을 삭제.
+  requested_by: ON DELETE SET NULL.
+  CHECK: attempts >= 0.
+  '''
+
+  indexes {
+    (storage_bucket, storage_path) [unique]
+    (processed_at, available_at) [name: 'idx_attachment_cleanup_queue_pending']
+  }
 }
 
 Table clubs_apply {
@@ -741,6 +783,7 @@ Table clubs_apply {
 //   - space_id: 특정 공간으로 제한
 //   - posts.title/content + comments.content 에서 ILIKE '%query%' 매칭
 //   - is_anonymous = true인 경우에도 author_id는 검색 가능 (admin용)
+//   - author_name은 is_anonymous = true이면 anonymous_username, NULL이면 익명 {author_id}
 //   - deleted_at IS NULL 인 행만 포함
 //   - 결과: post_id, title, content_snippet, author_name, space_name, created_at, match_type
 //
@@ -797,4 +840,8 @@ TableGroup clubs_domain {
   clubs
   club_apply_rounds
   clubs_apply
+}
+
+TableGroup private_jobs {
+  private.attachment_cleanup_queue
 }
