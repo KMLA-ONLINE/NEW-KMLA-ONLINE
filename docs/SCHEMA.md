@@ -18,9 +18,11 @@ Project school_community {
   ID 전략:
 
 - 내부 테이블은 bigserial PK 사용 (성능)
-- 외부 노출이 필요한 테이블(profiles, spaces, posts)은 uuid pub_id 컬럼 추가
-- profiles.auth_user_id는 auth.users.id (uuid) 참조
+- 외부 노출이 필요한 테이블(profiles, spaces, posts)은 일반 uuid pub_id 컬럼 추가
+- pub_id는 NOT NULL + UNIQUE + gen_random_uuid() 기본값 사용
+- profiles.auth_user_id는 탈퇴 후에도 profile/content를 보존하기 위해 nullable로 유지하고 auth.users.id (uuid)를 참조
 - DBML `ref`에 ON DELETE 생략 — 각 테이블 Notes에 명시된 대로 마이그레이션 SQL에서 직접 추가
+- ON DELETE CASCADE는 사용하지 않으며, 영구 삭제가 필요한 경우 관리 RPC/정리 Job이 참조 행을 명시적으로 정리
 
   Spaces (통합):
 
@@ -78,6 +80,7 @@ Enum profile_status {
   pending
   accepted
   rejected
+  withdrawn
 }
 
 Enum member_role {
@@ -99,10 +102,10 @@ Enum visibility {
 }
 
 Enum gongang_location {
-  B1
-  two
-  four
-  ten
+  floor_b1
+  floor_2
+  floor_4
+  floor_10
 }
 
 Enum space_type {
@@ -121,8 +124,8 @@ Enum club_type {
 
 Table profiles {
   id bigserial [pk]
-  auth_user_id uuid [not null, unique, ref: > auth.users.id]
-  pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
+  auth_user_id uuid [null, unique, ref: > auth.users.id]
+  pub_id uuid [not null, unique, default: `gen_random_uuid()`, note: '외부 노출용 식별자']
   name text [not null, note: 'OAuth에서 가져온 초기 표시 이름']
   anonymous_username text [null, note: '익명 게시물/댓글에 표시될 이름']
   role app_role [not null, default: 'user', note: '관리자만 변경 가능']
@@ -142,6 +145,7 @@ Table profiles {
   status_updated_by bigint [null, ref: > profiles.id]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
+  deleted_at timestamptz [null, note: 'Auth 탈퇴 시 profile 보존 및 익명화 표시용']
 
   Note: '''
   마이그레이션에서 추가할 제약:
@@ -150,20 +154,21 @@ Table profiles {
 - CHECK (class_no IS NULL OR class_no > 0)
 - CHECK (student_number IS NULL OR student_number ~ '^\d{6}$')
 - CHECK (dorm_room IS NULL OR dorm_room > 0)
-- CHECK (type <> 'student' OR (student_number IS NOT NULL AND cohort IS NOT NULL))
+- CHECK (deleted_at IS NOT NULL OR status = 'none' OR type <> 'student' OR (student_number IS NOT NULL AND cohort IS NOT NULL))
 - UNIQUE (student_number)
 
   RLS:
 
-- 사용자는 자신의 안전한 필드만 수정 가능
-- role/status/status_updated_*는 관리자 전용
-- anonymous_username은 본인만 읽기 가능, 익명 게시물에만 타인에게 표시
+- 사용자는 column-level GRANT로 허용된 일반 프로필 필드만 직접 수정 가능
+- role/status/status_updated_* 및 탈퇴 처리는 RPC 전용
+- 승인된 사용자는 profile 행을 조회할 수 있으며 별도 컬럼 마스킹은 하지 않음
 
   승인 흐름:
 
 - Google OAuth만으로 커뮤니티 접근 불가
 - status = none → 온보딩 제출 → pending → 관리자 승인/거절
 - 승인된 사용자만 메인 라우트 접근 가능
+- Auth 탈퇴 시 profile은 삭제하지 않고 auth_user_id를 NULL로 만들며 status=withdrawn, deleted_at을 기록하고 개인정보를 익명화
   '''
   }
 
@@ -205,7 +210,7 @@ Table user_permissions {
 
 Table spaces {
   id bigserial [pk]
-  pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
+  pub_id uuid [not null, unique, default: `gen_random_uuid()`, note: '외부 노출용 식별자']
   type space_type [not null, note: 'group = 공식 그룹, community = 사용자 생성']
   name text [not null]
   description text [null]
@@ -214,6 +219,8 @@ Table spaces {
   created_by bigint [null, ref: > profiles.id]
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [null]
+  deleted_at timestamptz [null, note: '공간 소프트 삭제']
+  deleted_by bigint [null, ref: > profiles.id]
 
   Note: '''
   group과 community를 통합한 단일 테이블.
@@ -226,6 +233,7 @@ Table spaces {
   - UNIQUE (name) WHERE type = 'group' (partial unique index)
   - 정확히 1명의 owner 필요 (partial unique index + 트리거, space 단위)
   - created_by: ON DELETE SET NULL
+  - 직접 DELETE 금지. soft_delete_space RPC로 deleted_at/deleted_by만 갱신
   '''
 }
 
@@ -259,7 +267,7 @@ Table space_members {
 
 Table posts {
   id bigserial [pk]
-  pub_id uuid [unique, default: `uuid_generate_v7()`, note: '외부 노출용 식별자']
+  pub_id uuid [not null, unique, default: `gen_random_uuid()`, note: '외부 노출용 식별자']
   space_id bigint [null, ref: > spaces.id]
   space_type space_type [null, note: 'space_id가 가리키는 공간의 타입 (비정규화, 인덱스용)']
   author_id bigint [not null, ref: > profiles.id]
@@ -285,7 +293,7 @@ Table posts {
   - CHECK (space_id IS NOT NULL)
   - CHECK (is_pinned 관련 일관성)
   - CHECK (comment_count >= 0, reaction_count >= 0)
-  - space_type 비정규화: INSERT/UPDATE 트리거로 spaces.type에서 자동 설정
+  - space_type 비정규화: INSERT/UPDATE 트리거로 spaces.type에서 자동 설정하고 spaces.type 변경 시 모든 posts/notifications에 전파
   - search_vector = to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')) STORED
   - ⚠ to_tsvector('simple')은 한글 형태소 분석 불가. pg_trgm ILIKE 검색을 함께 사용할 것
   - author는 space의 멤버여야 함
@@ -295,14 +303,14 @@ Table posts {
   익명:
 
   - is_anonymous = true면 anonymous_username으로 표시
-  - author_id는 그대로 저장 (소유권/RLS용)
-  - owner/admin은 실제 작성자 확인 가능
+  - author_id는 그대로 저장하며 DB에서 마스킹하지 않음
+  - is_anonymous는 UI 표시 규칙
 
   수정/삭제:
 
   - 작성자는 제목/내용/첨부파일 무제한 수정 가능
   - is_pinned 등은 owner/admin만 변경
-  - 소프트 삭제 (deleted_at IS NULL 필터링)
+  - 직접 DELETE 금지. soft_delete_post RPC로 deleted_at/deleted_by만 갱신
   '''
 
   indexes {
@@ -311,7 +319,7 @@ Table posts {
     (space_type, created_at) [name: 'idx_posts_space_type_created_at']
     (author_id, created_at) [name: 'idx_posts_author_created_at']
     (deleted_at, created_at) [name: 'idx_posts_deleted_created_at']
-    (search_vector) [name: 'idx_posts_search_vector']
+    (search_vector) [name: 'idx_posts_search_vector', type: gin]
   }
 }
 
@@ -330,7 +338,7 @@ Table post_attachments {
   created_at timestamptz [not null, default: `now()`]
 
   Note: '''
-  post_id: ON DELETE CASCADE
+  post_id: ON DELETE RESTRICT
   CHECK: size_bytes >= 0, sort_order >= 0, width/height > 0
   '''
 
@@ -360,15 +368,16 @@ Table comments {
 
   CHECK: parent_id <> id
   부모와 자식은 같은 post_id여야 함 (트리거 또는 RPC로 강제)
-  post.comment_count는 모든 댓글 포함 (답글 포함)
+  post.comment_count는 deleted_at IS NULL인 댓글만 포함 (답글 포함)
   search_vector = to_tsvector('simple', coalesce(content, '')) STORED
+  직접 DELETE 금지. soft_delete_comment RPC로 deleted_at/deleted_by만 갱신
   '''
 
   indexes {
     (post_id, parent_id, created_at) [name: 'idx_comments_tree']
     (author_id, created_at) [name: 'idx_comments_author_created_at']
     (deleted_at, created_at) [name: 'idx_comments_deleted_created_at']
-    (search_vector) [name: 'idx_comments_search_vector']
+    (search_vector) [name: 'idx_comments_search_vector', type: gin]
   }
 }
 
@@ -401,7 +410,7 @@ Table post_reactions {
   Note: '''
   사용자당 게시물당 1개의 리액션만 가능.
   리액션 종류 변경은 같은 행의 reaction_type_id를 UPDATE.
-  취소는 행 삭제. post_id: ON DELETE CASCADE.
+  취소는 행 삭제. post_id: ON DELETE RESTRICT.
   '''
 
   indexes {
@@ -421,7 +430,7 @@ Table comment_reactions {
 
   Note: '''
   사용자당 댓글당 1개의 리액션만 가능.
-  comment_id: ON DELETE CASCADE.
+  comment_id: ON DELETE RESTRICT.
   '''
 
   indexes {
@@ -461,7 +470,8 @@ Table direct_chat_pairs {
   1:1 채팅의 중복 방지용.
   중요: CHECK (user1_id < user2_id), UNIQUE (user1_id, user2_id)
   room_id는 is_group = false인 방이어야 함.
-  생성 RPC는 chat_rooms + direct_chat_pairs + chat_room_members 2개를 원자적으로 생성.
+  생성 RPC는 호출자와 상대방으로만 chat_rooms + direct_chat_pairs + chat_room_members 2개를 원자적으로 생성.
+  direct_chat_pairs와 chat_room_members의 두 멤버가 정확히 일치해야 함.
   '''
 
   indexes {
@@ -477,7 +487,9 @@ Table chat_room_members {
   joined_at timestamptz [not null, default: `now()`]
 
   Note: '''
-  방별 역할 없음. 기존 멤버는 누구나 다른 사용자 추가 가능.
+  방별 역할 없음.
+  1:1 방 멤버는 create_direct_chat RPC가 생성한 정확히 2명으로 고정하며 직접 추가/삭제 불가.
+  단체 방은 기존 멤버가 다른 사용자를 추가할 수 있음.
   필요시 추후 role 추가.
   '''
 
@@ -503,18 +515,19 @@ Table messages {
   Note: '''
   CHECK: parent_id <> id
   sender는 room의 멤버여야 함
+  parent_id는 같은 room의 최상위 메시지만 가리킬 수 있음
   search_vector = to_tsvector('simple', coalesce(content, '')) STORED
   ⚠ to_tsvector('simple')은 한글 형태소 분석 불가. pg_trgm ILIKE 검색을 함께 사용할 것
 
   수정: 15분 이내만 가능
-  삭제: 소프트 삭제
+  삭제: 직접 DELETE 금지. soft_delete_message RPC로 소프트 삭제
   '''
 
   indexes {
     (room_id, created_at) [name: 'idx_messages_room_created_at']
     (sender_id, created_at) [name: 'idx_messages_sender_created_at']
     (parent_id, created_at) [name: 'idx_messages_parent_created_at']
-    (search_vector) [name: 'idx_messages_search_vector']
+    (search_vector) [name: 'idx_messages_search_vector', type: gin]
   }
 }
 
@@ -532,7 +545,7 @@ Table message_attachments {
   created_at timestamptz [not null, default: `now()`]
 
   Note: '''
-  message_id: ON DELETE CASCADE.
+  message_id: ON DELETE RESTRICT.
   CHECK: size_bytes >= 0, sort_order >= 0, width/height > 0
   '''
 
@@ -552,7 +565,7 @@ Table message_reactions {
 
   Note: '''
   사용자당 메시지당 1개의 리액션만 가능.
-  message_id: ON DELETE CASCADE.
+  message_id: ON DELETE RESTRICT.
   '''
 
   indexes {
@@ -618,7 +631,7 @@ Table notifications {
 
   Note: '''
   인앱 알림 최소 테이블. 푸시 토큰 테이블 아님.
-  space_type은 posts.space_type과 동일한 방식으로 비정규화.
+  space_type은 posts.space_type과 동일한 방식으로 비정규화하며 spaces.type 변경 시 전파 트리거로 동기화.
   '''
 
   indexes {
@@ -643,6 +656,7 @@ Table gongangs {
 
   Note: '''
   week_start 제거 — 학기/년 단위 주간 반복 스케줄.
+  location 값: floor_b1, floor_2, floor_4, floor_10
 
   CHECK: day_of_week 0-6, start_minute 0-1439, end_minute 1-1440, start < end
   동일 위치/소유자의 중복 예약은 exclusion constraint로 방지
