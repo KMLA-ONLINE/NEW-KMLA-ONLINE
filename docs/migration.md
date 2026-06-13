@@ -6,8 +6,8 @@
 
 ## 실행 규칙
 
-1. 아래 01 ~ 17 순서를 변경하지 않는다.
-2. 각 SQL 파일은 `supabase migration new {name}`으로 생성한다. 타임스탬프를 직접 작성하지 않는다.
+1. 아래 migration 순서를 변경하지 않는다.
+2. 아래 실제 migration 파일을 순서대로 유지·수정한다. 새 단계가 필요한 경우에만 `supabase migration new {name}`으로 생성하고 타임스탬프를 직접 작성하지 않는다.
 3. 테이블·컬럼·enum의 최종 정의는 이 문서의 데이터 모델 계약을 따른다.
 4. 이 문서에 없는 객체·컬럼·권한·동작은 임의로 추가하지 않는다.
 5. `ON DELETE CASCADE`를 사용하지 않는다.
@@ -23,75 +23,57 @@
 
 ## 생성 순서
 
-| 순서 | migration 이름         | 주요 작업                               |
-| ---- | ---------------------- | --------------------------------------- |
-| 01   | `security_defaults`    | 기본 Data API 권한 회수, private schema |
-| 02   | `extensions`           | 확장 활성화                             |
-| 03   | `enums`                | enum 생성                               |
-| 04   | `tables_identity`      | profiles, permissions                   |
-| 05   | `tables_spaces`        | spaces, space_members                   |
-| 06   | `tables_content`       | posts, attachments, comments            |
-| 07   | `tables_reactions`     | reaction registry 및 reactions          |
-| 08   | `tables_chat`          | chat 전체 테이블                        |
-| 09   | `tables_notifications` | notifications                           |
-| 10   | `tables_utilities`     | gongangs, song_requests                 |
-| 11   | `tables_clubs`         | clubs 및 신청                           |
-| 12   | `indexes`              | 명시된 필수 인덱스                      |
-| 13   | `constraints`          | CHECK, unique, exclusion, FK            |
-| 14   | `triggers`             | 검증·동기화·캐시 트리거                 |
-| 15   | `rpc_functions`        | mutation/search/cleanup RPC             |
-| 16   | `rls_and_grants`       | RLS, helper, GRANT                      |
-| 17   | `storage_buckets`      | Storage, cleanup queue, jobs            |
+| section | 실제 migration 파일                                      | 주요 작업                                  |
+| ------- | ---------------------------------------------------------- | ------------------------------------------ |
+| 00   | `20260611072414_remote_schema.sql`                         | 기존 remote baseline                       |
+| 01   | `20260612001825_foundation.sql`                            | 기본 권한 회수, private schema, 확장, enum |
+| 04   | `20260612001830_identity.sql`                              | identity 테이블, Auth 생성 trigger, RLS    |
+| 05   | `20260612120344_tables_spaces.sql`                         | spaces, space_members                      |
+| 06   | `20260612120411_tables_content.sql`                        | posts, attachments, comments               |
+| 07   | `20260612120414_tables_reactions.sql`                      | reaction registry 및 reactions             |
+| 08   | `20260612120417_tables_chat.sql`                           | chat 전체 테이블                           |
+| 09   | `20260612120420_tables_notifications.sql`                  | notifications                              |
+| 10   | `20260612120424_tables_utilities.sql`                      | gongangs, song_requests                    |
+| 11   | `20260612120427_tables_clubs.sql`                          | clubs 및 신청                              |
+| 12   | `20260612120836_indexes.sql`                               | 명시된 필수 인덱스                         |
+| 13   | `20260612120839_constraints.sql`                           | CHECK, unique, exclusion, FK               |
+| 14   | `20260612120843_triggers.sql`                              | 검증·동기화·캐시 트리거                    |
+| 15   | `20260612121242_rpc_functions.sql`                         | mutation/search/cleanup RPC                |
+| 16   | `20260612121246_rls_and_grants.sql`                        | RLS, helper, GRANT                         |
+| 17   | `20260612121249_storage_buckets.sql`                       | Storage, cleanup queue, jobs               |
 
 ---
 
-## 01. security_defaults
+## 00. remote baseline
 
-파일 생성:
+실제 파일: `supabase/migrations/20260611072414_remote_schema.sql`
 
-```bash
-supabase migration new security_defaults
-```
+- Supabase 관리 extension, public schema comment, realtime publication, public schema usage grant를 재현하는 baseline이다.
+- 이후 application 객체는 이 파일에 추가하지 않고 section 01 이후 파일에서 관리한다.
+
+---
+
+## 01-03. foundation
+
+실제 파일: `supabase/migrations/20260612001825_foundation.sql`
 
 구현:
 
 - `postgres` 역할의 public schema 기본 privileges에서 아래 권한을 회수한다.
-  - tables: `SELECT, INSERT, UPDATE, DELETE`
-  - sequences: `USAGE, SELECT`
-  - functions: `EXECUTE`
+  - tables, sequences, functions: `ALL`
   - 대상 역할: `anon`, `authenticated`, `service_role`
 - 함수의 `PUBLIC EXECUTE` 기본 권한을 회수한다.
 - 비노출 `private` schema를 생성한다.
 - private schema를 Data API exposed schema에 포함하지 않는다.
 
----
-
-## 02. extensions
-
-파일 생성:
-
-```bash
-supabase migration new extensions
-```
-
-활성화:
+추가 구현 — extensions:
 
 - `pg_trgm`
 - `btree_gist`
 - 외부 UUID는 `gen_random_uuid()`를 사용한다.
 - 내부 PK는 `bigserial`을 사용한다.
 
----
-
-## 03. enums
-
-파일 생성:
-
-```bash
-supabase migration new enums
-```
-
-생성:
+추가 구현 — enums:
 
 - `app_role`: `user`, `admin`
 - `profile_gender`: `male`, `female`
@@ -175,7 +157,6 @@ posts(
   author_id bigint NOT NULL → profiles.id,
   title text NOT NULL, content text NOT NULL,
   is_anonymous boolean NOT NULL DEFAULT false,
-  search_vector tsvector GENERATED STORED,
   is_pinned boolean NOT NULL DEFAULT false,
   pinned_at timestamptz?, pinned_by bigint? → profiles.id,
   comment_count int4 NOT NULL DEFAULT 0,
@@ -200,7 +181,6 @@ comments(
   author_id bigint NOT NULL → profiles.id,
   parent_id bigint? → comments.id,
   content text NOT NULL,
-  search_vector tsvector GENERATED STORED,
   is_anonymous boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz?, deleted_at timestamptz?, deleted_by bigint? → profiles.id
@@ -259,7 +239,6 @@ messages(
   sender_id bigint NOT NULL → profiles.id,
   parent_id bigint? → messages.id,
   content text NOT NULL,
-  search_vector tsvector GENERATED STORED,
   is_edited boolean NOT NULL DEFAULT false,
   edited_at timestamptz?, deleted_at timestamptz?, deleted_by bigint? → profiles.id,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -363,17 +342,23 @@ private.attachment_cleanup_queue(
   last_error text?, processed_at timestamptz?,
   UQ(storage_bucket, storage_path)
 )
+
+private.upload_authorization_events(
+  id bigserial PK,
+  profile_id bigint NOT NULL → profiles.id,
+  storage_bucket text NOT NULL,
+  storage_path text NOT NULL,
+  size_bytes int8 NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UQ(storage_bucket, storage_path)
+)
 ```
 
 ---
 
-## 04. tables_identity
+## 04. identity
 
-파일 생성:
-
-```bash
-supabase migration new tables_identity
-```
+실제 파일: `supabase/migrations/20260612001830_identity.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -388,7 +373,8 @@ supabase migration new tables_identity
 - `user_permissions.granted_by`: `ON DELETE SET NULL`
 - `user_permissions`: `(user_id, permission_key)` 복합 PK
 - profile 최초 생성은 Auth trigger 또는 service-role 서버 경로만 사용한다.
-- `anonymous_username`은 nullable이며, non-NULL 값은 trim 후 1 ~ 15자와 대소문자 비구분 전역 unique를 강제한다.
+- Auth INSERT trigger는 `auth_user_id`만 신뢰 식별자로 사용하고 `name`은 user metadata 표시 이름을 trim한 앞 50자로 사용하되 없거나 비어 있으면 `사용자`로 저장한다. user metadata를 role/status/permission 판정에 사용하지 않는다.
+- `anonymous_username`은 nullable이며, non-NULL 값은 trim 후 1 ~ 50자와 대소문자 비구분 전역 unique를 강제한다.
 - Auth 사용자 직접 삭제 시 owner/app admin이면 거부하고, 나머지는 profile을 withdrawn·익명화 처리한다.
 - withdrawn 익명화 시 `name = '탈퇴한 사용자'`, `role = 'user'`, `anonymous_username`, `student_number`, `class_no`, `cohort`, `gender`, `phone_number`, `avatar_url`, `birthday`, `description`, `dorm_room`을 NULL로 만든다. `id`, `pub_id`, `type`, 생성·상태 감사 필드는 보존한다.
 - profile 상태 전이는 `none/rejected → pending`은 본인 onboarding RPC, `pending → accepted/rejected`는 app admin review RPC, `accepted → withdrawn`은 본인 withdrawal RPC로 처리한다. 그 외 상태 변경은 app admin lifecycle RPC만 허용한다.
@@ -396,15 +382,27 @@ supabase migration new tables_identity
 - permissions 초기 행으로 `gongang`, `karaoke`를 생성한다.
 - profile CHECK는 section 13을 정본으로 삼는다.
 
+이 migration에서 identity RLS와 GRANT도 함께 구현:
+
+- `profiles`, `permissions`, `user_permissions`에 RLS를 활성화한다.
+- `private.current_profile_id()`와 `private.is_accepted_user()`를 이 migration에서 생성한다.
+- 두 helper는 `STABLE SECURITY DEFINER SET search_path = ''`와 fully-qualified 객체명을 사용한다.
+- `private.current_profile_id()`는 상태와 무관하게 현재 auth user의 profile id를 반환하며 profile이 없으면 NULL을 반환한다.
+- `private.is_accepted_user()`는 현재 profile의 `status = 'accepted' AND deleted_at IS NULL`을 검사한다.
+- `authenticated`에 private schema `USAGE`와 위 두 helper `EXECUTE`만 부여한다.
+- `profiles` SELECT: 본인은 상태와 무관하게 조회하고, accepted 사용자는 deleted되지 않은 accepted profile을 조회한다.
+- `profiles` UPDATE: accepted 본인이 `name`, `gender`, `phone_number`, `birthday`, `description`만 직접 변경한다.
+- `permissions` SELECT: accepted 사용자만 조회한다.
+- `user_permissions` SELECT: 본인 행만 조회한다.
+- identity 테이블의 client INSERT/DELETE는 허용하지 않는다.
+- `service_role`에 identity 테이블 CRUD와 `profiles_id_seq`의 `USAGE, SELECT`를 명시적으로 부여한다.
+- `anon`에는 identity 테이블, private schema, helper 권한을 부여하지 않는다.
+
 ---
 
 ## 05. tables_spaces
 
-파일 생성:
-
-```bash
-supabase migration new tables_spaces
-```
+실제 파일: `supabase/migrations/20260612120344_tables_spaces.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -424,18 +422,14 @@ supabase migration new tables_spaces
 - `private.is_space_member()`는 accepted·비탈퇴 profile, 활성 space, `banned_at IS NULL` membership만 true로 처리한다.
 - accepted 사용자는 community를 생성할 수 있고 group 생성·삭제는 app admin만 수행한다.
 - active group 이름은 `lower(btrim(name))` 기준 전역 unique다. community 이름 중복은 허용한다.
-- space name은 trim 후 1 ~ 20자, description은 최대 5,000자다.
+- space name은 trim 후 1 ~ 100자, description은 최대 5,000자다.
 - `member_count`는 banned 상태를 포함한 현재 `space_members` 행 수다. role/notification/ban UPDATE는 count를 변경하지 않는다.
 
 ---
 
 ## 06. tables_content
 
-파일 생성:
-
-```bash
-supabase migration new tables_content
-```
+실제 파일: `supabase/migrations/20260612120411_tables_content.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -449,13 +443,11 @@ supabase migration new tables_content
 - `posts.space_type`은 parent space type과 동기화한다.
 - author/parent/attachment FK는 `ON DELETE RESTRICT`를 사용한다.
 - `pinned_by`, `deleted_by`는 `ON DELETE SET NULL`을 사용한다.
-- posts/comments의 `search_vector`는 generated stored column으로 생성한다.
-- `posts.search_vector = setweight(to_tsvector('simple', coalesce(title, '')), 'A') || setweight(to_tsvector('simple', coalesce(content, '')), 'B')`
-- `comments.search_vector = to_tsvector('simple', coalesce(content, ''))`
+- post/comment 검색은 원문과 query를 `lower()` 처리하고 모든 공백을 제거한 뒤 `ILIKE '%정규화 query%'`로 비교한다.
 - comments는 1레벨 답글만 허용한다.
 - post/comment는 직접 hard delete하지 않는다.
 - 삭제 댓글은 답글이 있으면 고정 placeholder로 노출하고, 답글이 없으면 숨긴다.
-- 익명 표시명은 `anonymous_username`, NULL이면 `익명 {author_id 앞 2자리}`를 사용한다.
+- 익명 표시명은 `anonymous_username`, NULL이면 `익명 {author_id}`를 사용한다.
 - `anonymous_username` 변경은 기존 익명 post/comment 표시에도 즉시 소급 적용된다.
 - post feed는 `(created_at DESC, id DESC)` keyset cursor를 사용한다.
 - 페이지 사이 soft delete는 다음 페이지에서 제외하며 완전한 snapshot 일관성은 제공하지 않는다.
@@ -463,20 +455,14 @@ supabase migration new tables_content
 - posts 직접 UPDATE는 작성자의 활성 post에 대해 `title`, `content`, `is_anonymous`만 허용한다.
 - comments 직접 INSERT 입력은 `post_id`, `parent_id`, `content`, `is_anonymous`만 허용하고 `author_id`는 서버에서 결정한다.
 - comments 직접 UPDATE는 작성자의 활성 comment `content`만 허용한다.
-- post title은 trim 후 1 ~ 40자, post content는 trim 후 1 ~ 50,000자, comment content는 trim 후 1 ~ 1,000자다.
+- post title은 trim 후 1 ~ 200자, post content는 trim 후 1 ~ 50,000자, comment content는 trim 후 1 ~ 10,000자다.
 - comment placeholder 문자열은 `삭제된 댓글입니다.`로 고정하고 `soft_delete_comment()`만 기록할 수 있다.
-
-> **search_vector 변경 근거** : 원본은 단순 concatenation이었으나, section 15 검색 RPC가 `ts_rank`를 사용할 수 있도록 title(A)과 content(B)에 가중치를 분리하여 저장한다. 자세한 내용은 "검색 정확도 개선" 절을 참고한다.
 
 ---
 
 ## 07. tables_reactions
 
-파일 생성:
-
-```bash
-supabase migration new tables_reactions
-```
+실제 파일: `supabase/migrations/20260612120414_tables_reactions.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -506,11 +492,7 @@ supabase migration new tables_reactions
 
 ## 08. tables_chat
 
-파일 생성:
-
-```bash
-supabase migration new tables_chat
-```
+실제 파일: `supabase/migrations/20260612120417_tables_chat.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -532,9 +514,9 @@ supabase migration new tables_chat
 - direct room 생성은 `create_direct_chat()`만 사용한다.
 - `create_direct_chat()`은 정규화 pair를 키로 transaction advisory lock을 획득한 뒤 기존 pair 재조회 또는 신규 생성하여 동시 요청에도 orphan room 없이 하나의 room만 반환한다.
 - group room membership 변경은 RPC만 사용한다.
-- direct room name은 NULL, group room name은 trim 후 1 ~ 30자다.
+- direct room name은 NULL, group room name은 trim 후 1 ~ 100자다.
 - message parent는 동일 room의 활성 최상위 message만 허용한다.
-- `messages.search_vector = to_tsvector('simple', coalesce(content, ''))`
+- message 검색은 원문과 query를 `lower()` 처리하고 모든 공백을 제거한 뒤 `ILIKE '%정규화 query%'`로 비교한다.
 - message 수정은 작성 후 15분까지만 허용한다.
 - message soft delete는 시간 제한 없이 sender 본인에게 허용한다.
 - 삭제 message 본문은 숨기고 기존 답글은 유지한다.
@@ -554,11 +536,7 @@ supabase migration new tables_chat
 
 ## 09. tables_notifications
 
-파일 생성:
-
-```bash
-supabase migration new tables_notifications
-```
+실제 파일: `supabase/migrations/20260612120420_tables_notifications.sql`
 
 데이터 모델 계약에 따라 `notifications`를 생성한다.
 
@@ -570,18 +548,16 @@ supabase migration new tables_notifications
 - recipient는 자신의 notification만 조회
 - recipient가 직접 변경 가능한 컬럼은 `read_at`만 허용
 - 읽은 notification은 생성 후 30일 뒤 cleanup
-- notification title은 최대 100자, body는 최대 1,000자이며 둘 중 하나 이상은 trim 후 non-empty여야 한다.
+- notification title은 최대 200자, body는 최대 2,000자이며 둘 중 하나 이상은 trim 후 non-empty여야 한다.
 - `space_type`은 notification INSERT 시 parent space type에서 서버가 설정한다.
+- comment target은 대응 post와 space를, post target은 대응 space를 서버에서 유도한다. message target은 space/post/comment target과 함께 사용할 수 없다.
+- supplied target ID끼리 관계가 일치하지 않거나 recipient가 accepted 상태가 아니면 생성을 거부한다.
 
 ---
 
 ## 10. tables_utilities
 
-파일 생성:
-
-```bash
-supabase migration new tables_utilities
-```
+실제 파일: `supabase/migrations/20260612120424_tables_utilities.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -605,11 +581,7 @@ supabase migration new tables_utilities
 
 ## 11. tables_clubs
 
-파일 생성:
-
-```bash
-supabase migration new tables_clubs
-```
+실제 파일: `supabase/migrations/20260612120427_tables_clubs.sql`
 
 데이터 모델 계약에 따라 생성:
 
@@ -632,11 +604,7 @@ supabase migration new tables_clubs
 
 ## 12. indexes
 
-파일 생성:
-
-```bash
-supabase migration new indexes
-```
+실제 파일: `supabase/migrations/20260612120836_indexes.sql`
 
 구현:
 
@@ -644,13 +612,10 @@ supabase migration new indexes
 - identity:
   - `idx_profiles_status_deleted_at`: profiles `(status, deleted_at)`
 - 검색:
-  - `idx_posts_search_vector`: posts `USING gin(search_vector)`
-  - `idx_comments_search_vector`: comments `USING gin(search_vector)`
-  - `idx_messages_search_vector`: messages `USING gin(search_vector)`
-  - `idx_posts_title_trgm`: posts `USING gin(title gin_trgm_ops) WHERE deleted_at IS NULL`
-  - `idx_posts_content_trgm`: posts `USING gin(content gin_trgm_ops) WHERE deleted_at IS NULL`
-  - `idx_comments_content_trgm`: comments `USING gin(content gin_trgm_ops) WHERE deleted_at IS NULL`
-  - `idx_messages_content_trgm`: messages `USING gin(content gin_trgm_ops) WHERE deleted_at IS NULL`
+  - `idx_posts_title_normalized_trgm`: posts `USING gin((regexp_replace(lower(title), '\s+', '', 'g')) gin_trgm_ops) WHERE deleted_at IS NULL`
+  - `idx_posts_content_normalized_trgm`: posts `USING gin((regexp_replace(lower(content), '\s+', '', 'g')) gin_trgm_ops) WHERE deleted_at IS NULL`
+  - `idx_comments_content_normalized_trgm`: comments `USING gin((regexp_replace(lower(content), '\s+', '', 'g')) gin_trgm_ops) WHERE deleted_at IS NULL`
+  - `idx_messages_content_normalized_trgm`: messages `USING gin((regexp_replace(lower(content), '\s+', '', 'g')) gin_trgm_ops) WHERE deleted_at IS NULL`
 - spaces/membership:
   - `idx_spaces_active_directory`: spaces `(join_policy, member_count) WHERE deleted_at IS NULL`
   - `idx_space_members_user_joined_at`: space_members `(user_id, joined_at)`
@@ -720,11 +685,7 @@ supabase migration new indexes
 
 ## 13. constraints
 
-파일 생성:
-
-```bash
-supabase migration new constraints
-```
+실제 파일: `supabase/migrations/20260612120839_constraints.sql`
 
 구현:
 
@@ -801,11 +762,7 @@ FK 원칙:
 
 ## 14. triggers
 
-파일 생성:
-
-```bash
-supabase migration new triggers
-```
+실제 파일: `supabase/migrations/20260612120843_triggers.sql`
 
 생성:
 
@@ -829,6 +786,10 @@ supabase migration new triggers
 | `trg_validate_comment_parent`                                                                         | comments BEFORE INSERT/UPDATE                              | 동일 post의 활성 최상위 comment만 parent 허용                                                                           |
 | `trg_validate_message_parent`                                                                         | messages BEFORE INSERT/UPDATE                              | 동일 room의 활성 최상위 message만 parent 허용                                                                           |
 | `trg_validate_direct_chat`deferred constraint triggers                                                | direct_chat_pairs와 chat_room_members INSERT/UPDATE/DELETE | commit 시 pair와 정확히 두 membership 일치                                                                              |
+| `trg_validate_direct_chat_room`                                                                       | chat_rooms BEFORE UPDATE OF is_group/name                  | direct room이 group 또는 named room으로 변형되지 않도록 차단                                                            |
+| `trg_prevent_space_membership_identity_update`                                                        | space_members BEFORE UPDATE OF space_id/user_id             | membership 식별자는 DELETE 후 INSERT로만 변경                                                                           |
+| `trg_prevent_chat_membership_identity_update`                                                         | chat_room_members BEFORE UPDATE OF room_id/user_id          | room membership 식별자는 DELETE 후 INSERT로만 변경                                                                      |
+| `trg_prevent_direct_chat_pair_update`                                                                 | direct_chat_pairs BEFORE UPDATE                             | direct pair는 생성 후 변경 불가                                                                                          |
 | `trg_update_post_comment_count`                                                                       | comments AFTER INSERT/UPDATE/DELETE                        | OLD/NEW post_id와 deleted_at 변경을 반영해 활성 comment count 증감                                                      |
 | `trg_update_post_reaction_count`                                                                      | post_reactions AFTER INSERT/UPDATE/DELETE                  | OLD/NEW post_id 변경만 반영; reaction type 변경은 count 유지                                                            |
 | `trg_update_space_member_count`                                                                       | space_members AFTER INSERT/DELETE                          | member_count 원자적 증감                                                                                                |
@@ -860,11 +821,7 @@ supabase migration new triggers
 
 ## 15. rpc_functions
 
-파일 생성:
-
-```bash
-supabase migration new rpc_functions
-```
+실제 파일: `supabase/migrations/20260612121242_rpc_functions.sql`
 
 구현할 주요 RPC:
 
@@ -910,7 +867,7 @@ supabase migration new rpc_functions
 - 검색 RPC는 `SECURITY INVOKER`를 사용한다.
 - 검색 RPC는 삭제되었거나 접근할 수 없는 parent를 제외하고 익명 표시에 `private.display_author_name()`을 사용한다.
 - RLS 우회가 필요한 mutation만 `SECURITY DEFINER SET search_path = ''`를 사용한다.
-- 사용자 호출 SECURITY DEFINER RPC는 `auth.uid()`와 현재 profile 상태·권한을 검사한다. service-role 전용 RPC는 `auth.uid()`를 요구하지 않고 DB 호출 역할이 `service_role`인지 검사한다.
+- 사용자 호출 SECURITY DEFINER RPC는 `auth.uid()`와 현재 profile 상태·권한을 검사한다. service 전용 RPC는 service/secret key JWT claim 또는 신뢰된 직접 DB `postgres`/`service_role` 세션만 허용한다.
 - section 15 함수는 section 16에서 생성할 private RLS helper에 의존하지 않고 필요한 검사를 함수 내부에서 수행한다.
 - 생성 직후 함수 EXECUTE를 `PUBLIC`, `anon`, `authenticated`, `service_role`에서 회수하고 필요한 역할에만 재부여한다.
 
@@ -925,7 +882,7 @@ EXECUTE grant 계약:
   - `search_posts`, `search_messages`
   - `grant_user_permission`, `revoke_user_permission`, `upsert_permission`, `upsert_reaction_type`
   - `create_club`, `update_club`, `delete_club`, `create_club_apply_round`, `update_club_apply_round`, `delete_club_apply_round`
-- `service_role`: `create_notification`, `purge_deleted_content`, `cleanup_notifications`, `bootstrap_first_app_admin`에만 EXECUTE를 부여한다.
+- `service_role`: notification/bootstrap, purge/cleanup, Storage queue claim/완료/재시도, upload quota 기록, cache reconciliation RPC에만 EXECUTE를 부여한다.
 - `anon`과 `PUBLIC`: 위 RPC 모두 EXECUTE를 부여하지 않는다.
 
 필수 RPC 계약:
@@ -949,7 +906,7 @@ EXECUTE grant 계약:
 | `review_profile(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                             | `void`                   | app admin만 pending을 `accepted`또는 `rejected`로 변경하고 status 감사 기록                                            |
 | `update_verified_profile_identity(p_profile_id bigint, p_type profile_type, p_student_number char(6), p_class_no int2, p_cohort int2, p_dorm_room int2)` | `void` | app admin만 non-withdrawn profile의 검증 신원·기숙사 필드를 변경; 학생 필수값과 profile CHECK 재검사 |
 | `set_anonymous_username(p_value text)`                                                                                                                                                                                                     | `void`                   | withdrawn 아닌 본인; NULL 허용; non-NULL trim/길이/정규화 unique 검사                                                  |
-| `change_profile_status(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                      | `void`                   | app admin 전용; owner/app admin을 inactive 상태로 바꾸기 전 이관 검사                                                  |
+| `change_profile_status(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                      | `void`                   | app admin 전용; owner/app admin을 inactive 상태로 바꾸기 전 이관 검사; withdrawn은 withdrawal lifecycle만 허용         |
 | `change_app_role(p_profile_id bigint, p_role app_role)`                                                                                                                                                                                    | `void`                   | app admin 전용; accepted app admin이 최소 1명 남도록 잠금·검사                                                         |
 | `soft_delete_space/post/comment/message(p_id bigint)`                                                                                                                                                                                      | `void`                   | idempotent soft delete; 권한과 활성 parent 재검사; 대상/관련 membership 잠금                                           |
 | `withdraw_profile()`                                                                                                                                                                                                                       | `void`                   | 본인 profile 잠금; owner/app admin이면 거부; 개인정보 익명화; withdrawn/deleted_at 기록                                |
@@ -957,9 +914,9 @@ EXECUTE grant 계약:
 | `finalize_message_attachment(p_message_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_sort_order int4, p_width int4, p_height int4)`                                                          | `bigint attachment_id`   | bucket은 `message-files`로 고정; 활성 message 작성자이자 현재 room 멤버만; object 검증 후 행 생성                      |
 | `finalize_avatar(p_storage_path text)`                                                                                                                                                                                                     | `void`                   | 본인 prefix의 실제 안전한 image만 profile에 연결                                                                       |
 | `finalize_space_image(p_space_id bigint, p_storage_path text)`                                                                                                                                                                             | `void`                   | 활성 space owner/admin만 해당 prefix image 연결                                                                        |
-| `create_notification(p_recipient_id bigint, p_title text, p_body text, p_actor_id bigint default null, p_space_id bigint default null, p_post_id bigint default null, p_comment_id bigint default null, p_message_id bigint default null)` | `bigint notification_id` | trusted mutation RPC 또는 service role만 호출; target FK와 space_type 검증                                             |
-| `search_posts(p_query text, p_space_type space_type default null, p_space_id bigint default null)`                                                                                                                                         | table                    | trim 후 query 1 ~ 200자; 접근 가능한 활성 post/comment만 검색; 아래 검색 정확도 개선 절 적용                           |
-| `search_messages(p_query text, p_room_id bigint)`                                                                                                                                                                                          | table                    | trim 후 query 1 ~ 200자; 현재 room 멤버만 활성 message 검색; 아래 검색 정확도 개선 절 적용                             |
+| `create_notification(p_recipient_id bigint, p_title text, p_body text, p_actor_id bigint default null, p_space_id bigint default null, p_post_id bigint default null, p_comment_id bigint default null, p_message_id bigint default null)` | `bigint notification_id` | trusted mutation RPC 또는 service role만 호출; accepted recipient와 target 관계를 검증하고 space_id/space_type을 서버에서 유도 |
+| `search_posts(p_query text, p_space_type space_type default null, p_space_id bigint default null)`                                                                                                                                         | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 접근 가능한 활성 post/comment만 검색; 아래 검색 구현 계약 적용     |
+| `search_messages(p_query text, p_room_id bigint)`                                                                                                                                                                                          | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 현재 room 멤버의 활성 message 검색; 아래 검색 구현 계약 적용       |
 
 soft delete 세부 계약:
 
@@ -984,13 +941,17 @@ soft delete 세부 계약:
 
 검색 반환 계약:
 
-- `search_posts`: `post_id`, `title`, `content_snippet`, `author_name`, `space_name`, `created_at`, `match_type`, `rank`
-- `search_messages`: `message_id`, `content_snippet`, `sender_name`, `created_at`, `rank`
+- `search_posts`: `post_id bigint`, `title text`, `content_snippet text`, `author_name text`, `space_name text`, `created_at timestamptz`, `match_type text`
+- `search_messages`: `message_id bigint`, `content_snippet text`, `sender_name text`, `created_at timestamptz`
 
 service-role 작업:
 
-- `purge_deleted_content()`: worker가 Storage object와 attachment 행을 먼저 정리한 대상만 잠금 → 남은 RESTRICT 자식 제거 → parent hard delete
-- `cleanup_notifications()`: 읽었고 생성 후 30일 지난 notification 삭제
+- `purge_deleted_content(p_entity_type text, p_entity_id bigint) → void`: `space`, `post`, `comment`, `message` 중 worker가 Storage와 attachment를 먼저 정리한 soft-deleted 대상만 hard purge
+- `cleanup_notifications() → bigint`: 읽었고 생성 후 30일 지난 notification을 삭제하고 삭제 수 반환
+- `cleanup_deleted_content() → bigint`: 7일 지난 soft-deleted post를 FK 자식부터 멱등 hard purge
+- `enqueue_due_storage_cleanup()`, `claim_storage_cleanup()`, `complete_storage_cleanup()`, `fail_storage_cleanup()`: Storage worker queue lifecycle
+- `record_upload_authorization()`: 분당 20회, 일일 500 MB 제한과 bucket/path/예상 크기를 원자적으로 기록하고 finalize가 실제 object 크기와 일치 여부를 재검사
+- `reconcile_cached_counts()`: space member와 post comment/reaction cache를 source of truth에서 재계산
 - DB-only cleanup은 멱등으로 구현한다. Storage cleanup은 section 17 worker가 실패를 기록하고 재시도한다.
 
 ---
@@ -998,26 +959,23 @@ service-role 작업:
 ## 검색 구현 계약
 
 - `search_posts`와 `search_messages`는 `SECURITY INVOKER`로 실행하고 trim 후 1 ~ 200자 query만 허용한다.
-- `websearch_to_tsquery('simple', query)` FTS와 `pg_trgm` similarity 결과를 합치며 FTS score에 `2.0` 가중치를 적용한다.
+- query와 검색 대상 문자열은 `regexp_replace(lower(value), '\s+', '', 'g')`로 정규화한다. 정규화 결과가 빈 문자열이면 거부한다.
+- 정규화한 검색 대상에 `ILIKE '%' || normalized_query || '%'`를 적용하고 동일 표현식의 partial `GIN ... gin_trgm_ops` 인덱스를 사용한다.
 - `search_posts`는 접근 가능한 활성 post와 활성 comment match를 post당 한 행으로 합친다.
+- `search_posts.match_type`은 `post_title`, `post_content`, `comment_content` 중 하나를 반환한다. 여러 위치가 일치하면 `post_title`, `post_content`, `comment_content` 순으로 선택한다.
 - `search_messages`는 현재 room의 활성 message만 검색한다.
-- snippet은 `ts_headline()`으로 생성하고 결과는 `rank DESC, created_at DESC, id DESC` 순서의 최대 50행이다.
-- `pg_trgm.similarity_threshold`는 운영 설정을 사용한다.
+- snippet은 일치한 원문에서 생성하고 결과는 `created_at DESC, id DESC` 순서의 최대 50행이다.
 - 검색 내부 쿼리에도 활성 parent와 현재 membership 조건을 명시한다.
 
 ---
 
 ## 16. rls_and_grants
 
-파일 생성:
-
-```bash
-supabase migration new rls_and_grants
-```
+실제 파일: `supabase/migrations/20260612121246_rls_and_grants.sql`
 
 공통 구현:
 
-- 모든 public 테이블에 RLS 활성화
+- section 04에서 완료한 identity 테이블을 제외한 나머지 public 테이블에 RLS 활성화
 - 모든 정책에 대상 역할을 명시
 - UPDATE 정책에 SELECT policy, `USING`, `WITH CHECK` 구성
 - ownership ID는 현재 profile ID로 강제
@@ -1030,8 +988,6 @@ private helper:
 
 | 함수                                                                                                                       | 반환      |
 | -------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `private.current_profile_id()`                                                                                             | `bigint`  |
-| `private.is_accepted_user()`                                                                                               | `boolean` |
 | `private.is_app_admin()`                                                                                                   | `boolean` |
 | `private.is_space_member(p_space_id bigint, p_allowed_roles member_role[] default null)`                                   | `boolean` |
 | `private.is_room_member(p_room_id bigint)`                                                                                 | `boolean` |
@@ -1046,8 +1002,8 @@ private helper:
 
 helper 계약:
 
+- `private.current_profile_id()`와 `private.is_accepted_user()`는 section 04에서 생성하며 이 migration에서 재생성하지 않는다.
 - 위 private helper는 RLS 재귀 방지를 위해 `STABLE SECURITY DEFINER SET search_path = ''`로 생성하고 fully-qualified 객체명만 사용한다.
-- `private.current_profile_id()`는 상태와 무관하게 현재 auth user의 profile id를 반환하며 profile이 없으면 NULL을 반환한다. 이 helper만 accepted 상태를 요구하지 않는다.
 - 권한 판정 helper는 현재 profile의 `status = 'accepted' AND deleted_at IS NULL`을 기본 조건으로 요구한다.
 - `private.is_space_member(p_space_id, p_allowed_roles default null)`는 활성 space, 비차단 membership, optional role 조건을 검사한다.
 - `private.is_room_member(p_room_id)`는 현재 membership 존재를 매 호출 시 검사한다.
@@ -1060,9 +1016,6 @@ helper 계약:
 
 | 테이블                                           | authenticated 직접 허용                              |
 | ------------------------------------------------ | ---------------------------------------------------- |
-| profiles                                         | SELECT, 허용 컬럼 UPDATE                             |
-| permissions                                      | SELECT                                               |
-| user_permissions                                 | SELECT                                               |
 | spaces                                           | 공개 메타데이터 컬럼 SELECT                          |
 | space_members                                    | SELECT, 자기 `notification_setting`UPDATE            |
 | posts                                            | SELECT, INSERT, 허용 컬럼 UPDATE                     |
@@ -1082,6 +1035,8 @@ helper 계약:
 | clubs, club_apply_rounds                         | SELECT                                               |
 | clubs_apply                                      | SELECT, INSERT, 본인 DELETE                          |
 
+- identity 테이블의 직접 Data API 권한은 section 04에서 구현한다.
+
 column-level allowlist:
 
 - 아래 INSERT/UPDATE allowlist는 column-level GRANT로 구현한다. 해당 테이블에 table-level INSERT/UPDATE를 추가로 부여하지 않는다.
@@ -1097,7 +1052,6 @@ column-level allowlist:
 - gongangs 직접 INSERT: `location`, `day_of_week`, `start_minute`, `end_minute`, `valid_from`, `valid_until`
 - song_requests 직접 INSERT: `url`
 - clubs_apply 직접 INSERT: `round_id`, `club_id`
-- profiles 직접 UPDATE: `name`, `gender`, `phone_number`, `birthday`, `description`
 - `anonymous_username`: `set_anonymous_username()`만 변경
 - identity/onboarding 필드: `submit_onboarding()` 또는 `update_verified_profile_identity()`만 변경
 - `avatar_url`: `finalize_avatar()`만 변경
@@ -1116,9 +1070,6 @@ RLS 행 계약:
 
 | 테이블                          | SELECT                                                                                             | INSERT/UPDATE/DELETE                                                                   |
 | ------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| profiles                        | 본인은 상태와 무관하게 조회; accepted 사용자는 accepted profile 조회                               | accepted 본인의 허용 컬럼 UPDATE만; INSERT/DELETE 없음                                 |
-| permissions                     | accepted 사용자                                                                                    | client mutation 없음                                                                   |
-| user_permissions                | 본인 행                                                                                            | client mutation 없음                                                                   |
 | spaces                          | accepted 사용자가 활성 space 공개 컬럼 조회                                                        | client mutation 없음                                                                   |
 | space_members                   | 현재 활성·비차단 해당 space 멤버                                                                   | 자기 notification_setting UPDATE만                                                     |
 | posts                           | accepted·비차단 해당 space 멤버가 활성 post 조회                                                   | 같은 멤버가 자기 author_id로 INSERT; 작성자가 활성 post 허용 컬럼 UPDATE; DELETE 없음  |
@@ -1137,6 +1088,8 @@ RLS 행 계약:
 | song_requests                   | permission 보유 accepted 사용자                                                                    | 본인 requester_id로 INSERT만                                                           |
 | clubs/rounds                    | accepted 사용자                                                                                    | client mutation 없음                                                                   |
 | clubs_apply                     | accepted 사용자가 조회                                                                             | 열린 round에 본인 INSERT; round 종료 전 본인 DELETE                                    |
+
+- identity 테이블의 RLS 행 계약은 section 04에서 구현한다.
 
 RLS 구현 주의:
 
@@ -1158,40 +1111,37 @@ service role:
 
 - schema `public`, `private`에 USAGE
 - 아래 public domain table에 `SELECT, INSERT, UPDATE, DELETE`:
-  - profiles, permissions, user_permissions, spaces, space_members
+  - spaces, space_members
   - posts, post_attachments, comments, reaction_types, post_reactions, comment_reactions
   - chat_rooms, direct_chat_pairs, chat_room_members, messages, message_attachments, message_reactions, message_reads, chat_room_read_states
   - notifications, gongangs, song_requests, clubs, club_apply_rounds, clubs_apply
 - 아래 sequence에 `USAGE, SELECT`:
-  - `profiles_id_seq`, `spaces_id_seq`, `posts_id_seq`, `post_attachments_id_seq`, `comments_id_seq`
+  - `spaces_id_seq`, `posts_id_seq`, `post_attachments_id_seq`, `comments_id_seq`
   - `reaction_types_id_seq`, `post_reactions_id_seq`, `comment_reactions_id_seq`
   - `chat_rooms_id_seq`, `messages_id_seq`, `message_attachments_id_seq`, `message_reactions_id_seq`
   - `notifications_id_seq`, `gongangs_id_seq`, `song_requests_id_seq`
   - `clubs_id_seq`, `club_apply_rounds_id_seq`, `clubs_apply_id_seq`
-- `create_notification`, `purge_deleted_content`, `cleanup_notifications`, `bootstrap_first_app_admin`에만 EXECUTE
+- notification/bootstrap, purge/cleanup, Storage queue lifecycle, upload quota 기록, cache reconciliation RPC에만 EXECUTE
+- identity 테이블과 `profiles_id_seq`의 service-role 권한은 section 04에서 구현한다.
 - private 객체와 service 전용 함수는 `anon`, `authenticated`에 부여하지 않는다.
 - 이후 migration이 만드는 새 객체는 해당 migration에서 service-role GRANT를 추가한다.
-- authenticated sequence 권한은 직접 INSERT를 허용한 bigserial 테이블에만 `USAGE, SELECT`를 부여한다: posts, comments, post_reactions, comment_reactions, messages, message_reactions, gongangs, song_requests, clubs_apply.
+- authenticated에는 직접 INSERT를 허용한 다음 sequence에만 `USAGE, SELECT`를 부여한다: `posts_id_seq`, `comments_id_seq`, `post_reactions_id_seq`, `comment_reactions_id_seq`, `messages_id_seq`, `message_reactions_id_seq`, `gongangs_id_seq`, `song_requests_id_seq`, `clubs_apply_id_seq`.
 - RPC 전용 INSERT 테이블의 sequence는 authenticated에 부여하지 않는다.
 
 ---
 
 ## 17. storage_buckets
 
-파일 생성:
-
-```bash
-supabase migration new storage_buckets
-```
+실제 파일: `supabase/migrations/20260612121249_storage_buckets.sql`
 
 private bucket:
 
 | bucket          | 최대 크기 |
 | --------------- | --------- |
-| `avatars`       | 5 MiB     |
-| `space-images`  | 10 MiB    |
-| `post-files`    | 25 MiB    |
-| `message-files` | 25 MiB    |
+| `avatars`       | 5 MB      |
+| `space-images`  | 10 MB     |
+| `post-files`    | 25 MB     |
+| `message-files` | 25 MB     |
 
 경로:
 
@@ -1199,6 +1149,7 @@ private bucket:
 - space-images: `{space_pub_id}/{random_object_id}`
 - post-files: `{post_pub_id}/{uploader_auth_uid}/{random_object_id}`
 - message-files: `{room_id}/{message_id}/{uploader_auth_uid}/{random_object_id}`
+- UUID segment는 canonical UUID 문자열, `room_id`/`message_id`는 양의 bigint 문자열이며 `random_object_id`는 trusted endpoint가 새 UUID로 발급한다.
 
 구현:
 
@@ -1210,18 +1161,21 @@ private bucket:
 - SELECT는 parent post/message/space/avatar 접근 권한을 상속한다.
 - attachment 제거는 cleanup queue와 service-role worker만 수행한다.
 - signed upload 발급 endpoint는 accepted 상태, parent 작성자, 고정 prefix, 파일당 크기, MIME allowlist, 사용자 quota/rate limit을 검사한다.
-- avatar/space image는 안전한 raster image만 허용한다. post/message의 허용 MIME 외 실행·스크립트 가능 형식은 거부하고, raster image 외 허용 파일은 signed download 응답에서 attachment disposition으로 제공한다. 운영 환경에서는 악성 파일 검사 후 finalize한다.
+- `authorize-upload`와 `authorize-download`는 `@supabase/server`의 `ctx.userClaims.id`를 auth user UUID로 사용한다.
+- 두 endpoint가 반환하는 signed URL은 `x-forwarded-proto`, `x-forwarded-host`, `x-forwarded-port`를 사용해 외부에서 접근 가능한 origin으로 변환한다.
+- avatar/space image는 raster image만 허용한다. post/message는 아래 MIME allowlist만 허용하고, 이미지 외 파일은 signed download 응답에서 attachment disposition으로 제공한다.
+- 파일 내용 기반 MIME 판별과 악성코드 검사는 수행하지 않는다. 업로드 요청 MIME, Storage object metadata MIME, 크기, 허용 bucket/path를 검증하며 다운로드 파일은 신뢰할 수 없는 파일로 취급한다.
 - MIME allowlist:
   - avatars/space-images: `image/jpeg`, `image/png`, `image/webp`
-  - post-files/message-files: `image/jpeg`, `image/png`, `image/webp`, `application/pdf`, `text/plain`
+  - post-files/message-files: 위 이미지 형식 + PDF, plain text, Markdown, CSV, RTF, Word/DOCX, Excel/XLSX, PowerPoint/PPTX, HWP/HWPX, OpenDocument text/spreadsheet/presentation
 - Storage object path는 최대 1,024자다.
 
 bucket별 접근:
 
-- avatars SELECT: accepted 사용자. write authorization/finalize: 본인 prefix만.
-- space-images SELECT: accepted 사용자의 활성 space directory 권한. write authorization/finalize: 활성 space owner/admin만.
-- post-files SELECT: 현재 활성 post 접근 권한. write authorization/finalize: 활성 post 작성자만.
-- message-files SELECT: 현재 room membership 및 활성 message 접근 권한. write authorization/finalize: 활성 message sender이자 현재 room 멤버만.
+- avatars SELECT: object path가 profile `avatar_url`로 참조되고 caller가 해당 profile을 조회할 수 있을 때만 허용. write authorization/finalize: 본인 prefix만.
+- space-images SELECT: object path가 활성 space `image_url`로 참조되고 caller가 해당 space를 조회할 수 있을 때만 허용. write authorization/finalize: 활성 space owner/admin만.
+- post-files SELECT: object path가 `post_attachments`에 참조되고 caller가 활성 post에 접근할 수 있을 때만 허용. write authorization/finalize: 활성 post 작성자만.
+- message-files SELECT: object path가 `message_attachments`에 참조되고 caller가 현재 room 멤버이며 활성 message에 접근할 수 있을 때만 허용. write authorization/finalize: 활성 message sender이자 현재 room 멤버만.
 - object는 immutable하게 취급하고 동일 경로 UPDATE/upsert를 허용하지 않는다.
 
 cleanup queue:
@@ -1241,37 +1195,42 @@ cleanup queue:
 - queue table에 `SELECT, INSERT, UPDATE, DELETE`를 service role에 부여한다.
 - `private.attachment_cleanup_queue_id_seq`에 `USAGE, SELECT`를 service role에 부여한다.
 - queue 객체 권한을 `PUBLIC`, `anon`, `authenticated`에서 회수한다.
+- `private.upload_authorization_events`는 `profile_id`, `storage_bucket`, `storage_path`, `size_bytes`, `created_at`을 기록하고 `(storage_bucket, storage_path)`를 unique로 둔다. service role만 접근하며 분당 20회, 일일 500 MB 제한과 finalize 시 실제 object 크기를 원자적으로 검사하는 데 사용한다.
 - attachment tables의 `(storage_bucket, storage_path)` unique를 유지하고 client가 bucket/path를 직접 기록하지 못하게 한다.
 - queue 생성 후 `request_attachment_removal(p_attachment_kind text, p_attachment_id bigint) → void`를 생성한다. post/message attachment만 허용하고, 활성 parent 작성자 권한을 재검사한 뒤 queue에 멱등 enqueue한다.
 - `request_attachment_removal` 생성 직후 EXECUTE를 `PUBLIC`, `anon`, `authenticated`, `service_role`에서 회수하고 `authenticated`에만 다시 부여한다.
+- worker는 `processed_at IS NULL AND available_at <= now()` 행을 `FOR UPDATE SKIP LOCKED`로 claim한다. 시도마다 `attempts`를 증가시키고 성공 또는 이미 없는 object는 attachment 행 삭제 후 `processed_at`을 기록하며, 실패는 `last_error`와 다음 `available_at`을 기록한다.
+- maintenance enqueue 시 2일 지난 upload authorization 기록과 30일 지난 processed queue 행을 정리한다.
 
 background jobs:
 
 | Job                                | 실행 기준                      |
 | ---------------------------------- | ------------------------------ |
-| orphan Storage cleanup             | 생성 후 24시간, DB 참조 없음   |
+| orphan Storage cleanup             | 생성 후 48시간, DB 참조 없음   |
 | deleted post attachment cleanup    | post 삭제 후 7일               |
 | deleted message attachment cleanup | message 삭제 후 7일            |
 | deleted space image cleanup        | space 삭제 후 7일              |
 | explicit attachment removal        | queue 요청                     |
 | read notification cleanup          | 읽은 notification 생성 후 30일 |
-| hard purge                         | 운영자 실행 또는 별도 일정     |
+| deleted post hard purge            | post 삭제 후 7일               |
+| comment/message/space hard purge   | 운영자 명시 실행               |
 | cache reconciliation               | 매일                           |
 
 Storage object 삭제 성공 후에만 대응 DB 행을 삭제한다. 실패 항목은 재시도한다.
-Storage object 삭제는 scheduled Edge Function/service-key worker가 수행한다. SQL에서 Storage 메타데이터 행을 직접 삭제하지 않는다.
-orphan Storage cleanup도 SQL 함수가 아니라 같은 worker가 수행한다.
+Storage object 삭제는 `supabase/functions/storage-maintenance` Edge Function이 secret key 인증 후 수행한다. SQL에서 Storage 메타데이터 행을 직접 삭제하지 않는다.
+orphan Storage cleanup도 같은 worker가 enqueue RPC 결과를 처리한다.
+finalize는 생성 후 24시간 이내 object만 허용하여 48시간 orphan cleanup과 겹치지 않게 한다.
 
 ---
 
 ## SQL 외 운영 필수사항
 
-- 01 ~ 17 migration은 DB·RLS·Storage policy까지만 구현한다.
-- 배포 전 trusted upload authorization endpoint, signed download endpoint, service-role cleanup worker, 스케줄러를 별도 서버 코드로 구현한다.
-- upload authorization endpoint는 사용자별 quota/rate limit과 짧은 signed URL 만료시간을 운영 설정으로 받는다. 이 값은 migration SQL에 임의로 고정하지 않는다.
-- finalize 전에 server-detected MIME, 허용 확장자, 악성 파일 검사 결과를 확인한다.
+- `supabase/functions/authorize-upload`, `authorize-download`, `storage-maintenance`를 production에 배포한다.
+- `storage-maintenance`는 secret key로만 호출하고 production scheduler에서 매일 또는 더 자주 실행한다.
+- local에서는 `supabase functions serve` 후 같은 endpoint를 secret key로 호출한다.
+- production 적용 전 Supabase CLI login/link와 `SUPABASE_DB_PASSWORD`를 준비한 뒤 `npx supabase db push --dry-run --linked`를 실행한다. dry-run 성공 후에만 별도 승인된 실제 push를 수행한다.
+- 악성코드 검사는 운영 범위에 포함하지 않는다. 허용 MIME 확대 시 SQL bucket allowlist, finalize RPC, `authorize-upload` allowlist를 함께 수정한다.
 - trusted mutation RPC가 notification을 만들 때는 외부 EXECUTE 없이 내부에서 `create_notification()`을 호출한다.
-- `pg_trgm.similarity_threshold`는 운영 환경 파라미터로 관리하며 migration SQL에 고정하지 않는다.
 
 ---
 
@@ -1286,14 +1245,30 @@ orphan Storage cleanup도 SQL 함수가 아니라 같은 worker가 수행한다.
 - group chat creator가 비활성화되면 타인 강제 제거는 app admin이 담당한다.
 - song_requests는 처리 상태 없는 append-only 로그다.
 - accepted 사용자가 조회 가능한 profile 컬럼은 마스킹하지 않는다.
-- 검색은 FTS + trgm 혼합 방식을 사용하며 순위를 함께 반환한다. 결과 상한은 50행이며 페이지네이션이 필요하면 별도 명세로 추가한다.
+- 검색은 띄어쓰기를 무시하는 ILIKE + pg_trgm 인덱스를 사용한다. 결과 상한은 50행이며 페이지네이션이 필요하면 별도 명세로 추가한다.
 
 ---
 
-## 검증 절차 // 사용하지 말 것.
+## 검증 절차
+
+Docker Desktop을 실행한 뒤 아래 명령을 repo root에서 실행한다. `npx supabase start`는 최초 실행 시 local Supabase 이미지를 내려받으므로 네트워크 연결이 필요하다.
+
+```powershell
+npx supabase start
+npx supabase db reset --local --yes
+npx supabase db lint --local --schema public,private --level warning --fail-on error
+npx supabase db advisors --local --type all --level warn --fail-on error
+Get-Content -LiteralPath supabase/tests/schema_runtime_check.sql -Raw -Encoding UTF8 | docker exec -i supabase_db_NEW-KMLA-ONLINE psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f -
+Get-Content -LiteralPath supabase/tests/schema_rls_check.sql -Raw -Encoding UTF8 | docker exec -i supabase_db_NEW-KMLA-ONLINE psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f -
+npx supabase gen types typescript --local
+npx supabase functions serve
+powershell -ExecutionPolicy Bypass -File supabase/tests/edge_storage_check.ps1
+```
+
+`schema_runtime_check.sql`과 `schema_rls_check.sql`은 검증 데이터를 남기지 않도록 transaction을 rollback하는 다중 명령 파일이므로 local DB container의 `psql`로 실행한다. Edge Storage 검증은 별도 터미널에서 `supabase functions serve`를 실행한 상태에서 수행한다.
 
 1. 전체 migration을 빈 local DB에 순서대로 적용한다.
-2. migration 재적용 및 reset이 성공하는지 확인한다.
+2. migration reset, DB lint, database advisors가 성공하는지 확인한다.
 3. public 테이블 전체의 RLS 활성화를 확인한다.
 4. `anon`, `authenticated`, `service_role`의 table/sequence/function GRANT를 확인한다.
 5. `anon` 도메인 접근과 authenticated의 비허용 컬럼 변경이 거부되는지 확인한다.
@@ -1308,16 +1283,16 @@ orphan Storage cleanup도 SQL 함수가 아니라 같은 worker가 수행한다.
 14. gongang 및 club round 동시 중복 생성이 차단되는지 확인한다.
 15. message edit 15분 제한과 무기한 soft delete를 확인한다.
 16. room/space membership 제거 직후 접근이 차단되는지 확인한다.
-17. Storage 직접 쓰기 거부, signed upload, finalize, cleanup 재시도를 확인한다.
+17. Storage 직접 쓰기 거부, signed upload/download, finalize, quota/rate limit, cleanup 재시도를 확인한다.
 18. service-role cleanup, purge, notification 생성, sequence INSERT를 확인한다.
 19. FK가 예상하지 않은 CASCADE 없이 RESTRICT/SET NULL로 동작하는지 확인한다.
 20. cache reconciliation 결과를 확인한다.
-21. `search_posts` / `search_messages`가 FTS hit, trgm fallback, 혼합 결과를 각각 올바르게 반환하고 `rank` 기준으로 정렬되는지 확인한다.
+21. `search_posts` / `search_messages`가 띄어쓰기 유무와 대소문자 차이를 무시하고 부분 문자열을 반환하며 `created_at DESC, id DESC`로 정렬되는지 확인한다.
 22. `supabase gen types typescript --local`을 실행한다.
 23. database advisors를 실행하고 오류를 수정한다.
 
 완료 조건:
 
 - 모든 검증 통과
-- open TODO 없음
+- 미결 항목 없음
 - SQL migration과 이 문서의 데이터 모델·권한·동작 계약 불일치 없음
