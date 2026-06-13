@@ -109,12 +109,12 @@ port = 54324
 [storage]
 enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MiB"
+file_size_limit = "50MB"
 
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]
 # public = false
-# file_size_limit = "50MiB"
+# file_size_limit = "50MB"
 # allowed_mime_types = ["image/png", "image/jpeg"]
 # objects_path = "./images"
 
@@ -406,3 +406,31 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.authorize-upload]
+enabled = true
+verify_jwt = true
+import_map = "./functions/authorize-upload/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/authorize-upload/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/authorize-upload/*.html" ]
+
+[functions.storage-maintenance]
+enabled = true
+verify_jwt = false
+import_map = "./functions/storage-maintenance/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/storage-maintenance/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/storage-maintenance/*.html" ]
+
+[functions.authorize-download]
+enabled = true
+verify_jwt = true
+import_map = "./functions/authorize-download/deno.json"
+entrypoint = "./functions/authorize-download/index.ts"
