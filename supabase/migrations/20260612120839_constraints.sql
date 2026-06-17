@@ -76,16 +76,11 @@ alter table public.post_attachments
   add constraint post_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint post_attachments_size_check check (size_bytes is null or size_bytes >= 0),
   add constraint post_attachments_sort_order_check check (sort_order >= 0),
-  add constraint post_attachments_alt_check check (alt is null or char_length(alt) <= 1000),
-  add constraint post_attachments_width_check check (width is null or width > 0),
-  add constraint post_attachments_height_check check (height is null or height > 0);
+  add constraint post_attachments_alt_check check (alt is null or char_length(alt) <= 1000);
 
 alter table public.comments
   add constraint comments_parent_check check (parent_id is null or parent_id <> id),
   add constraint comments_content_check check (char_length(btrim(content)) between 1 and 10000),
-  add constraint comments_placeholder_check check (
-    deleted_at is not null or content <> '삭제된 댓글입니다.'
-  ),
   add constraint comments_deleted_state_check check (deleted_at is not null or deleted_by is null);
 
 alter table public.reaction_types
@@ -128,9 +123,7 @@ alter table public.message_attachments
   add constraint message_attachments_file_name_check check (char_length(btrim(file_name)) between 1 and 255),
   add constraint message_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint message_attachments_size_check check (size_bytes is null or size_bytes >= 0),
-  add constraint message_attachments_sort_order_check check (sort_order >= 0),
-  add constraint message_attachments_width_check check (width is null or width > 0),
-  add constraint message_attachments_height_check check (height is null or height > 0);
+  add constraint message_attachments_sort_order_check check (sort_order >= 0);
 
 alter table public.message_reactions
   add constraint message_reactions_message_user_key unique (message_id, user_id);

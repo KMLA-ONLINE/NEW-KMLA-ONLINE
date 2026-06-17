@@ -8,6 +8,12 @@
 - shadcn is configured in `components.json` with style `radix-nova`.
 - Supabase browser helpers live in `app/lib/supabase/client.ts`; server helpers live in `app/lib/supabase/server.ts`.
 
+## Local Supabase Ports
+- Default Supabase ports (54321-54327) often conflict with **Windows Hyper-V reserved port ranges**.
+- This repo uses **54720–54727** instead. Set these in `supabase/config.toml` if you get port binding errors:
+  - API: 54721, DB: 54722, Shadow DB: 54720, Studio: 54723, Inbucket: 54724, Analytics: 54727
+- The Supabase MCP URL in `opencode.json` must match the API port: `http://127.0.0.1:54721/mcp`
+
 ## Commands
 - Install: `npm install`
 - Dev server: `npm run dev`
@@ -34,6 +40,20 @@
 - Several route files currently import from `@/registry/default/...`, but there is no matching alias or local `registry/default` directory. Treat those imports as suspect and verify before reusing them.
 - `app/components/ui/` is reserved for atom-level UI primitives.
 - Service/domain components must live in `app/components/`, not `app/components/ui/`.
+
+## Database Architecture
+- All data access goes through **RPC functions** (`supabase.rpc(...)`), not direct table access.
+- RLS is minimal — only `profiles`, `spaces` SELECT policies kept. RPC handles all auth internally via `private.require_current_profile()`.
+- **Triggers** are limited to: `validate_comment_parent`, `validate_message_parent`, `validate_space_owner`, `validate_direct_chat`, `validate_direct_chat_room`, `validate_chat_read_state`, `handle_auth_user_deleted`. Identity stamping (`stamp_current_profile`) was removed — RPCs pass author_id directly.
+- **Denormalized counters** (`comment_count`, `reaction_count`, `member_count`) were removed with their triggers. Use `SELECT count(*)` instead.
+- **GIN trigram indexes** were removed — no full-text search yet. Add back when search is implemented, choosing between `pg_trgm`, `pgvector`, or simple `ILIKE`.
+- Index count reduced from **72 to 36** — only covering core query patterns (feed, comments, chat, notifications, membership).
+- CHECK constraints `post_attachments_width/height` and `message_attachments_width/height` removed — app-layer concern, not DB.
+- CHECK constraint `comments_placeholder_check` (banning a specific Korean string) removed — app logic doesn't belong in DB.
+
+## DB Types
+- Shared enums live in `app/lib/supabase/database.types.ts`.
+- For full generated types, run `supabase gen types --local > app/lib/supabase/database.types.ts` (requires Docker running).
 
 ## Env
 - Required env vars are listed in `.env.example`:
