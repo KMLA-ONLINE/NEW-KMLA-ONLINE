@@ -344,15 +344,6 @@ private.attachment_cleanup_queue(
   UQ(storage_bucket, storage_path)
 )
 
-private.upload_authorization_events(
-  id bigserial PK,
-  profile_id bigint NOT NULL → profiles.id,
-  storage_bucket text NOT NULL,
-  storage_path text NOT NULL,
-  size_bytes int8 NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UQ(storage_bucket, storage_path)
-)
 ```
 
 ---
@@ -885,7 +876,7 @@ EXECUTE grant 계약:
   - `search_posts`, `search_messages`
   - `grant_user_permission`, `revoke_user_permission`, `upsert_permission`, `upsert_reaction_type`
   - `create_club`, `update_club`, `delete_club`, `create_club_apply_round`, `update_club_apply_round`, `delete_club_apply_round`
-- `service_role`: notification/bootstrap, purge/cleanup, Storage queue claim/완료/재시도, upload quota 기록, cache reconciliation RPC에만 EXECUTE를 부여한다.
+- `service_role`: notification/bootstrap, purge/cleanup, Storage queue claim/완료/재시도, cache reconciliation RPC에만 EXECUTE를 부여한다.
 - `anon`과 `PUBLIC`: 위 RPC 모두 EXECUTE를 부여하지 않는다.
 
 필수 RPC 계약:
@@ -953,7 +944,6 @@ service-role 작업:
 - `cleanup_notifications() → bigint`: 읽었고 생성 후 30일 지난 notification을 삭제하고 삭제 수 반환
 - `cleanup_deleted_content() → bigint`: 7일 지난 soft-deleted post를 FK 자식부터 멱등 hard purge
 - `enqueue_due_storage_cleanup()`, `claim_storage_cleanup()`, `complete_storage_cleanup()`, `fail_storage_cleanup()`: Storage worker queue lifecycle
-- `record_upload_authorization()`: 분당 20회, 일일 500 MB 제한과 bucket/path/예상 크기를 원자적으로 기록하고 finalize가 실제 object 크기와 일치 여부를 재검사
 - `reconcile_cached_counts()`: space member와 post comment/reaction cache를 source of truth에서 재계산
 - DB-only cleanup은 멱등으로 구현한다. Storage cleanup은 section 17 worker가 실패를 기록하고 재시도한다.
 
@@ -1124,7 +1114,7 @@ service role:
   - `chat_rooms_id_seq`, `messages_id_seq`, `message_attachments_id_seq`, `message_reactions_id_seq`
   - `notifications_id_seq`, `gongangs_id_seq`, `song_requests_id_seq`
   - `clubs_id_seq`, `club_apply_rounds_id_seq`, `clubs_apply_id_seq`
-- notification/bootstrap, purge/cleanup, Storage queue lifecycle, upload quota 기록, cache reconciliation RPC에만 EXECUTE
+- notification/bootstrap, purge/cleanup, Storage queue lifecycle, cache reconciliation RPC에만 EXECUTE
 - identity 테이블과 `profiles_id_seq`의 service-role 권한은 section 04에서 구현한다.
 - private 객체와 service 전용 함수는 `anon`, `authenticated`에 부여하지 않는다.
 - 이후 migration이 만드는 새 객체는 해당 migration에서 service-role GRANT를 추가한다.
@@ -1152,21 +1142,18 @@ private bucket:
 - space-images: `{space_pub_id}/{random_object_id}`
 - post-files: `{post_pub_id}/{uploader_auth_uid}/{random_object_id}`
 - message-files: `{room_id}/{message_id}/{uploader_auth_uid}/{random_object_id}`
-- UUID segment는 canonical UUID 문자열, `room_id`/`message_id`는 양의 bigint 문자열이며 `random_object_id`는 trusted endpoint가 새 UUID로 발급한다.
+- UUID segment는 canonical UUID 문자열, `room_id`/`message_id`는 양의 bigint 문자열이며 `random_object_id`는 client가 새 UUID로 생성한다.
 
 구현:
 
 - 모든 bucket은 private으로 생성한다.
-- authenticated의 `storage.objects` 직접 INSERT/UPDATE/DELETE를 허용하지 않는다.
-- trusted server가 검증 후 짧은 수명의 signed upload URL을 발급한다.
+- authenticated의 `storage.objects` 직접 INSERT는 bucket별 RLS policy로 제한한다. UPDATE/upsert/DELETE는 허용하지 않는다.
+- client는 Supabase Storage SDK로 직접 업로드하고, path는 아래 고정 prefix와 UUID segment 규칙을 따라야 한다.
 - finalize RPC가 object 존재, parent 권한, 경로, 크기, MIME, 허용 형식을 검증한다.
 - SVG/HTML 및 실행 가능한 위험 형식을 거부한다.
 - SELECT는 parent post/message/space/avatar 접근 권한을 상속한다.
 - attachment 제거는 cleanup queue와 service-role worker만 수행한다.
-- signed upload 발급 endpoint는 accepted 상태, parent 작성자, 고정 prefix, 파일당 크기, MIME allowlist, 사용자 quota/rate limit을 검사한다.
-- `authorize-upload`와 `authorize-download`는 `@supabase/server`의 `ctx.userClaims.id`를 auth user UUID로 사용한다.
-- 두 endpoint가 반환하는 signed URL은 `x-forwarded-proto`, `x-forwarded-host`, `x-forwarded-port`를 사용해 외부에서 접근 가능한 origin으로 변환한다.
-- avatar/space image는 raster image만 허용한다. post/message는 아래 MIME allowlist만 허용하고, 이미지 외 파일은 signed download 응답에서 attachment disposition으로 제공한다.
+- avatar/space image는 raster image만 허용한다. post/message는 아래 MIME allowlist만 허용한다.
 - 파일 내용 기반 MIME 판별과 악성코드 검사는 수행하지 않는다. 업로드 요청 MIME, Storage object metadata MIME, 크기, 허용 bucket/path를 검증하며 다운로드 파일은 신뢰할 수 없는 파일로 취급한다.
 - MIME allowlist:
   - avatars/space-images: `image/jpeg`, `image/png`, `image/webp`
@@ -1175,10 +1162,10 @@ private bucket:
 
 bucket별 접근:
 
-- avatars SELECT: object path가 profile `avatar_url`로 참조되고 caller가 해당 profile을 조회할 수 있을 때만 허용. write authorization/finalize: 본인 prefix만.
-- space-images SELECT: object path가 활성 space `image_url`로 참조되고 caller가 해당 space를 조회할 수 있을 때만 허용. write authorization/finalize: 활성 space owner/admin만.
-- post-files SELECT: object path가 `post_attachments`에 참조되고 caller가 활성 post에 접근할 수 있을 때만 허용. write authorization/finalize: 활성 post 작성자만.
-- message-files SELECT: object path가 `message_attachments`에 참조되고 caller가 현재 room 멤버이며 활성 message에 접근할 수 있을 때만 허용. write authorization/finalize: 활성 message sender이자 현재 room 멤버만.
+- avatars SELECT: object path가 profile `avatar_url`로 참조되고 caller가 해당 profile을 조회할 수 있을 때만 허용. INSERT/finalize: 본인 prefix만.
+- space-images SELECT: object path가 활성 space `image_url`로 참조되고 caller가 해당 space를 조회할 수 있을 때만 허용. INSERT/finalize: 활성 space owner/admin만.
+- post-files SELECT: object path가 `post_attachments`에 참조되고 caller가 활성 post에 접근할 수 있을 때만 허용. INSERT/finalize: 활성 post 작성자만.
+- message-files SELECT: object path가 `message_attachments`에 참조되고 caller가 현재 room 멤버이며 활성 message에 접근할 수 있을 때만 허용. INSERT/finalize: 활성 message sender이자 현재 room 멤버만.
 - object는 immutable하게 취급하고 동일 경로 UPDATE/upsert를 허용하지 않는다.
 
 cleanup queue:
@@ -1198,12 +1185,11 @@ cleanup queue:
 - queue table에 `SELECT, INSERT, UPDATE, DELETE`를 service role에 부여한다.
 - `private.attachment_cleanup_queue_id_seq`에 `USAGE, SELECT`를 service role에 부여한다.
 - queue 객체 권한을 `PUBLIC`, `anon`, `authenticated`에서 회수한다.
-- `private.upload_authorization_events`는 `profile_id`, `storage_bucket`, `storage_path`, `size_bytes`, `created_at`을 기록하고 `(storage_bucket, storage_path)`를 unique로 둔다. service role만 접근하며 분당 20회, 일일 500 MB 제한과 finalize 시 실제 object 크기를 원자적으로 검사하는 데 사용한다.
 - attachment tables의 `(storage_bucket, storage_path)` unique를 유지하고 client가 bucket/path를 직접 기록하지 못하게 한다.
 - queue 생성 후 `request_attachment_removal(p_attachment_kind text, p_attachment_id bigint) → void`를 생성한다. post/message attachment만 허용하고, 활성 parent 작성자 권한을 재검사한 뒤 queue에 멱등 enqueue한다.
 - `request_attachment_removal` 생성 직후 EXECUTE를 `PUBLIC`, `anon`, `authenticated`, `service_role`에서 회수하고 `authenticated`에만 다시 부여한다.
 - worker는 `processed_at IS NULL AND available_at <= now()` 행을 `FOR UPDATE SKIP LOCKED`로 claim한다. 시도마다 `attempts`를 증가시키고 성공 또는 이미 없는 object는 attachment 행 삭제 후 `processed_at`을 기록하며, 실패는 `last_error`와 다음 `available_at`을 기록한다.
-- maintenance enqueue 시 2일 지난 upload authorization 기록과 30일 지난 processed queue 행을 정리한다.
+- maintenance enqueue 시 30일 지난 processed queue 행을 정리한다.
 
 background jobs:
 
@@ -1228,11 +1214,11 @@ finalize는 생성 후 24시간 이내 object만 허용하여 48시간 orphan cl
 
 ## SQL 외 운영 필수사항
 
-- `supabase/functions/authorize-upload`, `authorize-download`, `storage-maintenance`를 production에 배포한다.
+- `supabase/functions/storage-maintenance`를 production에 배포한다.
 - `storage-maintenance`는 secret key로만 호출하고 production scheduler에서 매일 또는 더 자주 실행한다.
 - local에서는 `supabase functions serve` 후 같은 endpoint를 secret key로 호출한다.
 - production 적용 전 Supabase CLI login/link와 `SUPABASE_DB_PASSWORD`를 준비한 뒤 `npx supabase db push --dry-run --linked`를 실행한다. dry-run 성공 후에만 별도 승인된 실제 push를 수행한다.
-- 악성코드 검사는 운영 범위에 포함하지 않는다. 허용 MIME 확대 시 SQL bucket allowlist, finalize RPC, `authorize-upload` allowlist를 함께 수정한다.
+- 악성코드 검사는 운영 범위에 포함하지 않는다. 허용 MIME 확대 시 SQL bucket allowlist와 finalize RPC allowlist를 함께 수정한다.
 - trusted mutation RPC가 notification을 만들 때는 외부 EXECUTE 없이 내부에서 `create_notification()`을 호출한다. space/post/comment 알림은 `p_level`을 함께 넘겨 recipient의 space 알림 설정을 적용한다.
 
 ---
@@ -1265,10 +1251,10 @@ Get-Content -LiteralPath supabase/tests/schema_runtime_check.sql -Raw -Encoding 
 Get-Content -LiteralPath supabase/tests/schema_rls_check.sql -Raw -Encoding UTF8 | docker exec -i supabase_db_NEW-KMLA-ONLINE psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f -
 npx supabase gen types typescript --local
 npx supabase functions serve
-powershell -ExecutionPolicy Bypass -File supabase/tests/edge_storage_check.ps1
+powershell -ExecutionPolicy Bypass -File supabase/tests/storage_maintenance_check.ps1
 ```
 
-`schema_runtime_check.sql`과 `schema_rls_check.sql`은 검증 데이터를 남기지 않도록 transaction을 rollback하는 다중 명령 파일이므로 local DB container의 `psql`로 실행한다. Edge Storage 검증은 별도 터미널에서 `supabase functions serve`를 실행한 상태에서 수행한다.
+`schema_runtime_check.sql`과 `schema_rls_check.sql`은 검증 데이터를 남기지 않도록 transaction을 rollback하는 다중 명령 파일이므로 local DB container의 `psql`로 실행한다. Storage maintenance 검증은 별도 터미널에서 `supabase functions serve`를 실행한 상태에서 수행한다.
 
 1. 전체 migration을 빈 local DB에 순서대로 적용한다.
 2. migration reset, DB lint, database advisors가 성공하는지 확인한다.
@@ -1286,7 +1272,7 @@ powershell -ExecutionPolicy Bypass -File supabase/tests/edge_storage_check.ps1
 14. gongang 및 club round 동시 중복 생성이 차단되는지 확인한다.
 15. message edit 15분 제한과 무기한 soft delete를 확인한다.
 16. room/space membership 제거 직후 접근이 차단되는지 확인한다.
-17. Storage 직접 쓰기 거부, signed upload/download, finalize, quota/rate limit, cleanup 재시도를 확인한다.
+17. Storage RLS 직접 업로드, private bucket 다운로드, finalize, cleanup 재시도를 확인한다.
 18. service-role cleanup, purge, notification 생성, sequence INSERT를 확인한다.
 19. FK가 예상하지 않은 CASCADE 없이 RESTRICT/SET NULL로 동작하는지 확인한다.
 20. cache reconciliation 결과를 확인한다.

@@ -14,7 +14,7 @@
 - Notifications: 게시글/댓글/메시지 등에서 발생하는 알림을 저장하고, space 알림은 멤버별 설정에 따라 생성 여부를 결정한다.
 - Utilities: 공강표와 노래 신청 같은 부가 기능을 저장한다.
 - Clubs: 동아리와 신청 기간, 사용자 신청을 관리한다.
-- Storage: Supabase Storage 버킷, signed upload/download, 첨부파일 finalize, cleanup queue를 관리한다.
+- Storage: Supabase Storage 버킷, `storage.objects` RLS, 첨부파일 finalize, cleanup queue를 관리한다.
 - Security: 모든 public domain table에 RLS를 적용하고, 직접 table 변경보다 RPC/trigger/helper로 상태 전이를 제한한다.
 
 ## 문서 파일
@@ -103,43 +103,27 @@ public domain table들의 RLS policy와 role별 grant를 정의한다. `authenti
 
 ### `supabase/migrations/20260612121249_storage_buckets.sql`
 
-Storage bucket, storage object RLS, attachment finalize RPC, upload authorization 기록, cleanup queue, maintenance RPC를 만든다. 파일 업로드/다운로드를 object path 은닉에 의존하지 않고 DB 권한과 연결한다. 삭제된 content의 파일 정리, quota 기록, cached count reconciliation도 이 파일에서 service role 작업으로 묶는다.
+Storage bucket, storage object RLS, attachment finalize RPC, cleanup queue, maintenance RPC를 만든다. 파일 업로드/다운로드를 object path 은닉에 의존하지 않고 DB 권한과 연결한다. 삭제된 content의 파일 정리와 cached count reconciliation도 이 파일에서 service role 작업으로 묶는다.
 
 ## Test / Verification 파일
 
 ### `supabase/tests/schema_runtime_check.sql`
 
-migration 적용 후 runtime 계약을 확인하는 SQL이다. Auth trigger, direct chat 재사용, 검색, direct chat 불변성, soft delete/purge, 권한 제한, upload authorization, storage cleanup queue, MIME allowlist, service role grant를 검사한다. `BEGIN`/`ROLLBACK`으로 감싸져 반복 실행해도 상태를 남기지 않는다.
+migration 적용 후 runtime 계약을 확인하는 SQL이다. Auth trigger, direct chat 재사용, 검색, direct chat 불변성, soft delete/purge, 권한 제한, storage cleanup queue, MIME allowlist, service role grant를 검사한다. `BEGIN`/`ROLLBACK`으로 감싸져 반복 실행해도 상태를 남기지 않는다.
 
 ### `supabase/tests/schema_rls_check.sql`
 
 RLS와 identity stamping을 실제 `authenticated` role context에서 확인한다. author/sender id 주입 차단, post/message/read state 자동 stamping, room membership 제거 후 read state 접근 차단을 검사한다. policy가 문서대로 작동하는지 확인하는 방어용 스크립트다.
 
-### `supabase/tests/edge_storage_check.ps1`
+### `supabase/tests/storage_maintenance_check.ps1`
 
-로컬 Supabase와 Edge Function을 함께 검증하는 PowerShell 스크립트다. 임시 사용자를 가입시키고, upload/download malformed JSON, active space upload 허용, deleted space upload/download 차단, storage maintenance 실행을 확인한다. SQL만으로 검증하기 어려운 signed URL과 Edge Function 경계를 테스트하기 위해 필요하다.
+로컬 Supabase와 `storage-maintenance` Edge Function을 함께 검증하는 PowerShell 스크립트다. cleanup queue에 임시 작업을 넣고 maintenance function이 claim/complete하는지 확인한다. SQL만으로 검증하기 어려운 Storage API 삭제 worker 경계를 테스트하기 위해 필요하다.
 
 ## Edge Function 파일
 
 ### `supabase/functions/README.md`
 
-Edge Function의 로컬 실행, production deploy, storage maintenance scheduling 절차를 설명한다. DB migration만 적용하면 파일 접근 흐름이 완성되지 않으므로, 운영자가 어떤 function을 배포하고 어떻게 호출해야 하는지 알려주는 문서다.
-
-### `supabase/functions/authorize-upload/index.ts`
-
-사용자 JWT를 받아 업로드 가능한 bucket/path와 signed upload URL을 발급한다. profile 승인 상태, space 관리 권한, post/message 소유권과 멤버십, MIME/size 제한을 검사하고 `record_upload_authorization` RPC로 quota와 expected object 정보를 기록한다. 클라이언트에 service key를 노출하지 않고 안전한 upload를 가능하게 한다.
-
-### `supabase/functions/authorize-upload/deno.json`
-
-`authorize-upload`의 Deno import map이다. `@supabase/server`와 function dependency 버전을 고정해 function 실행 환경이 예측 가능하게 유지되도록 한다.
-
-### `supabase/functions/authorize-download/index.ts`
-
-사용자 JWT를 받아 접근 가능한 object에 대해서만 짧은 만료 시간의 signed download URL을 발급한다. avatar, space image, post file, message file마다 DB metadata와 membership을 검사한다. Storage object를 public으로 열지 않고도 사용자별 다운로드 권한을 적용하기 위해 필요하다.
-
-### `supabase/functions/authorize-download/deno.json`
-
-`authorize-download`의 Deno import map이다. 다운로드 function이 사용하는 dependency 버전을 고정한다.
+Edge Function의 로컬 실행, production deploy, storage maintenance scheduling 절차를 설명한다. 업로드/다운로드는 Supabase Storage SDK와 `storage.objects` RLS로 직접 처리하고, function은 cleanup worker만 남긴다.
 
 ### `supabase/functions/storage-maintenance/index.ts`
 

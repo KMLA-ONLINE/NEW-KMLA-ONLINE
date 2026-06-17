@@ -167,14 +167,6 @@ begin
     if sqlerrm = 'pending profile admin promotion was not blocked' then raise; end if;
   end;
 
-  perform public.record_upload_authorization(profile1, 'avatars', user1::text || '/44444444-4444-4444-8444-444444444444', 1024);
-  if not exists (
-    select 1 from private.upload_authorization_events
-    where profile_id = profile1 and storage_bucket = 'avatars' and size_bytes = 1024
-  ) then
-    raise exception 'upload authorization record failed';
-  end if;
-
   insert into private.attachment_cleanup_queue (storage_bucket, storage_path)
   values ('avatars', user1::text || '/55555555-5555-4555-8555-555555555555')
   returning id into queue1;

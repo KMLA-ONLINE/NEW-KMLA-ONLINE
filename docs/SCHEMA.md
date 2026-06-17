@@ -54,6 +54,7 @@ Table auth.users {
 //
 // 버킷 정책은 각각 분리하여 관리 (접근 규칙이 다르므로)
 // 오브젝트 경로 은닉에 의존하지 말고 RLS로 제어
+// 업로드/다운로드는 Supabase Storage SDK를 직접 사용하고, INSERT/SELECT 권한은 storage.objects RLS가 검증
 
 /* =========================================================
    Enums
@@ -758,28 +759,6 @@ Table private.attachment_cleanup_queue {
   }
 }
 
-Table private.upload_authorization_events {
-  id bigserial [pk]
-  profile_id bigint [not null, ref: > profiles.id]
-  storage_bucket text [not null]
-  storage_path text [not null]
-  size_bytes int8 [not null]
-  created_at timestamptz [not null, default: `now()`]
-
-  Note: '''
-  Data API 비노출 private schema.
-  service-role upload authorization endpoint만 기록/조회.
-  분당 20회, 일일 500 MB 제한을 원자적으로 검사.
-  finalize는 생성 후 24시간 이내 object와 authorization의 bucket/path/실제 크기 일치를 요구.
-  CHECK: size_bytes > 0.
-  '''
-
-  indexes {
-    (storage_bucket, storage_path) [unique]
-    (profile_id, created_at) [name: 'idx_upload_authorization_events_profile_created_at']
-  }
-}
-
 Table clubs_apply {
   id bigserial [pk]
   round_id bigint [not null, ref: > club_apply_rounds.id]
@@ -874,5 +853,4 @@ TableGroup clubs_domain {
 
 TableGroup private_jobs {
   private.attachment_cleanup_queue
-  private.upload_authorization_events
 }

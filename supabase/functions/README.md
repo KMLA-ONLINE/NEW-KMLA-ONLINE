@@ -5,19 +5,17 @@
 1. Start Docker Desktop and local Supabase with `npx supabase start`.
 2. Apply migrations with `npx supabase db reset --local --yes`.
 3. Start functions with `npx supabase functions serve`.
-4. Run `powershell -ExecutionPolicy Bypass -File supabase/tests/edge_storage_check.ps1`.
+4. Run `powershell -ExecutionPolicy Bypass -File supabase/tests/storage_maintenance_check.ps1`.
 
-`authorize-upload` and `authorize-download` require an authenticated user JWT. `storage-maintenance` accepts only a Supabase secret key and must never be called from a client.
+Uploads and downloads use private Supabase Storage buckets with `storage.objects` RLS policies and client-side Supabase Storage calls. `storage-maintenance` accepts only a Supabase secret key and must never be called from a client.
 
-Edge Function dependencies are pinned in each function's `deno.json`. Post and message attachments allow the MIME list defined in `20260612121249_storage_buckets.sql`; non-image files are returned as downloads. File content malware scanning is not performed.
+The Edge Function dependency is pinned in `storage-maintenance/deno.json`. Post and message attachments allow the MIME list defined in `20260612121249_storage_buckets.sql`. File content malware scanning is not performed.
 
 ## Production
 
 Deploy after the database migrations:
 
 ```bash
-npx supabase functions deploy authorize-upload
-npx supabase functions deploy authorize-download
 npx supabase functions deploy storage-maintenance --no-verify-jwt
 ```
 
