@@ -538,11 +538,12 @@ begin
   end case;
 end $$;
 
-create function public.create_notification(p_recipient_id bigint,p_title text,p_body text,p_actor_id bigint default null,p_space_id bigint default null,p_post_id bigint default null,p_comment_id bigint default null,p_message_id bigint default null)
+create function public.create_notification(p_recipient_id bigint,p_title text,p_body text,p_actor_id bigint default null,p_space_id bigint default null,p_post_id bigint default null,p_comment_id bigint default null,p_message_id bigint default null,p_level public.notification_level default 'all')
 returns bigint language plpgsql security definer set search_path='' as $$
-declare result bigint; derived_space_id bigint; derived_post_id bigint; target_room_id bigint;
+declare result bigint; derived_space_id bigint; derived_post_id bigint; target_room_id bigint; recipient_setting public.notification_setting;
 begin
   perform private.require_service_role();
+  if p_level is null then raise exception 'notification level required'; end if;
   if not exists(select 1 from public.profiles where id=p_recipient_id and status='accepted' and deleted_at is null) then raise exception 'accepted recipient required'; end if;
   if p_actor_id is not null and not exists(select 1 from public.profiles where id=p_actor_id and status='accepted' and deleted_at is null) then raise exception 'active actor required'; end if;
   if p_message_id is not null then
@@ -566,6 +567,13 @@ begin
   ) then
     raise exception 'recipient cannot access content target';
   end if;
+  if derived_space_id is not null then
+    select sm.notification_setting into recipient_setting
+    from public.space_members sm join public.profiles p on p.id=sm.user_id
+    where sm.space_id=derived_space_id and sm.user_id=p_recipient_id and sm.banned_at is null and p.status='accepted' and p.deleted_at is null;
+    if recipient_setting is null then raise exception 'recipient cannot access space target'; end if;
+    if recipient_setting='off' or (recipient_setting='mentions' and p_level='all') then return null; end if;
+  end if;
   insert into public.notifications(recipient_id,actor_id,title,body,space_id,post_id,comment_id,message_id)
   values(p_recipient_id,p_actor_id,p_title,p_body,derived_space_id,derived_post_id,p_comment_id,p_message_id) returning id into result;
   return result;
@@ -574,5 +582,5 @@ end $$;
 revoke execute on function private.require_service_role() from public,anon,authenticated,service_role;
 grant execute on function public.update_verified_profile_identity(bigint,public.profile_type,character,int2,int2,int2),public.change_profile_status(bigint,public.profile_status),public.change_app_role(bigint,public.app_role),public.grant_user_permission(bigint,text),public.revoke_user_permission(bigint,text),public.upsert_permission(text,text,text),public.upsert_reaction_type(bigint,text,text,text,int4),public.create_club(text,text,public.club_type),public.update_club(bigint,text,text,public.club_type),public.delete_club(bigint),public.create_club_apply_round(text,timestamptz,timestamptz),public.update_club_apply_round(bigint,text,timestamptz,timestamptz),public.delete_club_apply_round(bigint) to authenticated;
 revoke execute on function public.update_verified_profile_identity(bigint,public.profile_type,character,int2,int2,int2),public.change_profile_status(bigint,public.profile_status),public.change_app_role(bigint,public.app_role),public.grant_user_permission(bigint,text),public.revoke_user_permission(bigint,text),public.upsert_permission(text,text,text),public.upsert_reaction_type(bigint,text,text,text,int4),public.create_club(text,text,public.club_type),public.update_club(bigint,text,text,public.club_type),public.delete_club(bigint),public.create_club_apply_round(text,timestamptz,timestamptz),public.update_club_apply_round(bigint,text,timestamptz,timestamptz),public.delete_club_apply_round(bigint) from public,anon,service_role;
-grant execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint) to service_role;
-revoke execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint) from public,anon,authenticated;
+grant execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) to service_role;
+revoke execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) from public,anon,authenticated;

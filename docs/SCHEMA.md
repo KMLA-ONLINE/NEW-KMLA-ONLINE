@@ -91,8 +91,13 @@ Enum member_role {
 }
 
 Enum notification_setting {
-  none
+  off
   mentions
+  all
+}
+
+Enum notification_level {
+  mention
   all
 }
 
@@ -258,6 +263,7 @@ Table space_members {
   - Partial unique index: UNIQUE (space_id) WHERE role = 'owner'
   - RLS: 멤버만 공간 데이터 접근 가능
   - banned_at 설정 시 공간 및 게시물 접근 불가
+  - notification_setting: off는 space 알림 전체 차단, mentions는 mention-level 알림만 허용, all은 mention/all 모두 허용
   - owner/admin만 차단 가능
   '''
 
@@ -639,6 +645,8 @@ Table notifications {
 
   Note: '''
   인앱 알림 최소 테이블. 푸시 토큰 테이블 아님.
+  space/post/comment 대상 알림은 create_notification()이 recipient의 space_members.notification_setting을 적용한다.
+  notification_level mention/all은 알림 생성 이벤트의 강도이며, 저장 컬럼이 아니라 생성 시 필터링 입력값이다.
   space_type은 posts.space_type과 동일한 방식으로 비정규화하며 spaces.type 변경 시 전파 트리거로 동기화.
   '''
 

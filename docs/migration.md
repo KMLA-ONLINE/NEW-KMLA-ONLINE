@@ -80,7 +80,8 @@
 - `profile_type`: `student`, `teacher`, `alumni`
 - `profile_status`: `none`, `pending`, `accepted`, `rejected`, `withdrawn`
 - `member_role`: `owner`, `admin`, `manager`, `member`
-- `notification_setting`: `none`, `mentions`, `all`
+- `notification_setting`: `off`, `mentions`, `all`
+- `notification_level`: `mention`, `all`
 - `space_join_policy`: `auto_join`, `invite_only`
 - `gongang_location`: `floor_b1`, `floor_2`, `floor_4`, `floor_10`
 - `space_type`: `group`, `community`
@@ -552,6 +553,8 @@ private.upload_authorization_events(
 - `space_type`은 notification INSERT 시 parent space type에서 서버가 설정한다.
 - comment target은 대응 post와 space를, post target은 대응 space를 서버에서 유도한다. message target은 space/post/comment target과 함께 사용할 수 없다.
 - supplied target ID끼리 관계가 일치하지 않거나 recipient가 accepted 상태가 아니면 생성을 거부한다.
+- space/post/comment 대상 알림은 recipient의 `space_members.notification_setting`을 적용한다. `off`는 생성하지 않고 NULL을 반환, `mentions`는 `notification_level = 'mention'`만 생성, `all`은 모든 레벨을 생성한다.
+- `notification_setting`으로 억제된 경우는 정상 preference 처리이므로 NULL을 반환한다. 잘못된 target 관계, 접근 불가, 비승인 recipient 등은 계속 예외로 거부한다.
 
 ---
 
@@ -914,7 +917,7 @@ EXECUTE grant 계약:
 | `finalize_message_attachment(p_message_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_sort_order int4, p_width int4, p_height int4)`                                                          | `bigint attachment_id`   | bucket은 `message-files`로 고정; 활성 message 작성자이자 현재 room 멤버만; object 검증 후 행 생성                      |
 | `finalize_avatar(p_storage_path text)`                                                                                                                                                                                                     | `void`                   | 본인 prefix의 실제 안전한 image만 profile에 연결                                                                       |
 | `finalize_space_image(p_space_id bigint, p_storage_path text)`                                                                                                                                                                             | `void`                   | 활성 space owner/admin만 해당 prefix image 연결                                                                        |
-| `create_notification(p_recipient_id bigint, p_title text, p_body text, p_actor_id bigint default null, p_space_id bigint default null, p_post_id bigint default null, p_comment_id bigint default null, p_message_id bigint default null)` | `bigint notification_id` | trusted mutation RPC 또는 service role만 호출; accepted recipient와 target 관계를 검증하고 space_id/space_type을 서버에서 유도 |
+| `create_notification(p_recipient_id bigint, p_title text, p_body text, p_actor_id bigint default null, p_space_id bigint default null, p_post_id bigint default null, p_comment_id bigint default null, p_message_id bigint default null, p_level notification_level default 'all')` | `bigint? notification_id` | trusted mutation RPC 또는 service role만 호출; accepted recipient와 target 관계를 검증하고 space_id/space_type을 서버에서 유도; space 알림 설정으로 억제되면 NULL 반환 |
 | `search_posts(p_query text, p_space_type space_type default null, p_space_id bigint default null)`                                                                                                                                         | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 접근 가능한 활성 post/comment만 검색; 아래 검색 구현 계약 적용     |
 | `search_messages(p_query text, p_room_id bigint)`                                                                                                                                                                                          | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 현재 room 멤버의 활성 message 검색; 아래 검색 구현 계약 적용       |
 
@@ -1230,7 +1233,7 @@ finalize는 생성 후 24시간 이내 object만 허용하여 48시간 orphan cl
 - local에서는 `supabase functions serve` 후 같은 endpoint를 secret key로 호출한다.
 - production 적용 전 Supabase CLI login/link와 `SUPABASE_DB_PASSWORD`를 준비한 뒤 `npx supabase db push --dry-run --linked`를 실행한다. dry-run 성공 후에만 별도 승인된 실제 push를 수행한다.
 - 악성코드 검사는 운영 범위에 포함하지 않는다. 허용 MIME 확대 시 SQL bucket allowlist, finalize RPC, `authorize-upload` allowlist를 함께 수정한다.
-- trusted mutation RPC가 notification을 만들 때는 외부 EXECUTE 없이 내부에서 `create_notification()`을 호출한다.
+- trusted mutation RPC가 notification을 만들 때는 외부 EXECUTE 없이 내부에서 `create_notification()`을 호출한다. space/post/comment 알림은 `p_level`을 함께 넘겨 recipient의 space 알림 설정을 적용한다.
 
 ---
 

@@ -15,6 +15,7 @@ declare
   room1 bigint;
   room2 bigint;
   message1 bigint;
+  notification_id bigint;
   queue1 bigint;
   cleanup_count bigint;
 begin
@@ -80,6 +81,9 @@ begin
   end;
 
   space1 := public.create_space('community', 'Schema runtime check', null, 'auto_join');
+  insert into public.space_members (space_id, user_id)
+  values (space1, profile2)
+  on conflict do nothing;
   insert into public.posts (space_id, space_type, author_id, title, content)
   values (space1, 'community', profile1, '띄어 쓰기 검색', 'body')
   returning id into post1;
@@ -88,6 +92,34 @@ begin
   returning id into comment1;
   if not exists (select 1 from public.search_posts('띄어쓰기', 'community', space1) where post_id = post1) then
     raise exception 'space-insensitive post search failed';
+  end if;
+
+  update public.space_members
+  set notification_setting = 'off'
+  where space_id = space1 and user_id = profile2;
+  notification_id := public.create_notification(profile2, 'off notification test', null, profile1, p_post_id := post1, p_level := 'all');
+  if notification_id is not null then
+    raise exception 'off notification setting did not suppress space notification';
+  end if;
+
+  update public.space_members
+  set notification_setting = 'mentions'
+  where space_id = space1 and user_id = profile2;
+  notification_id := public.create_notification(profile2, 'mentions all notification test', null, profile1, p_post_id := post1, p_level := 'all');
+  if notification_id is not null then
+    raise exception 'mentions notification setting did not suppress all-level notification';
+  end if;
+  notification_id := public.create_notification(profile2, 'mentions notification test', null, profile1, p_post_id := post1, p_level := 'mention');
+  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
+    raise exception 'mention-level notification was not created';
+  end if;
+
+  update public.space_members
+  set notification_setting = 'all'
+  where space_id = space1 and user_id = profile2;
+  notification_id := public.create_notification(profile2, 'all notification test', null, profile1, p_post_id := post1, p_level := 'all');
+  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
+    raise exception 'all notification setting did not allow all-level notification';
   end if;
 
   perform public.purge_deleted_content('post', post1);
