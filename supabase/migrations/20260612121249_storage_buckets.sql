@@ -21,49 +21,49 @@ values
 on conflict (id) do update set public=excluded.public,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 
 create policy avatars_select on storage.objects for select to authenticated using (
-  bucket_id='avatars' and exists(select 1 from public.profiles p where p.avatar_url=name)
+  bucket_id='avatars' and exists(select 1 from public.profiles p where p.avatar_url=storage.objects.name and p.deleted_at is null)
 );
 create policy space_images_select on storage.objects for select to authenticated using (
-  bucket_id='space-images' and exists(select 1 from public.spaces s where s.image_url=name and s.deleted_at is null)
+  bucket_id='space-images' and exists(select 1 from public.spaces s where s.image_url=storage.objects.name and s.deleted_at is null)
 );
 create policy post_files_select on storage.objects for select to authenticated using (
-  bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=name and private.can_access_post(a.post_id))
+  bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=storage.objects.name and private.can_access_post(a.post_id))
 );
 create policy message_files_select on storage.objects for select to authenticated using (
-  bucket_id='message-files' and exists(select 1 from public.message_attachments a where a.storage_path=name and private.can_access_message(a.message_id))
+  bucket_id='message-files' and exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
 );
 create policy avatars_insert on storage.objects for insert to authenticated with check (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
-  and name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  and storage.objects.name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
   bucket_id='space-images' and exists(
     select 1 from public.spaces s
-    where s.pub_id::text=split_part(name,'/',1)
+    where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
       and private.can_manage_space(s.id)
-      and name ~ ('^'||s.pub_id::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      and storage.objects.name ~ ('^'||s.pub_id::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   )
 );
 create policy post_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='post-files' and split_part(name,'/',2)=(select auth.uid())::text and exists(
+  bucket_id='post-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
     select 1 from public.posts p
-    where p.pub_id::text=split_part(name,'/',1)
+    where p.pub_id::text=split_part(storage.objects.name,'/',1)
       and p.author_id=private.current_profile_id()
       and p.deleted_at is null
       and private.can_access_post(p.id)
-      and name ~ ('^'||p.pub_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      and storage.objects.name ~ ('^'||p.pub_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   )
 );
 create policy message_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='message-files' and split_part(name,'/',3)=(select auth.uid())::text and exists(
+  bucket_id='message-files' and split_part(storage.objects.name,'/',3)=(select auth.uid())::text and exists(
     select 1 from public.messages m
-    where m.room_id::text=split_part(name,'/',1)
-      and m.id::text=split_part(name,'/',2)
+    where m.room_id::text=split_part(storage.objects.name,'/',1)
+      and m.id::text=split_part(storage.objects.name,'/',2)
       and m.sender_id=private.current_profile_id()
       and m.deleted_at is null
       and private.is_room_member(m.room_id)
-      and name ~ ('^'||m.room_id::text||'/'||m.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      and storage.objects.name ~ ('^'||m.room_id::text||'/'||m.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   )
 );
 
