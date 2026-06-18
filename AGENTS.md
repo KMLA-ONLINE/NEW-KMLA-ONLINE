@@ -43,13 +43,16 @@
 
 ## Database Architecture
 - All data access goes through **RPC functions** (`supabase.rpc(...)`), not direct table access.
-- RLS is minimal — only `profiles`, `spaces` SELECT policies kept. RPC handles all auth internally via `private.require_current_profile()`.
-- **Triggers** are limited to: `validate_comment_parent`, `validate_message_parent`, `validate_space_owner`, `validate_direct_chat`, `validate_direct_chat_room`, `validate_chat_read_state`, `handle_auth_user_deleted`. Identity stamping (`stamp_current_profile`) was removed — RPCs pass author_id directly.
-- **Denormalized counters** (`comment_count`, `reaction_count`, `member_count`) were removed with their triggers. Use `SELECT count(*)` instead.
-- **GIN trigram indexes** were removed — no full-text search yet. Add back when search is implemented, choosing between `pg_trgm`, `pgvector`, or simple `ILIKE`.
+- RLS is minimal — RPC handles all auth internally via `private.require_current_profile()`.
+- **Triggers** are limited to: `validate_comment_parent`, `validate_message_parent`, `validate_space_owner`, `validate_direct_chat`, `validate_direct_chat_room`, `validate_chat_read_state`, `handle_auth_user_deleted`.
+- **Denormalized counter columns** (`posts.comment_count`, `posts.reaction_count`, `spaces.member_count`) still exist with CHECK constraints, but their auto-maintenance **triggers were removed**. Instead:
+  - `member_count` is updated inline in membership-changing RPCs (`create_space`, `join_space`, `add_space_member`, `leave_space`) via `SELECT count(*)`.
+  - All counter columns are also reconciled by the service_role RPC `reconcile_cached_counts()` (called periodically by the Edge Function).
+  - Frontend queries should not assume these counters are transaction-accurate; use `SELECT count(*)` for authoritative counts.
+- **GIN trigram indexes** (`idx_posts_title_search_gin`, `idx_posts_content_search_gin`, `idx_comments_content_search_gin`, `idx_messages_content_search_gin`) exist on space-stripped `lower()` expressions for `ILIKE`-based search via `search_posts` and `search_messages` RPCs.
 - Index count reduced from **72 to 36** — only covering core query patterns (feed, comments, chat, notifications, membership).
 - CHECK constraints `post_attachments_width/height` and `message_attachments_width/height` removed — app-layer concern, not DB.
-- CHECK constraint `comments_placeholder_check` (banning a specific Korean string) removed — app logic doesn't belong in DB.
+- CHECK constraint `comments_placeholder_check` removed — app logic doesn't belong in DB.
 
 ## DB Types
 - Shared enums live in `app/lib/supabase/database.types.ts`.

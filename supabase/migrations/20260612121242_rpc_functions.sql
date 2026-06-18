@@ -67,6 +67,7 @@ begin
   values (p_type, btrim(p_name), p_description, p_join_policy, caller_id)
   returning id into space_id;
   insert into public.space_members (space_id, user_id, role) values (space_id, caller_id, 'owner');
+  update public.spaces s set member_count = (select count(*) from public.space_members sm where sm.space_id = s.id) where s.id = space_id;
   return space_id;
 end;
 $$;
@@ -111,6 +112,7 @@ begin
     raise exception 'membership already exists';
   end if;
   insert into public.space_members (space_id, user_id) values (p_space_id, caller_id);
+  update public.spaces s set member_count = (select count(*) from public.space_members sm where sm.space_id = s.id) where s.id = p_space_id;
 end;
 $$;
 
@@ -123,6 +125,7 @@ begin
   if not exists (select 1 from public.profiles where id=p_user_id and status='accepted' and deleted_at is null)
     then raise exception 'accepted target required'; end if;
   insert into public.space_members (space_id,user_id) values (p_space_id,p_user_id);
+  update public.spaces s set member_count = (select count(*) from public.space_members sm where sm.space_id = s.id) where s.id = p_space_id;
 end;
 $$;
 
@@ -134,6 +137,7 @@ begin
     then raise exception 'owner must transfer ownership first'; end if;
   delete from public.space_members where space_id=p_space_id and user_id=caller_id;
   if not found then raise exception 'membership not found'; end if;
+  update public.spaces s set member_count = (select count(*) from public.space_members sm where sm.space_id = s.id) where s.id = p_space_id;
 end;
 $$;
 

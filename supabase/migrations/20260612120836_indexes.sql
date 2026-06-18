@@ -47,3 +47,16 @@ create index idx_clubs_apply_round_club_created_at on public.clubs_apply (round_
 create index idx_clubs_apply_round_user_created_at on public.clubs_apply (round_id, user_id, created_at);
 create index idx_clubs_apply_user_id on public.clubs_apply (user_id);
 create index idx_clubs_apply_club_id on public.clubs_apply (club_id);
+
+create index idx_posts_title_search_gin on public.posts
+  using gin (regexp_replace(lower(title), '\s+', '', 'g') gin_trgm_ops)
+  where deleted_at is null;
+create index idx_posts_content_search_gin on public.posts
+  using gin (regexp_replace(lower(content), '\s+', '', 'g') gin_trgm_ops)
+  where deleted_at is null;
+create index idx_comments_content_search_gin on public.comments
+  using gin (regexp_replace(lower(content), '\s+', '', 'g') gin_trgm_ops)
+  where deleted_at is null;
+create index idx_messages_content_search_gin on public.messages
+  using gin (regexp_replace(lower(content), '\s+', '', 'g') gin_trgm_ops)
+  where deleted_at is null;
