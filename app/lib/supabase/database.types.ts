@@ -672,7 +672,6 @@ export type Database = {
           read_at: string | null
           recipient_id: number
           space_id: number | null
-          space_type: Database["public"]["Enums"]["space_type"] | null
           title: string | null
         }
         Insert: {
@@ -686,7 +685,6 @@ export type Database = {
           read_at?: string | null
           recipient_id: number
           space_id?: number | null
-          space_type?: Database["public"]["Enums"]["space_type"] | null
           title?: string | null
         }
         Update: {
@@ -700,7 +698,6 @@ export type Database = {
           read_at?: string | null
           recipient_id?: number
           space_id?: number | null
-          space_type?: Database["public"]["Enums"]["space_type"] | null
           title?: string | null
         }
         Relationships: [
@@ -887,7 +884,6 @@ export type Database = {
           pub_id: string
           reaction_count: number
           space_id: number
-          space_type: Database["public"]["Enums"]["space_type"]
           title: string
           updated_at: string | null
         }
@@ -906,7 +902,6 @@ export type Database = {
           pub_id?: string
           reaction_count?: number
           space_id: number
-          space_type: Database["public"]["Enums"]["space_type"]
           title: string
           updated_at?: string | null
         }
@@ -925,7 +920,6 @@ export type Database = {
           pub_id?: string
           reaction_count?: number
           space_id?: number
-          space_type?: Database["public"]["Enums"]["space_type"]
           title?: string
           updated_at?: string | null
         }
@@ -1303,6 +1297,10 @@ export type Database = {
         }[]
       }
       cleanup_deleted_content: { Args: never; Returns: number }
+      cleanup_direct_chat_room: {
+        Args: { p_room_id: number }
+        Returns: undefined
+      }
       cleanup_notifications: { Args: never; Returns: number }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
       create_club: {
@@ -1324,6 +1322,7 @@ export type Database = {
           p_actor_id?: number
           p_body: string
           p_comment_id?: number
+          p_level?: Database["public"]["Enums"]["notification_level"]
           p_message_id?: number
           p_post_id?: number
           p_recipient_id: number
@@ -1394,15 +1393,6 @@ export type Database = {
         Returns: undefined
       }
       reconcile_cached_counts: { Args: never; Returns: undefined }
-      record_upload_authorization: {
-        Args: {
-          p_profile_id: number
-          p_size_bytes: number
-          p_storage_bucket: string
-          p_storage_path: string
-        }
-        Returns: undefined
-      }
       remove_group_member: {
         Args: { p_room_id: number; p_user_id: number }
         Returns: undefined
@@ -1552,6 +1542,7 @@ export type Database = {
       club_type: "major" | "general"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
       member_role: "owner" | "admin" | "manager" | "member"
+      notification_level: "mention" | "all"
       notification_setting: "off" | "mentions" | "all"
       profile_gender: "male" | "female"
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
@@ -1692,6 +1683,7 @@ export const Constants = {
       club_type: ["major", "general"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],
       member_role: ["owner", "admin", "manager", "member"],
+      notification_level: ["mention", "all"],
       notification_setting: ["off", "mentions", "all"],
       profile_gender: ["male", "female"],
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
