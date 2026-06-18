@@ -12,7 +12,7 @@
 - Default Supabase ports (54321-54327) often conflict with **Windows Hyper-V reserved port ranges**.
 - This repo uses **54720–54727** instead. Set these in `supabase/config.toml` if you get port binding errors:
   - API: 54721, DB: 54722, Shadow DB: 54720, Studio: 54723, Inbucket: 54724, Analytics: 54727
-- The Supabase MCP URL in `opencode.json` must match the API port: `http://127.0.0.1:54721/mcp`
+- The Supabase MCP URL in `opencode.json` uses the Studio port: `http://127.0.0.1:54723/api/mcp`
 
 ## Commands
 - Install: `npm install`
@@ -69,6 +69,6 @@
 
 ## MCP
 - `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
-- `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54721/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
+- `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54723/api/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
 - For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
 - This repo has local Supabase config in `supabase/config.toml` and migrations in `supabase/migrations/`.
