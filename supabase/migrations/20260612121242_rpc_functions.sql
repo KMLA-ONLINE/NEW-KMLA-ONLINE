@@ -317,12 +317,17 @@ $$;
 
 create function public.soft_delete_message(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true); target_sender_id bigint;
+declare caller_id bigint := private.require_current_profile(true); target_sender_id bigint; has_active_reply boolean;
 begin
   select sender_id into target_sender_id from public.messages where id=p_id and deleted_at is null for update;
   if target_sender_id is null then return; end if;
   if target_sender_id<>caller_id then raise exception 'message sender required'; end if;
-  update public.messages set deleted_at=now(),deleted_by=caller_id where id=p_id;
+  select exists(select 1 from public.messages where parent_id=p_id and deleted_at is null) into has_active_reply;
+  if has_active_reply then
+    update public.messages set content='삭제된 메시지입니다.',deleted_at=now(),deleted_by=caller_id where id=p_id;
+  else
+    update public.messages set deleted_at=now(),deleted_by=caller_id where id=p_id;
+  end if;
 end;
 $$;
 

@@ -55,7 +55,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.content is distinct from old.content then
+  if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
     new.is_edited := true;
     new.edited_at := now();
   end if;

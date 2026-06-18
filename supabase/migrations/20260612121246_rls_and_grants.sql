@@ -30,6 +30,10 @@ create function private.has_active_direct_reply(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.comments where parent_id=p_comment_id and deleted_at is null)
 $$;
+create function private.has_active_message_reply(p_message_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.messages where parent_id=p_message_id and deleted_at is null)
+$$;
 create function private.has_permission(p_permission_key text)
 returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_accepted_user() and exists(select 1 from public.user_permissions where user_id=private.current_profile_id() and permission_key=p_permission_key)
@@ -87,7 +91,7 @@ create policy comment_reactions_delete on public.comment_reactions for delete to
 create policy chat_rooms_select on public.chat_rooms for select to authenticated using (private.is_room_member(id));
 create policy direct_chat_pairs_select on public.direct_chat_pairs for select to authenticated using (private.is_room_member(room_id));
 create policy chat_room_members_select on public.chat_room_members for select to authenticated using (private.is_room_member(room_id));
-create policy messages_select on public.messages for select to authenticated using (deleted_at is null and private.is_room_member(room_id));
+create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_room_member(room_id));
 create policy messages_insert on public.messages for insert to authenticated with check (sender_id=private.current_profile_id() and private.is_room_member(room_id));
 create policy messages_update on public.messages for update to authenticated using (deleted_at is null and sender_id=private.current_profile_id() and private.is_room_member(room_id) and created_at>=now()-interval '15 minutes') with check (deleted_at is null and sender_id=private.current_profile_id() and private.is_room_member(room_id));
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
@@ -116,7 +120,7 @@ create policy clubs_apply_insert on public.clubs_apply for insert to authenticat
 create policy clubs_apply_delete on public.clubs_apply for delete to authenticated using (user_id=private.current_profile_id() and private.is_club_round_open(round_id));
 
 grant usage on schema public,private to authenticated,service_role;
-grant execute on function private.current_profile_id(),private.is_accepted_user(),private.is_app_admin(),private.is_room_member(bigint),private.can_access_post(bigint),private.can_access_comment(bigint),private.can_access_message(bigint),private.has_active_direct_reply(bigint),private.has_permission(text),private.is_club_round_open(bigint),private.display_author_name(bigint,boolean) to authenticated;
+grant execute on function private.current_profile_id(),private.is_accepted_user(),private.is_app_admin(),private.is_room_member(bigint),private.can_access_post(bigint),private.can_access_comment(bigint),private.can_access_message(bigint),private.has_active_direct_reply(bigint),private.has_active_message_reply(bigint),private.has_permission(text),private.is_club_round_open(bigint),private.display_author_name(bigint,boolean) to authenticated;
 grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]) to authenticated;
 
 grant select (id,pub_id,type,name,description,image_url,join_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
