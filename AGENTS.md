@@ -12,7 +12,7 @@
 - Default Supabase ports (54321-54327) often conflict with **Windows Hyper-V reserved port ranges**.
 - This repo uses **54720–54727** instead. Set these in `supabase/config.toml` if you get port binding errors:
   - API: 54721, DB: 54722, Shadow DB: 54720, Studio: 54723, Inbucket: 54724, Analytics: 54727
-- The Supabase MCP URL in `opencode.json` uses the Studio port: `http://127.0.0.1:54723/api/mcp`
+- The Supabase MCP URL in `opencode.json` uses the Studio MCP endpoint: `http://127.0.0.1:54723/api/mcp`
 
 ## Commands
 - Install: `npm install`
