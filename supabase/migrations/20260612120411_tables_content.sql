@@ -2,7 +2,6 @@ create table public.posts (
   id bigserial primary key,
   pub_id uuid not null default gen_random_uuid(),
   space_id bigint not null references public.spaces (id) on delete restrict,
-  space_type public.space_type not null,
   author_id bigint not null references public.profiles (id) on delete restrict,
   title text not null,
   content text not null,

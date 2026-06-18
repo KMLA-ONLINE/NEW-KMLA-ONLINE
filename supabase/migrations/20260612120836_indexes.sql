@@ -7,7 +7,6 @@ create index idx_space_members_space_role on public.space_members (space_id, rol
 create index idx_space_members_active_user_space on public.space_members (user_id, space_id)
 where banned_at is null;
 
-create index idx_posts_space_type_created_at on public.posts (space_type, created_at);
 create index idx_posts_author_created_at on public.posts (author_id, created_at);
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
 where deleted_at is null;

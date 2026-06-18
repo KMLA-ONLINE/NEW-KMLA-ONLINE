@@ -213,14 +213,31 @@ end $$;
 
 create function public.cleanup_deleted_content()
 returns bigint language plpgsql security definer set search_path='' as $$
-declare post_id bigint; result bigint:=0;
+declare target_id bigint; result bigint:=0;
 begin
   perform private.require_service_role();
-  for post_id in
+  for target_id in
     select p.id from public.posts p
     where p.deleted_at<now()-interval '7 days' and not exists(select 1 from public.post_attachments a where a.post_id=p.id)
   loop
-    perform public.purge_deleted_content('post',post_id);
+    perform public.purge_deleted_content('post',target_id);
+    result:=result+1;
+  end loop;
+  for target_id in
+    select c.id from public.comments c
+    where c.deleted_at<now()-interval '7 days'
+      and not exists(select 1 from public.comments where parent_id=c.id and deleted_at is null)
+  loop
+    perform public.purge_deleted_content('comment',target_id);
+    result:=result+1;
+  end loop;
+  for target_id in
+    select m.id from public.messages m
+    where m.deleted_at<now()-interval '7 days'
+      and not exists(select 1 from public.messages where parent_id=m.id and deleted_at is null)
+      and not exists(select 1 from public.message_attachments where message_id in (select id from public.messages where id=m.id or parent_id=m.id))
+  loop
+    perform public.purge_deleted_content('message',target_id);
     result:=result+1;
   end loop;
   return result;
@@ -230,11 +247,13 @@ create function public.reconcile_cached_counts()
 returns void language plpgsql security definer set search_path='' as $$
 begin
   perform private.require_service_role();
-  update public.spaces s set member_count=(select count(*) from public.space_members sm where sm.space_id=s.id) where true;
+  update public.spaces s set member_count=(select count(*) from public.space_members sm where sm.space_id=s.id)
+  where member_count is distinct from (select count(*) from public.space_members sm where sm.space_id=s.id);
   update public.posts p set
     comment_count=(select count(*) from public.comments c where c.post_id=p.id and c.deleted_at is null),
     reaction_count=(select count(*) from public.post_reactions r where r.post_id=p.id)
-  where true;
+  where comment_count is distinct from (select count(*) from public.comments c where c.post_id=p.id and c.deleted_at is null)
+     or reaction_count is distinct from (select count(*) from public.post_reactions r where r.post_id=p.id);
 end $$;
 
 revoke all on table private.attachment_cleanup_queue from public,anon,authenticated;

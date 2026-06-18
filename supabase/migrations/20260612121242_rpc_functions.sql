@@ -234,6 +234,7 @@ begin
     then raise exception 'not allowed to remove member'; end if;
   delete from public.chat_room_read_states where room_id=p_room_id and user_id=p_user_id;
   delete from public.message_reads mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id and mr.user_id=p_user_id;
+  delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id and mr.user_id=p_user_id;
   delete from public.chat_room_members where room_id=p_room_id and user_id=p_user_id;
 end;
 $$;
@@ -356,7 +357,7 @@ begin
     from public.posts p join public.spaces s on s.id=p.space_id
     left join public.comments c on c.post_id=p.id and c.deleted_at is null
     where p.deleted_at is null and s.deleted_at is null
-      and (p_space_type is null or p.space_type=p_space_type) and (p_space_id is null or p.space_id=p_space_id)
+      and (p_space_type is null or s.type=p_space_type) and (p_space_id is null or p.space_id=p_space_id)
       and (regexp_replace(lower(p.title),'\s+','','g') ilike '%'||normalized_query||'%'
         or regexp_replace(lower(p.content),'\s+','','g') ilike '%'||normalized_query||'%'
         or regexp_replace(lower(c.content),'\s+','','g') ilike '%'||normalized_query||'%')
@@ -485,6 +486,24 @@ end $$;
 create function public.bootstrap_first_app_admin(p_profile_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
 begin perform private.require_service_role(); perform pg_advisory_xact_lock(hashtextextended('public.app_admin_set',0)); if exists(select 1 from public.profiles where role='admin') then raise exception 'app admin already exists'; end if; update public.profiles set role='admin' where id=p_profile_id and status='accepted' and deleted_at is null; if not found then raise exception 'accepted profile required'; end if; end $$;
+create function public.cleanup_direct_chat_room(p_room_id bigint)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  perform private.require_service_role();
+  if exists(select 1 from public.chat_rooms where id=p_room_id and is_group) then
+    raise exception 'only direct chat rooms can be cleaned up';
+  end if;
+  if exists(select 1 from public.message_attachments a join public.messages m on m.id=a.message_id where m.room_id=p_room_id) then
+    raise exception 'message attachments must be removed before purging room';
+  end if;
+  delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id;
+  delete from public.message_reads mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id;
+  delete from public.chat_room_read_states where room_id=p_room_id;
+  delete from public.messages where room_id=p_room_id and parent_id is not null;
+  delete from public.messages where room_id=p_room_id;
+  delete from public.chat_room_members where room_id=p_room_id;
+  delete from public.chat_rooms where id=p_room_id;
+end $$;
 create function public.cleanup_notifications()
 returns bigint language plpgsql security definer set search_path='' as $$
 declare result bigint; begin perform private.require_service_role(); delete from public.notifications where read_at is not null and created_at<now()-interval '30 days'; get diagnostics result=row_count; return result; end $$;
@@ -586,5 +605,5 @@ end $$;
 revoke execute on function private.require_service_role() from public,anon,authenticated,service_role;
 grant execute on function public.update_verified_profile_identity(bigint,public.profile_type,character,int2,int2,int2),public.change_profile_status(bigint,public.profile_status),public.change_app_role(bigint,public.app_role),public.grant_user_permission(bigint,text),public.revoke_user_permission(bigint,text),public.upsert_permission(text,text,text),public.upsert_reaction_type(bigint,text,text,text,int4),public.create_club(text,text,public.club_type),public.update_club(bigint,text,text,public.club_type),public.delete_club(bigint),public.create_club_apply_round(text,timestamptz,timestamptz),public.update_club_apply_round(bigint,text,timestamptz,timestamptz),public.delete_club_apply_round(bigint) to authenticated;
 revoke execute on function public.update_verified_profile_identity(bigint,public.profile_type,character,int2,int2,int2),public.change_profile_status(bigint,public.profile_status),public.change_app_role(bigint,public.app_role),public.grant_user_permission(bigint,text),public.revoke_user_permission(bigint,text),public.upsert_permission(text,text,text),public.upsert_reaction_type(bigint,text,text,text,int4),public.create_club(text,text,public.club_type),public.update_club(bigint,text,text,public.club_type),public.delete_club(bigint),public.create_club_apply_round(text,timestamptz,timestamptz),public.update_club_apply_round(bigint,text,timestamptz,timestamptz),public.delete_club_apply_round(bigint) from public,anon,service_role;
-grant execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) to service_role;
-revoke execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) from public,anon,authenticated;
+grant execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_direct_chat_room(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) to service_role;
+revoke execute on function public.bootstrap_first_app_admin(bigint),public.cleanup_direct_chat_room(bigint),public.cleanup_notifications(),public.purge_deleted_content(text,bigint),public.create_notification(bigint,text,text,bigint,bigint,bigint,bigint,bigint,public.notification_level) from public,anon,authenticated;

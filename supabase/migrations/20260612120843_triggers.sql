@@ -48,6 +48,25 @@ create trigger trg_validate_message_parent
 before insert or update of room_id, parent_id on public.messages
 for each row execute function private.validate_message_parent();
 
+create function private.mark_message_edited()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.content is distinct from old.content then
+    new.is_edited := true;
+    new.edited_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_mark_message_edited
+before update of content on public.messages
+for each row execute function private.mark_message_edited();
+
 create function private.validate_space_owner()
 returns trigger
 language plpgsql
@@ -232,6 +251,7 @@ for each row execute function private.handle_auth_user_deleted();
 
 revoke execute on function private.validate_comment_parent() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_message_parent() from public, anon, authenticated, service_role;
+revoke execute on function private.mark_message_edited() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_space_owner() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_direct_chat() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_direct_chat_room() from public, anon, authenticated, service_role;

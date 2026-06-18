@@ -77,6 +77,6 @@
 
 ## MCP
 - `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
-- `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54321/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
+- `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54721/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
 - For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
 - This repo has local Supabase config in `supabase/config.toml` and migrations in `supabase/migrations/`.

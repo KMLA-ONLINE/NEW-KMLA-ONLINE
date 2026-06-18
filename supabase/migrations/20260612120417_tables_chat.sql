@@ -7,7 +7,7 @@ create table public.chat_rooms (
 );
 
 create table public.direct_chat_pairs (
-  room_id bigint primary key references public.chat_rooms (id) on delete restrict,
+  room_id bigint primary key references public.chat_rooms (id) on delete cascade,
   user1_id bigint not null references public.profiles (id) on delete restrict,
   user2_id bigint not null references public.profiles (id) on delete restrict,
   created_at timestamptz not null default now()
