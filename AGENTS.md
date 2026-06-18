@@ -5,7 +5,7 @@
 - Routes are file-based via `flatRoutes()` in `app/routes.ts`; add route modules under `app/routes/`.
 - `npm` is the package manager here. Use the committed `package-lock.json`; do not assume `pnpm` or a monorepo tool.
 - Tailwind CSS v4 is loaded from `app/app.css`.
-- shadcn is configured in `components.json` with style `radix-nova`.
+- shadcn is configured in `components.json` with style `radix-vega`.
 - Supabase browser helpers live in `app/lib/supabase/client.ts`; server helpers live in `app/lib/supabase/server.ts`.
 
 ## Local Supabase Ports
@@ -36,23 +36,15 @@
 
 ## Imports / Aliases
 - The only verified TS path alias is `~/* -> app/*` in `tsconfig.json`.
-- Do not assume `@/*` works. `components.json` advertises `@/...` aliases, but `tsconfig.json` does not define them.
-- Several route files currently import from `@/registry/default/...`, but there is no matching alias or local `registry/default` directory. Treat those imports as suspect and verify before reusing them.
+- Do not assume `@/*` works.
 - `app/components/ui/` is reserved for atom-level UI primitives.
 - Service/domain components must live in `app/components/`, not `app/components/ui/`.
 
 ## Database Architecture
 - All data access goes through **RPC functions** (`supabase.rpc(...)`), not direct table access.
-- RLS is minimal — RPC handles all auth internally via `private.require_current_profile()`.
-- **Triggers** are limited to: `validate_comment_parent`, `validate_message_parent`, `validate_space_owner`, `validate_direct_chat`, `validate_direct_chat_room`, `validate_chat_read_state`, `handle_auth_user_deleted`.
-- **Denormalized counter columns** (`posts.comment_count`, `posts.reaction_count`, `spaces.member_count`) still exist with CHECK constraints, but their auto-maintenance **triggers were removed**. Instead:
-  - `member_count` is updated inline in membership-changing RPCs (`create_space`, `join_space`, `add_space_member`, `leave_space`) via `SELECT count(*)`.
-  - All counter columns are also reconciled by the service_role RPC `reconcile_cached_counts()` (called periodically by the Edge Function).
-  - Frontend queries should not assume these counters are transaction-accurate; use `SELECT count(*)` for authoritative counts.
-- **GIN trigram indexes** (`idx_posts_title_search_gin`, `idx_posts_content_search_gin`, `idx_comments_content_search_gin`, `idx_messages_content_search_gin`) exist on space-stripped `lower()` expressions for `ILIKE`-based search via `search_posts` and `search_messages` RPCs.
-- Index count reduced from **72 to 36** — only covering core query patterns (feed, comments, chat, notifications, membership).
-- CHECK constraints `post_attachments_width/height` and `message_attachments_width/height` removed — app-layer concern, not DB.
-- CHECK constraint `comments_placeholder_check` removed — app logic doesn't belong in DB.
+- RPC functions are the authorization boundary. Do not bypass them from frontend code.
+- User-facing RPCs usually run as `SECURITY DEFINER`; keep internal auth checks such as `private.require_current_profile()` or `private.require_app_admin()` intact.
+- Denormalized counters such as `posts.comment_count`, `posts.reaction_count`, and `spaces.member_count` are cached values. Do not treat them as authoritative when exact counts are required.
 
 ## DB Types
 - Shared enums live in `app/lib/supabase/database.types.ts`.
