@@ -94,7 +94,7 @@ supabase status
 
 | 변수                              | remote 값                     | local 값                                     |
 | --------------------------------- | ----------------------------- | -------------------------------------------- |
-| `VITE_SUPABASE_URL`             | `https://<ref>.supabase.co` | `http://127.0.0.1:54321`                   |
+| `VITE_SUPABASE_URL`             | `https://<ref>.supabase.co` | `http://127.0.0.1:54721`                   |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | remote anon key               | `supabase status`의 local anon key         |
 | (필요시) service_role key         | remote secret                 | `supabase status`의 local service_role key |
 
@@ -111,7 +111,7 @@ supabase start
 
 ## 7. Studio 확인
 
-[http://127.0.0.1:54323](http://127.0.0.1:54323) 에 접속하면 로컬 DB를 Studio에서 관리할 수 있습니다.
+[http://127.0.0.1:54723](http://127.0.0.1:54723) 에 접속하면 로컬 DB를 Studio에서 관리할 수 있습니다.
 
 이미 remote DB에 스키마 변경사항이 있다면 아래 명령어로 로컬로 가져오세요:
 
@@ -127,7 +127,7 @@ supabase db pull --schema auth      # auth 스키마 (RLS 정책 등)
 | 상황                   | 설명                                                                                   |
 | ---------------------- | -------------------------------------------------------------------------------------- |
 | `supabase link` 실패 | `config.toml`의 설정이 remote와 불일치. 터미널 diff를 보고 맞춘 후 재시도            |
-| 로컬에서 auth가 안 됨 | Provider의 콜백 URL에 `http://127.0.0.1:54321/auth/v1/callback`이 등록되었는지 확인 |
+| 로컬에서 auth가 안 됨 | Provider의 콜백 URL에 `http://127.0.0.1:54721/auth/v1/callback`이 등록되었는지 확인 |
 | "Keys don't match"     | `.env.local`에 아직 remote 키가 남아있음. `supabase status`로 local 키로 교체      |
 | Studio가 안 열림       | `supabase start`가 정상 종료되었는지 확인. Docker 데스크탑이 실행 중인지 확인        |
 | migration 충돌         | `supabase db pull`로 최신 상태 유지                                                  |
@@ -140,14 +140,14 @@ supabase db pull --schema auth      # auth 스키마 (RLS 정책 등)
 
 | 구분 | 서비스                | URL                                                         |
 | ---- | --------------------- | ----------------------------------------------------------- |
-| 🔧   | Studio                | http://127.0.0.1:54323                                      |
-| 🔧   | Mailpit (이메일 확인) | http://127.0.0.1:54324                                      |
-| 🌐   | Project URL           | http://127.0.0.1:54321                                      |
-| 🌐   | REST API              | http://127.0.0.1:54321/rest/v1                              |
-| 🌐   | GraphQL               | http://127.0.0.1:54321/graphql/v1                           |
-| 🌐   | Edge Functions        | http://127.0.0.1:54321/functions/v1                         |
-| ⛁   | Database (직접 연결)  | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` |
-| 📦   | Storage S3            | http://127.0.0.1:54321/storage/v1/s3                        |
+| 🔧   | Studio                | http://127.0.0.1:54723                                      |
+| 🔧   | Mailpit (이메일 확인) | http://127.0.0.1:54724                                      |
+| 🌐   | Project URL           | http://127.0.0.1:54721                                      |
+| 🌐   | REST API              | http://127.0.0.1:54721/rest/v1                              |
+| 🌐   | GraphQL               | http://127.0.0.1:54721/graphql/v1                           |
+| 🌐   | Edge Functions        | http://127.0.0.1:54721/functions/v1                         |
+| ⛁   | Database (직접 연결)  | `postgresql://postgres:postgres@127.0.0.1:54722/postgres` |
+| 📦   | Storage S3            | http://127.0.0.1:54721/storage/v1/s3                        |
 
 > 인증 키(`anon key`, `service_role key`)는 `supabase status` 명령어로 확인하세요.
 > 로컬 키는 실행할 때마다 달라질 수 있습니다. 절대 버전 관리에 포함하지 마세요.

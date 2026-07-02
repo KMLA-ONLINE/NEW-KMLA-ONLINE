@@ -7,8 +7,16 @@
       "enabled": true
     },
     "supabase": {
-      "type": "remote",
-      "url": "http://127.0.0.1:54321/mcp",
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:54723/api/mcp",
+        "--allow-http",
+        "--transport",
+        "http-only"
+      ],
       "enabled": true
     }
   }
