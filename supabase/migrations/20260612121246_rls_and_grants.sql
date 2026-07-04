@@ -26,6 +26,10 @@ create function private.can_access_message(p_message_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.messages m where m.id=p_message_id and m.deleted_at is null and private.is_room_member(m.room_id))
 $$;
+create function private.is_valid_message_parent(p_parent_id bigint,p_room_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select p_parent_id is null or exists(select 1 from public.messages m where m.id=p_parent_id and m.room_id=p_room_id and m.deleted_at is null)
+$$;
 create function private.has_active_direct_reply(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.comments where parent_id=p_comment_id and deleted_at is null)
@@ -57,7 +61,6 @@ alter table public.chat_room_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.message_attachments enable row level security;
 alter table public.message_reactions enable row level security;
-alter table public.message_reads enable row level security;
 alter table public.chat_room_read_states enable row level security;
 alter table public.notifications enable row level security;
 alter table public.gongangs enable row level security;
@@ -92,21 +95,12 @@ create policy chat_rooms_select on public.chat_rooms for select to authenticated
 create policy direct_chat_pairs_select on public.direct_chat_pairs for select to authenticated using (private.is_room_member(room_id));
 create policy chat_room_members_select on public.chat_room_members for select to authenticated using (private.is_room_member(room_id));
 create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_room_member(room_id));
-create policy messages_insert on public.messages for insert to authenticated with check (sender_id=private.current_profile_id() and private.is_room_member(room_id));
-create policy messages_update on public.messages for update to authenticated using (deleted_at is null and sender_id=private.current_profile_id() and private.is_room_member(room_id) and created_at>=now()-interval '15 minutes') with check (deleted_at is null and sender_id=private.current_profile_id() and private.is_room_member(room_id));
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_select on public.message_reactions for select to authenticated using (private.can_access_message(message_id));
-create policy message_reactions_insert on public.message_reactions for insert to authenticated with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
-create policy message_reactions_update on public.message_reactions for update to authenticated using (user_id=private.current_profile_id() and private.can_access_message(message_id)) with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
-create policy message_reactions_delete on public.message_reactions for delete to authenticated using (user_id=private.current_profile_id() and private.can_access_message(message_id));
-create policy message_reads_select on public.message_reads for select to authenticated using (private.is_room_member((select room_id from public.messages where id=message_id)));
-create policy message_reads_insert on public.message_reads for insert to authenticated with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
 create policy chat_room_read_states_select on public.chat_room_read_states for select to authenticated using (user_id=private.current_profile_id() and private.is_room_member(room_id));
-create policy chat_room_read_states_insert on public.chat_room_read_states for insert to authenticated with check (user_id=private.current_profile_id() and private.is_room_member(room_id));
-create policy chat_room_read_states_update on public.chat_room_read_states for update to authenticated using (user_id=private.current_profile_id() and private.is_room_member(room_id)) with check (user_id=private.current_profile_id() and private.is_room_member(room_id));
 
-create policy notifications_select on public.notifications for select to authenticated using (recipient_id=private.current_profile_id());
-create policy notifications_update on public.notifications for update to authenticated using (recipient_id=private.current_profile_id()) with check (recipient_id=private.current_profile_id());
+create policy notifications_select on public.notifications for select to authenticated using (private.is_accepted_user() and recipient_id=private.current_profile_id());
+create policy notifications_update on public.notifications for update to authenticated using (private.is_accepted_user() and recipient_id=private.current_profile_id()) with check (private.is_accepted_user() and recipient_id=private.current_profile_id());
 create policy gongangs_select on public.gongangs for select to authenticated using (private.has_permission('gongang'));
 create policy gongangs_insert on public.gongangs for insert to authenticated with check (owner_id=private.current_profile_id() and private.has_permission('gongang'));
 create policy gongangs_update on public.gongangs for update to authenticated using (owner_id=private.current_profile_id() and private.has_permission('gongang')) with check (owner_id=private.current_profile_id() and private.has_permission('gongang'));
@@ -120,11 +114,11 @@ create policy clubs_apply_insert on public.clubs_apply for insert to authenticat
 create policy clubs_apply_delete on public.clubs_apply for delete to authenticated using (user_id=private.current_profile_id() and private.is_club_round_open(round_id));
 
 grant usage on schema public,private to authenticated,service_role;
-grant execute on function private.current_profile_id(),private.is_accepted_user(),private.is_app_admin(),private.is_room_member(bigint),private.can_access_post(bigint),private.can_access_comment(bigint),private.can_access_message(bigint),private.has_active_direct_reply(bigint),private.has_active_message_reply(bigint),private.has_permission(text),private.is_club_round_open(bigint),private.display_author_name(bigint,boolean) to authenticated;
+grant execute on function private.current_profile_id(),private.is_accepted_user(),private.is_app_admin(),private.is_room_member(bigint),private.can_access_post(bigint),private.can_access_comment(bigint),private.can_access_message(bigint),private.is_valid_message_parent(bigint,bigint),private.has_active_direct_reply(bigint),private.has_active_message_reply(bigint),private.has_permission(text),private.is_club_round_open(bigint),private.display_author_name(bigint,boolean) to authenticated;
 grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]) to authenticated;
 
 grant select (id,pub_id,type,name,description,image_url,join_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
-grant select on public.space_members,public.posts,public.post_attachments,public.comments,public.reaction_types,public.post_reactions,public.comment_reactions,public.chat_rooms,public.direct_chat_pairs,public.chat_room_members,public.messages,public.message_attachments,public.message_reactions,public.message_reads,public.chat_room_read_states,public.notifications,public.gongangs,public.song_requests,public.clubs,public.club_apply_rounds,public.clubs_apply to authenticated;
+grant select on public.space_members,public.posts,public.post_attachments,public.comments,public.reaction_types,public.post_reactions,public.comment_reactions,public.chat_rooms,public.direct_chat_pairs,public.chat_room_members,public.messages,public.message_attachments,public.message_reactions,public.chat_room_read_states,public.notifications,public.gongangs,public.song_requests,public.clubs,public.club_apply_rounds,public.clubs_apply to authenticated;
 grant insert (space_id,author_id,title,content,is_anonymous) on public.posts to authenticated;
 grant update (title,content,is_anonymous) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
@@ -133,14 +127,6 @@ grant insert (post_id,user_id,reaction_type_id) on public.post_reactions to auth
 grant insert (comment_id,user_id,reaction_type_id) on public.comment_reactions to authenticated;
 grant update (reaction_type_id) on public.post_reactions,public.comment_reactions to authenticated;
 grant delete on public.post_reactions,public.comment_reactions to authenticated;
-grant insert (room_id,sender_id,parent_id,content) on public.messages to authenticated;
-grant update (content) on public.messages to authenticated;
-grant insert (message_id,user_id,reaction_type_id) on public.message_reactions to authenticated;
-grant update (reaction_type_id) on public.message_reactions to authenticated;
-grant delete on public.message_reactions to authenticated;
-grant insert (message_id,user_id) on public.message_reads to authenticated;
-grant insert (room_id,user_id,last_read_message_id) on public.chat_room_read_states to authenticated;
-grant update (last_read_message_id) on public.chat_room_read_states to authenticated;
 grant update (notification_setting) on public.space_members to authenticated;
 grant update (read_at) on public.notifications to authenticated;
 grant insert (location,owner_id,day_of_week,start_minute,end_minute,valid_from,valid_until) on public.gongangs to authenticated;
@@ -150,7 +136,7 @@ grant insert (requester_id,url) on public.song_requests to authenticated;
 grant insert (round_id,user_id,club_id) on public.clubs_apply to authenticated;
 grant delete on public.clubs_apply to authenticated;
 
-grant usage,select on sequence public.posts_id_seq,public.comments_id_seq,public.post_reactions_id_seq,public.comment_reactions_id_seq,public.messages_id_seq,public.message_reactions_id_seq,public.gongangs_id_seq,public.song_requests_id_seq,public.clubs_apply_id_seq to authenticated;
+grant usage,select on sequence public.posts_id_seq,public.comments_id_seq,public.post_reactions_id_seq,public.comment_reactions_id_seq,public.gongangs_id_seq,public.song_requests_id_seq,public.clubs_apply_id_seq to authenticated;
 
 grant select,insert,update,delete on all tables in schema public to service_role;
 grant usage,select on all sequences in schema public to service_role;

@@ -5,7 +5,6 @@
 1. Start Docker Desktop and local Supabase with `npx supabase start`.
 2. Apply migrations with `npx supabase db reset --local --yes`.
 3. Start functions with `npx supabase functions serve`.
-4. Run `powershell -ExecutionPolicy Bypass -File supabase/tests/storage_maintenance_check.ps1`.
 
 Uploads and downloads use private Supabase Storage buckets with `storage.objects` RLS policies and client-side Supabase Storage calls. `storage-maintenance` accepts only a Supabase secret key and must never be called from a client.
 

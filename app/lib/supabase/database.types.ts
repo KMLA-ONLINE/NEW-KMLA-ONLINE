@@ -559,42 +559,9 @@ export type Database = {
           },
         ]
       }
-      message_reads: {
-        Row: {
-          message_id: number
-          read_at: string
-          user_id: number
-        }
-        Insert: {
-          message_id: number
-          read_at?: string
-          user_id: number
-        }
-        Update: {
-          message_id?: number
-          read_at?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "message_reads_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "message_reads_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       messages: {
         Row: {
-          content: string
+          content: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
@@ -606,7 +573,7 @@ export type Database = {
           sender_id: number
         }
         Insert: {
-          content: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -618,7 +585,7 @@ export type Database = {
           sender_id: number
         }
         Update: {
-          content?: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -1317,6 +1284,10 @@ export type Database = {
       }
       create_direct_chat: { Args: { p_other_user_id: number }; Returns: number }
       create_group_chat: { Args: { p_name: string }; Returns: number }
+      create_group_chat_with_members: {
+        Args: { p_member_ids?: number[]; p_name: string }
+        Returns: number
+      }
       create_notification: {
         Args: {
           p_actor_id?: number
@@ -1382,12 +1353,54 @@ export type Database = {
         Args: { p_space_id: number; p_storage_path: string }
         Returns: undefined
       }
+      get_chat_messages: {
+        Args: { p_before_id?: number; p_limit?: number; p_room_id: number }
+        Returns: {
+          attachments: Json
+          content: string
+          created_at: string
+          deleted_at: string
+          edited_at: string
+          is_edited: boolean
+          message_id: number
+          parent_message: Json
+          reactions: Json
+          reads: Json
+          room_id: number
+          sender: Json
+          sender_id: number
+        }[]
+      }
       grant_user_permission: {
         Args: { p_permission_key: string; p_user_id: number }
         Returns: undefined
       }
       join_space: { Args: { p_space_id: number }; Returns: undefined }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
+      list_chat_rooms: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          created_at: string
+          display_initials: string
+          display_name: string
+          is_group: boolean
+          last_message_content: string
+          last_message_created_at: string
+          last_message_has_attachment: boolean
+          last_message_id: number
+          last_message_sender_id: number
+          last_message_sender_name: string
+          member_count: number
+          name: string
+          room_id: number
+          unread_count: number
+        }[]
+      }
+      mark_chat_read: {
+        Args: { p_last_read_message_id: number; p_room_id: number }
+        Returns: undefined
+      }
       purge_deleted_content: {
         Args: { p_entity_id: number; p_entity_type: string }
         Returns: undefined
@@ -1437,7 +1450,33 @@ export type Database = {
           title: string
         }[]
       }
+      send_message: {
+        Args: { p_content?: string; p_parent_id?: number; p_room_id: number }
+        Returns: number
+      }
+      update_message: {
+        Args: { p_content: string; p_message_id: number }
+        Returns: undefined
+      }
+      send_message_with_attachment: {
+        Args: {
+          p_content?: string
+          p_content_type: string
+          p_file_name: string
+          p_height?: number
+          p_parent_id?: number
+          p_room_id: number
+          p_size_bytes: number
+          p_storage_path: string
+          p_width?: number
+        }
+        Returns: number
+      }
       set_anonymous_username: { Args: { p_value: string }; Returns: undefined }
+      set_message_reaction: {
+        Args: { p_message_id: number; p_reaction_type_id?: number }
+        Returns: undefined
+      }
       set_post_pin: {
         Args: { p_is_pinned: boolean; p_post_id: number }
         Returns: undefined

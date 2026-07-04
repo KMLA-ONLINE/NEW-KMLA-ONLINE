@@ -8,7 +8,7 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { supabase, headers } = createClient(request)
+  const { supabase } = createClient(request)
 
   const formData = await request.formData()
   const email = String(formData.get("email") ?? "")
@@ -20,7 +20,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "이메일 또는 비밀번호를 확인해 주세요." }
   }
 
-  return redirect("/", { headers })
+  return redirect("/")
 }
 
 export default function Login() {
