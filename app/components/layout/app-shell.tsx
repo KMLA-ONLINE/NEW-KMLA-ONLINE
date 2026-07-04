@@ -1,4 +1,4 @@
-import { Outlet } from "react-router"
+import { Outlet, useLocation } from "react-router"
 
 import { AppHeader } from "~/components/layout/app-header"
 import { AppSidebar } from "~/components/layout/app-sidebar"
@@ -10,6 +10,9 @@ type AppShellProps = {
 }
 
 export function AppShell({ email }: AppShellProps) {
+  const location = useLocation()
+  const isMessengerRoute = location.pathname.startsWith("/messenger")
+
   return (
     <SidebarProvider defaultOpen={false}>
       <div className="flex h-svh w-full flex-1 flex-col overflow-hidden">
@@ -17,7 +20,11 @@ export function AppShell({ email }: AppShellProps) {
         <div className="flex min-h-0 flex-1 pt-14">
           <AppSidebar />
           <SidebarInset className="min-h-0">
-            <div className="flex flex-1 flex-col overflow-y-auto p-4 pb-24 sm:p-6 md:pb-6">
+            <div
+              className={`flex flex-1 flex-col overflow-y-auto ${
+                isMessengerRoute ? "p-0 md:p-6" : "p-4 pb-24 sm:p-6 md:pb-6"
+              }`}
+            >
               <Outlet />
             </div>
           </SidebarInset>

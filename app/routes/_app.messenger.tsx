@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
   ImageIcon,
   InfoIcon,
   MicIcon,
-  MoreHorizontalIcon,
   PanelRightCloseIcon,
   PhoneIcon,
   PlusIcon,
@@ -22,11 +21,11 @@ import { Avatar, AvatarBadge, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
-import { Separator } from "~/components/ui/separator"
 import { cn } from "~/lib/utils"
 
 type MobileScreen = "list" | "room" | "detail"
 type RoomType = "direct" | "group"
+type MessageGroupPosition = "single" | "start" | "middle" | "end"
 
 type Participant = {
   id: string
@@ -375,6 +374,73 @@ function getReplyText(message: Message) {
   return "Attachment"
 }
 
+function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPosition) {
+  if (isMine) {
+    switch (groupPosition) {
+      case "start":
+        return "rounded-[1.25rem] rounded-br-md"
+      case "middle":
+        return "rounded-[1.25rem] rounded-tr-md rounded-br-md"
+      case "end":
+        return "rounded-[1.25rem] rounded-tr-md"
+      default:
+        return "rounded-[1.25rem]"
+    }
+  }
+
+  switch (groupPosition) {
+    case "start":
+      return "rounded-[1.25rem] rounded-bl-md"
+    case "middle":
+      return "rounded-[1.25rem] rounded-tl-md rounded-bl-md"
+    case "end":
+      return "rounded-[1.25rem] rounded-tl-md"
+    default:
+      return "rounded-[1.25rem]"
+  }
+}
+
+function getMessageGroupPosition(messages: Message[], index: number): MessageGroupPosition {
+  const message = messages[index]
+
+  if (!message || message.senderId === "system") {
+    return "single"
+  }
+
+  const previousMessage = messages[index - 1]
+  const nextMessage = messages[index + 1]
+  const hasPreviousFromSameSender =
+    previousMessage?.senderId === message.senderId && previousMessage.senderId !== "system"
+  const hasNextFromSameSender =
+    nextMessage?.senderId === message.senderId && nextMessage.senderId !== "system"
+
+  if (hasPreviousFromSameSender && hasNextFromSameSender) {
+    return "middle"
+  }
+
+  if (hasPreviousFromSameSender) {
+    return "end"
+  }
+
+  if (hasNextFromSameSender) {
+    return "start"
+  }
+
+  return "single"
+}
+
+function getRoomSubtitle(room: Room) {
+  return (
+    room.statusNote ?? (room.type === "group" ? `${room.participants.length} members` : room.role)
+  )
+}
+
+function getDesktopGridClass(isDetailOpen: boolean) {
+  return isDetailOpen
+    ? "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)_19rem]"
+    : "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)]"
+}
+
 function isPersistedState(value: unknown): value is PersistedMessengerState {
   if (!value || typeof value !== "object") {
     return false
@@ -398,29 +464,24 @@ function ChatListPane({
   onSelectRoom: (roomId: string) => void
 }) {
   return (
-    <section className="bg-card flex h-full min-h-0 flex-col overflow-hidden border-r">
-      <div className="shrink-0 px-4 py-4 md:px-5 md:py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold md:text-lg">Chats</h1>
-            <p className="text-muted-foreground text-xs">Saved locally in this browser</p>
-          </div>
-          <Button variant="ghost" size="icon-sm" aria-label="Chat options">
-            <MoreHorizontalIcon />
-          </Button>
+    <section className="bg-card flex h-full min-h-0 flex-col overflow-hidden md:border-r">
+      <div className="shrink-0 space-y-3 px-4 py-4 md:px-5 md:py-4">
+        <div className="hidden space-y-1 md:block">
+          <h1 className="text-xl font-semibold md:text-lg">Messages</h1>
+          <p className="text-muted-foreground text-xs">Direct and group conversations</p>
         </div>
-        <div className="relative mt-3">
+        <div className="relative">
           <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
           <Input
             value={searchValue}
-            className="h-10 rounded-full pl-9"
+            className="bg-muted h-10 rounded-full border-0 pl-9 shadow-none"
             placeholder="Search Messenger"
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
       </div>
-      <Separator />
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 md:p-2">
         {rooms.length > 0 ? (
           <div className="flex flex-col gap-1" aria-label="Conversation list">
             {rooms.map((room) => {
@@ -432,8 +493,8 @@ function ChatListPane({
                   key={room.id}
                   type="button"
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors",
-                    isSelected ? "bg-primary/10" : "hover:bg-muted/70"
+                    "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors",
+                    isSelected ? "bg-muted" : "hover:bg-muted/70"
                   )}
                   onClick={() => onSelectRoom(room.id)}
                 >
@@ -453,7 +514,9 @@ function ChatListPane({
                     <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                       {getMessagePreview(lastMessage)}
                     </span>
-                    <span className="text-muted-foreground mt-1 block text-xs">{room.role}</span>
+                    <span className="text-muted-foreground mt-1 block text-xs">
+                      {getRoomSubtitle(room)}
+                    </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-2">
                     <span className="text-muted-foreground text-xs">
@@ -475,12 +538,12 @@ function ChatListPane({
   )
 }
 
-function MockImage({ title, subtitle }: ImageAttachment) {
+function MockImage({ title, subtitle, className }: ImageAttachment & { className?: string }) {
   return (
     <div
       role="img"
       aria-label={`${title}${subtitle ? `: ${subtitle}` : ""}`}
-      className="bg-muted w-72 max-w-full overflow-hidden rounded-3xl border"
+      className={cn("bg-muted w-72 max-w-full overflow-hidden rounded-3xl border", className)}
     >
       <div className="grid h-44 grid-cols-[1.3fr_0.7fr] gap-1 p-1">
         <div className="bg-primary/20 flex items-center justify-center rounded-2xl">
@@ -499,13 +562,15 @@ function MockImage({ title, subtitle }: ImageAttachment) {
   )
 }
 
-function MessageImage({ image }: { image: ImageAttachment }) {
+function MessageImage({ image, className }: { image: ImageAttachment; className?: string }) {
   if (!image.src) {
-    return <MockImage {...image} />
+    return <MockImage {...image} className={className} />
   }
 
   return (
-    <figure className="bg-muted w-72 max-w-full overflow-hidden rounded-3xl border">
+    <figure
+      className={cn("bg-muted w-72 max-w-full overflow-hidden rounded-3xl border", className)}
+    >
       <img src={image.src} alt={image.title} className="max-h-72 w-full object-cover" />
       <figcaption className="bg-background/90 border-t px-4 py-3">
         <p className="text-sm font-medium">{image.title}</p>
@@ -518,10 +583,18 @@ function MessageImage({ image }: { image: ImageAttachment }) {
 function MessageBubble({
   room,
   message,
+  groupPosition,
+  showAvatar,
+  showName,
+  showTime,
   onReply,
 }: {
   room: Room
   message: Message
+  groupPosition: MessageGroupPosition
+  showAvatar: boolean
+  showName: boolean
+  showTime: boolean
   onReply: (message: Message) => void
 }) {
   if (message.senderId === "system") {
@@ -534,64 +607,88 @@ function MessageBubble({
 
   const isMine = message.senderId === CURRENT_USER.id
   const author = getMessageAuthor(room, message)
+  const bubbleShapeClass = getBubbleShapeClass(isMine, groupPosition)
+  const groupedStackOffsetClass =
+    groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
 
   return (
-    <div className={cn("flex items-end gap-2", isMine && "justify-end")}>
-      {!isMine ? (
-        <Avatar size="sm" className="mb-6">
-          <AvatarFallback>{author.initials}</AvatarFallback>
-        </Avatar>
+    <div className={cn("flex flex-col gap-1", groupedStackOffsetClass)}>
+      {showName ? (
+        <div className="pl-10">
+          <span className="text-muted-foreground text-xs font-medium">{author.name}</span>
+        </div>
       ) : null}
-      <div className={cn("flex max-w-[84%] flex-col gap-1 sm:max-w-xl", isMine && "items-end")}>
+      <div className={cn("group flex items-end gap-2", isMine && "justify-end")}>
         {!isMine ? (
-          <span className="text-muted-foreground px-2 text-xs font-medium">{author.name}</span>
+          <div className="flex w-8 shrink-0 items-end">
+            {showAvatar ? (
+              <Avatar size="sm">
+                <AvatarFallback>{author.initials}</AvatarFallback>
+              </Avatar>
+            ) : null}
+          </div>
         ) : null}
-        <div className={cn("flex flex-col gap-2", isMine && "items-end")}>
+        <div
+          className={cn(
+            "flex max-w-[min(22rem,82vw)] flex-col gap-1 sm:max-w-[70%]",
+            isMine ? "items-end" : "items-start"
+          )}
+        >
           {message.replyTo ? (
             <div
               className={cn(
-                "max-w-sm rounded-2xl border-l-2 px-3 py-2 text-xs",
-                isMine
-                  ? "bg-primary-foreground/10 text-primary-foreground/90 border-primary-foreground/70"
-                  : "bg-background text-muted-foreground border-primary"
+                "max-w-full rounded-2xl px-3 py-2 text-xs",
+                isMine ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
               )}
             >
               <p className="font-medium">Replying to {message.replyTo.author}</p>
               <p className="mt-0.5 line-clamp-2">{message.replyTo.text}</p>
             </div>
           ) : null}
-          {message.image ? <MessageImage image={message.image} /> : null}
+          {message.image ? (
+            <MessageImage image={message.image} className={bubbleShapeClass} />
+          ) : null}
           {message.content ? (
             <p
               className={cn(
-                "rounded-3xl px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-xs",
-                isMine
-                  ? "bg-primary text-primary-foreground rounded-br-md"
-                  : "bg-muted text-foreground rounded-bl-md"
+                "px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-xs",
+                bubbleShapeClass,
+                isMine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
               )}
             >
               {message.content}
             </p>
           ) : null}
         </div>
-        <div className={cn("flex items-center gap-1 px-2", isMine && "flex-row-reverse")}>
+      </div>
+      <div className={cn("flex", isMine ? "justify-end" : "pl-10")}>
+        <div
+          className={cn(
+            "flex max-w-[min(22rem,82vw)] items-center gap-1.5 px-1 sm:max-w-[70%]",
+            isMine ? "justify-end" : "justify-start"
+          )}
+        >
           {message.reaction ? (
             <Badge variant="secondary" className="gap-1">
-              <ThumbsUpIcon data-icon="inline-start" />
+              <ThumbsUpIcon className="size-3.5" />
               {message.reaction}
             </Badge>
           ) : null}
-          <button
+          <Button
             type="button"
-            className="text-muted-foreground hover:text-foreground rounded px-1 text-xs transition-colors"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground h-6 rounded-full px-2 text-[11px]"
             onClick={() => onReply(message)}
           >
             Reply
-          </button>
-          <span className="text-muted-foreground text-xs">
-            {formatMessageTime(message.createdAt)}
-          </span>
-          {isMine && message.read ? (
+          </Button>
+          {showTime ? (
+            <span className="text-muted-foreground text-[11px]">
+              {formatMessageTime(message.createdAt)}
+            </span>
+          ) : null}
+          {isMine && showTime && message.read ? (
             <CheckCheckIcon className="text-primary size-3.5" aria-label="Read" />
           ) : null}
         </div>
@@ -605,11 +702,11 @@ function TypingIndicator({ room }: { room: Room }) {
     room.participants.find((item) => item.id !== CURRENT_USER.id) ?? room.participants[0]
 
   return (
-    <div className="flex items-end gap-2">
-      <Avatar size="sm" className="mb-1">
+    <div className="flex items-end gap-2 pl-0">
+      <Avatar size="sm">
         <AvatarFallback>{participant.initials}</AvatarFallback>
       </Avatar>
-      <div className="bg-muted flex items-center gap-1 rounded-3xl rounded-bl-md px-4 py-3">
+      <div className="bg-muted flex items-center gap-1 rounded-[1.25rem] rounded-bl-md px-4 py-3">
         <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
         <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
         <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
@@ -648,12 +745,11 @@ function RoomPane({
   onSend: () => void
 }) {
   const canSend = composerValue.trim().length > 0 || attachedImage
-  const subtitle =
-    room.statusNote ?? (room.type === "group" ? `${room.participants.length} members` : room.role)
+  const subtitle = getRoomSubtitle(room)
 
   return (
-    <section className="bg-muted/50 flex h-full min-h-0 flex-col p-0 md:p-3">
-      <div className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-none shadow-xs md:rounded-xl md:border">
+    <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
+      <div className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-none md:rounded-2xl md:border">
         <header className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
             {showBackButton && onBack ? (
@@ -710,26 +806,36 @@ function RoomPane({
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-5">
-          <div className="flex flex-col items-center gap-2 pb-2 text-center">
-            <Avatar size="lg" className="relative">
-              <AvatarFallback>{room.initials}</AvatarFallback>
-              {room.online ? <AvatarBadge aria-label="Online" /> : null}
-            </Avatar>
-            <div>
-              <p className="font-semibold">{room.name}</p>
-              <p className="text-muted-foreground text-xs">
-                {room.type === "group" ? "Group conversation" : "Direct conversation"}
-              </p>
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5">
+          <div className="mx-auto flex w-full flex-col gap-4">
+            {room.messages.map((message, index) => {
+              const groupPosition = getMessageGroupPosition(room.messages, index)
+              const isMine = message.senderId === CURRENT_USER.id
+              const showAvatar = !isMine && (groupPosition === "single" || groupPosition === "end")
+              const showName =
+                room.type === "group" &&
+                !isMine &&
+                (groupPosition === "single" || groupPosition === "start")
+              const showTime = groupPosition === "single" || groupPosition === "end"
+
+              return (
+                <MessageBubble
+                  key={message.id}
+                  room={room}
+                  message={message}
+                  groupPosition={groupPosition}
+                  showAvatar={showAvatar}
+                  showName={showName}
+                  showTime={showTime}
+                  onReply={onReply}
+                />
+              )
+            })}
           </div>
-          {room.messages.map((message) => (
-            <MessageBubble key={message.id} room={room} message={message} onReply={onReply} />
-          ))}
           {room.online ? <TypingIndicator room={room} /> : null}
         </div>
 
-        <footer className="shrink-0 border-t p-2 sm:p-3">
+        <footer className="bg-card/95 shrink-0 border-t px-3 py-2 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
           {replyTo ? (
             <div className="bg-muted mb-2 flex items-start justify-between gap-3 rounded-2xl px-3 py-2">
               <div className="min-w-0 text-xs">
@@ -775,7 +881,7 @@ function RoomPane({
               </Button>
             </div>
           ) : null}
-          <div className="bg-muted flex items-end gap-1 rounded-3xl p-1.5">
+          <div className="bg-muted flex items-end gap-1 rounded-[1.75rem] p-1.5">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -797,7 +903,7 @@ function RoomPane({
               rows={1}
               aria-label="Message input"
               placeholder={`Message ${room.name}`}
-              className="bg-background placeholder:text-muted-foreground focus-visible:ring-ring/50 min-h-10 min-w-0 flex-1 resize-none rounded-3xl border-0 px-4 py-2.5 text-sm leading-5 shadow-none outline-none focus-visible:ring-2"
+              className="bg-background placeholder:text-muted-foreground focus-visible:ring-ring/50 min-h-10 min-w-0 flex-1 resize-none rounded-[1.5rem] border-0 px-4 py-2.5 text-sm leading-5 shadow-none outline-none focus-visible:ring-2"
               onChange={(event) => onComposerChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -848,7 +954,9 @@ function DetailPane({
     .map((message) => message.image as ImageAttachment)
 
   return (
-    <aside className="bg-card flex h-full min-h-0 flex-col overflow-hidden border-l">
+    <aside
+      className={cn("bg-card flex h-full min-h-0 flex-col overflow-hidden", !compact && "border-l")}
+    >
       <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-2">
           {compact && onBack ? (
@@ -877,17 +985,17 @@ function DetailPane({
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <section className="bg-muted/50 rounded-3xl p-5 text-center">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
+        <section className="bg-muted/50 rounded-[1.5rem] p-5 text-center">
           <Avatar size="lg" className="relative mx-auto">
             <AvatarFallback>{room.initials}</AvatarFallback>
             {room.online ? <AvatarBadge aria-label="Online" /> : null}
           </Avatar>
           <h2 className="mt-3 text-lg font-semibold">{room.name}</h2>
-          <p className="text-muted-foreground mt-1 text-sm">{room.statusNote ?? room.role}</p>
+          <p className="text-muted-foreground mt-1 text-sm">{getRoomSubtitle(room)}</p>
         </section>
 
-        <section className="mt-6 flex flex-col gap-3">
+        <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <UsersIcon className="text-muted-foreground size-4" aria-hidden="true" />
             <span>Members</span>
@@ -913,7 +1021,7 @@ function DetailPane({
           </div>
         </section>
 
-        <section className="mt-6 flex flex-col gap-3">
+        <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold">Shared media</h3>
             <span className="text-muted-foreground text-xs">{media.length} items</span>
@@ -945,14 +1053,6 @@ function DetailPane({
               No shared media yet.
             </div>
           )}
-        </section>
-
-        <section className="mt-6 flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">Local prototype</h3>
-          <p className="text-muted-foreground text-sm leading-6">
-            Messages, room selection, unread state, and this detail panel persist in localStorage.
-            Supabase can replace this state layer later.
-          </p>
         </section>
       </div>
     </aside>
@@ -1081,7 +1181,7 @@ export default function MessengerPage() {
     }
   }
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) {
       return
@@ -1104,14 +1204,14 @@ export default function MessengerPage() {
 
   if (!selectedRoom) {
     return (
-      <div className="flex h-[calc(100svh-10.5rem)] items-center justify-center rounded-3xl border border-dashed md:h-[calc(100svh-6.5rem)]">
+      <div className="flex h-[calc(100svh-10.5rem)] items-center justify-center border border-dashed md:h-[calc(100svh-6.5rem)] md:rounded-[1.75rem]">
         <p className="text-muted-foreground text-sm">No conversations available.</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto h-[calc(100svh-10.5rem)] w-full max-w-7xl overflow-hidden rounded-3xl border shadow-xs md:h-[calc(100svh-6.5rem)]">
+    <div className="h-[calc(100svh-10.5rem)] min-h-[32rem] w-full overflow-hidden md:h-[calc(100svh-6.5rem)] md:rounded-[1.75rem] md:border">
       <input
         ref={fileInputRef}
         type="file"
@@ -1157,9 +1257,7 @@ export default function MessengerPage() {
       <main
         className={cn(
           "hidden h-full min-h-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out md:grid",
-          isDetailOpen
-            ? "md:grid-cols-[20rem_minmax(0,1fr)] lg:grid-cols-[22rem_minmax(0,1fr)_19rem]"
-            : "md:grid-cols-[20rem_minmax(0,1fr)] lg:grid-cols-[22rem_minmax(0,1fr)]"
+          getDesktopGridClass(isDetailOpen)
         )}
       >
         <ChatListPane
