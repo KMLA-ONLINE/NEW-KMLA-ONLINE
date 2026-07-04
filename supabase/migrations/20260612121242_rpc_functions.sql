@@ -239,6 +239,290 @@ begin
 end;
 $$;
 
+create function public.create_group_chat_with_members(p_name text,p_member_ids bigint[] default array[]::bigint[])
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); room_id bigint; normalized_member_ids bigint[];
+begin
+  select array_agg(distinct member_id) into normalized_member_ids
+  from unnest(coalesce(p_member_ids,array[]::bigint[])) as member_ids(member_id)
+  where member_id is not null and member_id <> caller_id;
+
+  if exists (
+    select 1
+    from unnest(coalesce(normalized_member_ids,array[]::bigint[])) as member_ids(member_id)
+    where not exists (
+      select 1 from public.profiles p
+      where p.id=member_id and p.status='accepted' and p.deleted_at is null
+    )
+  ) then raise exception 'all group members must be accepted active profiles'; end if;
+
+  insert into public.chat_rooms(name,is_group,created_by) values(btrim(p_name),true,caller_id) returning id into room_id;
+  insert into public.chat_room_members(room_id,user_id)
+  select room_id, member_id
+  from unnest(array_prepend(caller_id,coalesce(normalized_member_ids,array[]::bigint[]))) as member_ids(member_id);
+  return room_id;
+end;
+$$;
+
+create function public.send_message(p_room_id bigint,p_content text default null,p_parent_id bigint default null)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); message_id bigint; normalized_content text;
+begin
+  if not exists(select 1 from public.chat_room_members where room_id=p_room_id and user_id=caller_id) then
+    raise exception 'room membership required';
+  end if;
+  if p_parent_id is not null and not exists(select 1 from public.messages where id=p_parent_id and room_id=p_room_id and deleted_at is null) then
+    raise exception 'active parent message in room required';
+  end if;
+
+  normalized_content := nullif(btrim(p_content), '');
+  if normalized_content is null then
+    raise exception 'message content required';
+  end if;
+  if char_length(normalized_content) > 10000 then
+    raise exception 'message content must be 1 to 10000 characters';
+  end if;
+
+  insert into public.messages(room_id,sender_id,parent_id,content)
+  values(p_room_id,caller_id,p_parent_id,normalized_content)
+  returning id into message_id;
+
+  insert into public.message_reads(message_id,user_id,read_at)
+  values(message_id,caller_id,now())
+  on conflict(message_id,user_id) do nothing;
+
+  insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
+  values(p_room_id,caller_id,message_id)
+  on conflict(room_id,user_id) do update
+  set last_read_message_id=excluded.last_read_message_id
+  where public.chat_room_read_states.last_read_message_id is null
+     or public.chat_room_read_states.last_read_message_id < excluded.last_read_message_id;
+
+  return message_id;
+end;
+$$;
+
+create function public.update_message(p_message_id bigint,p_content text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); normalized_content text;
+begin
+  normalized_content := nullif(btrim(p_content), '');
+  if normalized_content is null then
+    raise exception 'message content required';
+  end if;
+  if char_length(normalized_content) > 10000 then
+    raise exception 'message content must be 1 to 10000 characters';
+  end if;
+
+  update public.messages m
+  set content = normalized_content
+  where m.id = p_message_id
+    and m.deleted_at is null
+    and m.sender_id = caller_id
+    and m.created_at >= now() - interval '15 minutes'
+    and exists (
+      select 1
+      from public.chat_room_members crm
+      where crm.room_id = m.room_id
+        and crm.user_id = caller_id
+    );
+
+  if not found then
+    raise exception 'editable active message not found';
+  end if;
+end;
+$$;
+
+create function public.mark_chat_read(p_room_id bigint,p_last_read_message_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); previous_last_read_message_id bigint;
+begin
+  if not exists(select 1 from public.chat_room_members where room_id=p_room_id and user_id=caller_id) then
+    raise exception 'room membership required';
+  end if;
+  if not exists(select 1 from public.messages where id=p_last_read_message_id and room_id=p_room_id and deleted_at is null) then
+    raise exception 'active message in room required';
+  end if;
+
+  select rs.last_read_message_id into previous_last_read_message_id
+  from public.chat_room_read_states rs
+  where rs.room_id=p_room_id and rs.user_id=caller_id
+  for update;
+
+  insert into public.message_reads(message_id,user_id,read_at)
+  select m.id,caller_id,now()
+  from public.messages m
+  where m.room_id=p_room_id
+    and m.deleted_at is null
+    and m.id<=p_last_read_message_id
+    and (previous_last_read_message_id is null or m.id>previous_last_read_message_id)
+  on conflict(message_id,user_id) do nothing;
+
+  insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
+  values(p_room_id,caller_id,p_last_read_message_id)
+  on conflict(room_id,user_id) do update
+  set last_read_message_id=excluded.last_read_message_id
+  where public.chat_room_read_states.last_read_message_id is null
+     or public.chat_room_read_states.last_read_message_id < excluded.last_read_message_id;
+end;
+$$;
+
+create function public.set_message_reaction(p_message_id bigint,p_reaction_type_id bigint default null)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  if not exists(
+    select 1
+    from public.messages m
+    join public.chat_room_members crm on crm.room_id=m.room_id and crm.user_id=caller_id
+    where m.id=p_message_id and m.deleted_at is null
+  ) then raise exception 'active message access required'; end if;
+
+  if p_reaction_type_id is null then
+    delete from public.message_reactions where message_id=p_message_id and user_id=caller_id;
+    return;
+  end if;
+
+  if not exists(select 1 from public.reaction_types where id=p_reaction_type_id) then raise exception 'reaction type not found'; end if;
+  insert into public.message_reactions(message_id,user_id,reaction_type_id)
+  values(p_message_id,caller_id,p_reaction_type_id)
+  on conflict(message_id,user_id) do update
+  set reaction_type_id=excluded.reaction_type_id, updated_at=now();
+end;
+$$;
+
+create function public.list_chat_rooms()
+returns table(
+  room_id bigint,
+  is_group boolean,
+  name text,
+  display_name text,
+  display_initials text,
+  avatar_url text,
+  last_message_id bigint,
+  last_message_content text,
+  last_message_has_attachment boolean,
+  last_message_sender_id bigint,
+  last_message_sender_name text,
+  last_message_created_at timestamptz,
+  unread_count bigint,
+  member_count bigint,
+  created_at timestamptz
+) language plpgsql stable security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  return query
+  select
+    r.id as room_id,
+    r.is_group,
+    r.name,
+    coalesce(case when r.is_group then r.name else peer.name end,'채팅방') as display_name,
+    upper(left(regexp_replace(coalesce(case when r.is_group then r.name else peer.name end,'?'),'\s+','','g'),2)) as display_initials,
+    case when r.is_group then null else peer.avatar_url end as avatar_url,
+    last_message.id as last_message_id,
+    last_message.content as last_message_content,
+    coalesce(last_message.has_attachment,false) as last_message_has_attachment,
+    last_message.sender_id as last_message_sender_id,
+    last_sender.name as last_message_sender_name,
+    last_message.created_at as last_message_created_at,
+    coalesce(unread.unread_count,0) as unread_count,
+    member_counts.member_count,
+    r.created_at
+  from public.chat_room_members own_membership
+  join public.chat_rooms r on r.id=own_membership.room_id
+  left join public.direct_chat_pairs dcp on dcp.room_id=r.id
+  left join public.profiles peer on peer.id=case when dcp.user1_id=caller_id then dcp.user2_id when dcp.user2_id=caller_id then dcp.user1_id else null end
+  left join lateral (
+    select m.id,m.sender_id,m.content,m.created_at,
+      exists(select 1 from public.message_attachments a where a.message_id=m.id) as has_attachment
+    from public.messages m
+    where m.room_id=r.id and m.deleted_at is null
+    order by m.id desc
+    limit 1
+  ) last_message on true
+  left join public.profiles last_sender on last_sender.id=last_message.sender_id
+  left join public.chat_room_read_states read_state on read_state.room_id=r.id and read_state.user_id=caller_id
+  left join lateral (
+    select count(*)::bigint as unread_count
+    from public.messages m
+    where m.room_id=r.id and m.deleted_at is null and m.sender_id<>caller_id
+      and (read_state.last_read_message_id is null or m.id>read_state.last_read_message_id)
+  ) unread on true
+  join lateral (
+    select count(*)::bigint as member_count from public.chat_room_members m where m.room_id=r.id
+  ) member_counts on true
+  where own_membership.user_id=caller_id
+  order by last_message.id desc nulls last,r.created_at desc,r.id desc;
+end;
+$$;
+
+create function public.get_chat_messages(p_room_id bigint,p_before_id bigint default null,p_limit int4 default 50)
+returns table(
+  message_id bigint,
+  room_id bigint,
+  sender_id bigint,
+  sender jsonb,
+  parent_message jsonb,
+  content text,
+  is_edited boolean,
+  edited_at timestamptz,
+  deleted_at timestamptz,
+  created_at timestamptz,
+  attachments jsonb,
+  reactions jsonb,
+  reads jsonb
+) language plpgsql stable security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  if p_limit is null or p_limit not between 1 and 100 then raise exception 'limit must be between 1 and 100'; end if;
+  if not exists(select 1 from public.chat_room_members crm where crm.room_id=p_room_id and crm.user_id=caller_id) then raise exception 'room membership required'; end if;
+
+  return query
+  with page as (
+    select m.*
+    from public.messages m
+    where m.room_id=p_room_id
+      and (m.deleted_at is null or exists(select 1 from public.messages child where child.parent_id=m.id and child.deleted_at is null))
+      and (p_before_id is null or m.id<p_before_id)
+    order by m.id desc
+    limit p_limit
+  )
+  select
+    page.id as message_id,
+    page.room_id,
+    page.sender_id,
+    jsonb_build_object('id',sender.id,'name',sender.name,'avatar_url',sender.avatar_url) as sender,
+    case when parent.id is null then null else jsonb_build_object('id',parent.id,'sender_id',parent.sender_id,'sender_name',parent_sender.name,'content',parent.content,'created_at',parent.created_at) end as parent_message,
+    page.content,
+    page.is_edited,
+    page.edited_at,
+    page.deleted_at,
+    page.created_at,
+    coalesce(attachments.items,'[]'::jsonb) as attachments,
+    coalesce(reactions.items,'[]'::jsonb) as reactions,
+    coalesce(reads.items,'[]'::jsonb) as reads
+  from page
+  join public.profiles sender on sender.id=page.sender_id
+  left join public.messages parent on parent.id=page.parent_id
+  left join public.profiles parent_sender on parent_sender.id=parent.sender_id
+  left join lateral (
+    select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'content_type',a.content_type,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'created_at',a.created_at) order by a.sort_order,a.id) as items
+    from public.message_attachments a where a.message_id=page.id
+  ) attachments on true
+  left join lateral (
+    select jsonb_agg(jsonb_build_object('id',mr.id,'user_id',mr.user_id,'user_name',rp.name,'reaction_type_id',rt.id,'reaction_key',rt.key,'reaction_name',rt.name,'reaction_icon',rt.icon,'created_at',mr.created_at,'updated_at',mr.updated_at) order by mr.created_at,mr.id) as items
+    from public.message_reactions mr join public.reaction_types rt on rt.id=mr.reaction_type_id join public.profiles rp on rp.id=mr.user_id
+    where mr.message_id=page.id
+  ) reactions on true
+  left join lateral (
+    select jsonb_agg(jsonb_build_object('user_id',mr.user_id,'user_name',reader.name,'read_at',mr.read_at) order by mr.read_at,mr.user_id) as items
+    from public.message_reads mr join public.profiles reader on reader.id=mr.user_id
+    where mr.message_id=page.id
+  ) reads on true
+  order by page.id asc;
+end;
+$$;
+
 create function public.set_post_pin(p_post_id bigint,p_is_pinned boolean)
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(true);
@@ -317,17 +601,14 @@ $$;
 
 create function public.soft_delete_message(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true); target_sender_id bigint; has_active_reply boolean;
+declare caller_id bigint := private.require_current_profile(true); target_sender_id bigint;
 begin
   select sender_id into target_sender_id from public.messages where id=p_id and deleted_at is null for update;
   if target_sender_id is null then return; end if;
   if target_sender_id<>caller_id then raise exception 'message sender required'; end if;
-  select exists(select 1 from public.messages where parent_id=p_id and deleted_at is null) into has_active_reply;
-  if has_active_reply then
-    update public.messages set content='삭제된 메시지입니다.',deleted_at=now(),deleted_by=caller_id where id=p_id;
-  else
-    update public.messages set deleted_at=now(),deleted_by=caller_id where id=p_id;
-  end if;
+  update public.messages
+  set content='삭제된 메시지입니다.',deleted_at=now(),deleted_by=caller_id
+  where id=p_id;
 end;
 $$;
 
@@ -383,6 +664,7 @@ begin
   return query select m.id,left(m.content,300),p.name,m.created_at
   from public.messages m join public.profiles p on p.id=m.sender_id
   where m.room_id=p_room_id and m.deleted_at is null
+    and m.content is not null
     and regexp_replace(lower(m.content),'\s+','','g') ilike '%'||normalized_query||'%'
   order by m.created_at desc,m.id desc limit 50;
 end;
@@ -397,7 +679,7 @@ grant execute on function public.create_space(public.space_type,text,text,public
 grant execute on function public.update_space(bigint,text,text,public.space_join_policy,public.space_type) to authenticated;
 grant execute on function public.join_space(bigint), public.add_space_member(bigint,bigint), public.leave_space(bigint) to authenticated;
 grant execute on function public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_owner(bigint,bigint), public.set_space_member_ban(bigint,bigint,boolean,text) to authenticated;
-grant execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint) to authenticated;
+grant execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint), public.create_group_chat_with_members(text,bigint[]), public.send_message(bigint,text,bigint), public.update_message(bigint,text), public.mark_chat_read(bigint,bigint), public.set_message_reaction(bigint,bigint), public.list_chat_rooms(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.set_post_pin(bigint,boolean), public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.set_anonymous_username(text) to authenticated;
 grant execute on function public.soft_delete_space(bigint), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.soft_delete_message(bigint), public.withdraw_profile() to authenticated;
 grant execute on function public.search_posts(text,public.space_type,bigint), public.search_messages(text,bigint) to authenticated;
@@ -514,6 +796,7 @@ returns bigint language plpgsql security definer set search_path='' as $$
 declare result bigint; begin perform private.require_service_role(); delete from public.notifications where read_at is not null and created_at<now()-interval '30 days'; get diagnostics result=row_count; return result; end $$;
 create function public.purge_deleted_content(p_entity_type text,p_entity_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
+declare affected_read_state record; replacement_message_id bigint;
 begin
   perform private.require_service_role();
   case p_entity_type
@@ -529,8 +812,27 @@ begin
       if not found then return; end if;
       if exists(select 1 from public.messages where parent_id=p_entity_id and deleted_at is null) then raise exception 'active message reply blocks purge'; end if;
       if exists(select 1 from public.message_attachments where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id)) then raise exception 'message attachments must be removed before purge'; end if;
-      delete from public.chat_room_read_states where last_read_message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id);
       delete from public.message_reads where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id);
+      for affected_read_state in
+        select rs.room_id,rs.user_id
+        from public.chat_room_read_states rs
+        where rs.last_read_message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id)
+      loop
+        select max(mr.message_id) into replacement_message_id
+        from public.message_reads mr
+        join public.messages remaining_message on remaining_message.id=mr.message_id
+        where mr.user_id=affected_read_state.user_id
+          and remaining_message.room_id=affected_read_state.room_id
+          and remaining_message.deleted_at is null;
+
+        delete from public.chat_room_read_states
+        where room_id=affected_read_state.room_id and user_id=affected_read_state.user_id;
+
+        if replacement_message_id is not null then
+          insert into public.chat_room_read_states(room_id,user_id,last_read_message_id,last_read_at)
+          values(affected_read_state.room_id,affected_read_state.user_id,replacement_message_id,now());
+        end if;
+      end loop;
       delete from public.message_reactions where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id);
       delete from public.messages where parent_id=p_entity_id and deleted_at is not null;
       delete from public.messages where id=p_entity_id and deleted_at is not null;

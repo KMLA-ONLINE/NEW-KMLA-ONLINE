@@ -1,49 +1,3 @@
-# school_community — AI Agent용 Supabase 마이그레이션 실행서
-
-이 문서는 실제 Supabase migration 구현에 필요한 전체 실행 명세다. 다른 문서 없이 이 파일만 보고 작업한다.
-
----
-
-## 실행 규칙
-
-1. 아래 migration 순서를 변경하지 않는다.
-2. 아래 실제 migration 파일을 순서대로 유지·수정한다. 새 단계가 필요한 경우에만 `supabase migration new {name}`으로 생성하고 타임스탬프를 직접 작성하지 않는다.
-3. 테이블·컬럼·enum의 최종 정의는 이 문서의 데이터 모델 계약을 따른다.
-4. 이 문서에 없는 객체·컬럼·권한·동작은 임의로 추가하지 않는다.
-5. `ON DELETE CASCADE`를 사용하지 않는다.
-6. 감사·원본 참조 보존 FK는 `ON DELETE SET NULL`, 나머지는 기본 `ON DELETE RESTRICT`로 구현한다.
-7. public schema의 모든 테이블에 RLS를 활성화한다.
-8. `anon`, `authenticated`, `service_role`, `PUBLIC` 권한은 필요한 객체에만 명시적으로 부여한다.
-9. `SECURITY DEFINER` 함수는 `SET search_path = ''`와 함수 내부 권한 검사를 포함한다.
-10. 모든 migration 적용 후 검증 절차를 실행한다.
-11. 명시되지 않은 client 권한은 허용하지 않는다. 판단이 필요한 경우 권한을 추가하지 말고 작업을 중단한다.
-12. SQL 예시보다 본문의 최종 계약이 우선한다. 같은 객체를 여러 section에서 다루면 뒤 section이 앞 section의 권한·제약·트리거를 완성한다.
-
----
-
-## 생성 순서
-
-| section | 실제 migration 파일                                      | 주요 작업                                  |
-| ------- | ---------------------------------------------------------- | ------------------------------------------ |
-| 00   | `20260611072414_remote_schema.sql`                         | 기존 remote baseline                       |
-| 01   | `20260612001825_foundation.sql`                            | 기본 권한 회수, private schema, 확장, enum |
-| 04   | `20260612001830_identity.sql`                              | identity 테이블, Auth 생성 trigger, RLS    |
-| 05   | `20260612120344_tables_spaces.sql`                         | spaces, space_members                      |
-| 06   | `20260612120411_tables_content.sql`                        | posts, attachments, comments               |
-| 07   | `20260612120414_tables_reactions.sql`                      | reaction registry 및 reactions             |
-| 08   | `20260612120417_tables_chat.sql`                           | chat 전체 테이블                           |
-| 09   | `20260612120420_tables_notifications.sql`                  | notifications                              |
-| 10   | `20260612120424_tables_utilities.sql`                      | gongangs, song_requests                    |
-| 11   | `20260612120427_tables_clubs.sql`                          | clubs 및 신청                              |
-| 12   | `20260612120836_indexes.sql`                               | 명시된 필수 인덱스                         |
-| 13   | `20260612120839_constraints.sql`                           | CHECK, unique, exclusion, FK               |
-| 14   | `20260612120843_triggers.sql`                              | 검증·동기화·캐시 트리거                    |
-| 15   | `20260612121242_rpc_functions.sql`                         | mutation/search/cleanup RPC                |
-| 16   | `20260612121246_rls_and_grants.sql`                        | RLS, helper, GRANT                         |
-| 17   | `20260612121249_storage_buckets.sql`                       | Storage, cleanup queue, jobs               |
-
----
-
 ## 00. remote baseline
 
 실제 파일: `supabase/migrations/20260611072414_remote_schema.sql`
@@ -343,7 +297,6 @@ private.attachment_cleanup_queue(
   last_error text?, processed_at timestamptz?,
   UQ(storage_bucket, storage_path)
 )
-
 ```
 
 ---
@@ -511,17 +464,23 @@ private.attachment_cleanup_queue(
 - message 검색은 원문과 query를 `lower()` 처리하고 모든 공백을 제거한 뒤 `ILIKE '%정규화 query%'`로 비교한다.
 - message 수정은 작성 후 15분까지만 허용한다.
 - message soft delete는 시간 제한 없이 sender 본인에게 허용한다.
-- 삭제 message 본문은 숨기고 기존 답글은 유지한다.
+- 삭제 message는 `삭제된 메시지입니다.` placeholder로 저장하고 기존 답글은 유지한다.
 - message/read/read_state 접근은 현재 room membership을 요구한다.
 - read state는 동일 room 안에서 앞으로만 이동한다.
 - group room의 일반 멤버는 accepted 사용자를 초대하고 본인만 나갈 수 있다. 타인 제거는 room creator 또는 app admin만 허용한다.
 - group room creator가 비활성화되면 타인 강제 제거는 app admin만 수행한다.
-- messages 직접 INSERT 입력은 `room_id`, `parent_id`, `content`만 허용하고 `sender_id`는 현재 profile로 강제한다.
-- messages 직접 UPDATE는 sender의 활성 message `content`만 허용한다. `room_id`, `parent_id`, `sender_id`, edit/deletion 감사 필드는 변경할 수 없다.
+- message mutation은 직접 table write가 아니라 RPC만 사용한다. `send_message()`는 sender 기록과 read_state 이동을 한 transaction에서 처리하고, `update_message()`는 15분 제한을 강제한다.
+- message content 컬럼은 첨부-only RPC를 위해 NULL을 허용하지만, `send_message()`는 trim 후 1 ~ 10,000자 content를 요구한다.
+- 첨부-only 또는 텍스트+첨부 메시지는 먼저 `message-files`에 `room_id/auth.uid()/uuid` 경로로 업로드한 뒤 `send_message_with_attachment()`로 message와 attachment metadata를 원자 생성한다.
+- 기존 message에 새 첨부를 나중에 추가하는 경로는 authenticated 사용자에게 열어두지 않는다. 첨부 제거만 허용한다.
+- message reaction은 `set_message_reaction()` RPC만 사용한다.
+- read_state 변경은 `mark_chat_read()` RPC만 사용한다. `message_reads`에 읽음 상세를 기록하고 `chat_room_read_states`는 unread 계산용 cache로 함께 갱신한다.
+- `message_reads`는 누가 어떤 message를 읽었는지와 `read_at`을 저장하는 세부 읽음 테이블이며 클라이언트 직접 INSERT는 허용하지 않는다.
+- group member 제거 transaction에서 해당 사용자의 `chat_room_read_states`와 그 room에 속한 모든 `message_reads`를 정리한다.
 - message content는 trim 후 1 ~ 10,000자다.
 - message reaction은 현재 room 멤버가 활성 message에만 수행하며 `user_id`는 현재 profile로 강제한다.
-- `message_reads`는 현재 room 멤버가 자신의 활성 message read 행만 INSERT한다. UPDATE/DELETE는 허용하지 않는다.
-- `chat_room_read_states`는 현재 room 멤버가 자신의 행만 INSERT/UPDATE한다. client는 `last_read_message_id`만 변경하고 trigger가 `last_read_at = now()`를 기록한다.
+- `message_reads`는 RPC가 채우며, sender 자신의 새 message와 `mark_chat_read()` 범위 읽음을 기록한다. UPDATE/DELETE는 직접 허용하지 않는다.
+- `chat_room_read_states`는 unread 계산용 cache다. client는 직접 변경하지 않고 `mark_chat_read()`, `send_message()`, `send_message_with_attachment()`가 갱신한다.
 - group member 제거 transaction에서 해당 사용자의 `chat_room_read_states`와 그 room에 속한 모든 `message_reads`를 정리한다.
 
 ---
@@ -760,37 +719,37 @@ FK 원칙:
 
 생성:
 
-| trigger                                                                                               | table/event                                                | 계약                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Auth profile create/delete lifecycle                                                                  | `auth.users`INSERT/DELETE                                  | 신뢰된 profile 생성; 삭제 전 owner/app admin 검사 후 withdrawn 익명화                                                   |
-| `trg_stamp_post_identity`                                                                             | posts BEFORE INSERT                                        | authenticated 요청이면 `auth.uid()`로 조회한 현재 profile ID를 `author_id`에 기록하고 parent space에서 `space_type`설정 |
-| `trg_stamp_comment_identity`                                                                          | comments BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를 `author_id`에 기록                                                             |
-| `trg_stamp_post_reaction_identity`                                                                    | post_reactions BEFORE INSERT                               | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_stamp_comment_reaction_identity`                                                                 | comment_reactions BEFORE INSERT                            | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_stamp_message_identity`                                                                          | messages BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를 `sender_id`에 기록                                                             |
-| `trg_stamp_message_reaction_identity`                                                                 | message_reactions BEFORE INSERT                            | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_stamp_message_read_identity`                                                                     | message_reads BEFORE INSERT                                | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_stamp_room_read_state_identity`                                                                  | chat_room_read_states BEFORE INSERT                        | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_stamp_gongang_identity`                                                                          | gongangs BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를 `owner_id`에 기록                                                              |
-| `trg_stamp_song_request_identity`                                                                     | song_requests BEFORE INSERT                                | authenticated 요청이면 현재 profile ID를 `requester_id`에 기록                                                          |
-| `trg_stamp_club_apply_identity`                                                                       | clubs_apply BEFORE INSERT                                  | authenticated 요청이면 현재 profile ID를 `user_id`에 기록                                                               |
-| `trg_sync_post_space_type`                                                                            | posts BEFORE INSERT/UPDATE OF space_id                     | parent `spaces.type`을 `space_type`에 기록                                                                              |
-| `trg_sync_notification_space_type`                                                                    | notifications BEFORE INSERT                                | parent space type 기록                                                                                                  |
-| `trg_propagate_space_type`                                                                            | spaces AFTER UPDATE OF type                                | 해당 posts/notifications에 type 전파                                                                                    |
-| `trg_validate_comment_parent`                                                                         | comments BEFORE INSERT/UPDATE                              | 동일 post의 활성 최상위 comment만 parent 허용                                                                           |
-| `trg_validate_message_parent`                                                                         | messages BEFORE INSERT/UPDATE                              | 동일 room의 활성 최상위 message만 parent 허용                                                                           |
-| `trg_validate_direct_chat`deferred constraint triggers                                                | direct_chat_pairs와 chat_room_members INSERT/UPDATE/DELETE | commit 시 pair와 정확히 두 membership 일치                                                                              |
-| `trg_validate_direct_chat_room`                                                                       | chat_rooms BEFORE UPDATE OF is_group/name                  | direct room이 group 또는 named room으로 변형되지 않도록 차단                                                            |
-| `trg_prevent_space_membership_identity_update`                                                        | space_members BEFORE UPDATE OF space_id/user_id             | membership 식별자는 DELETE 후 INSERT로만 변경                                                                           |
-| `trg_prevent_chat_membership_identity_update`                                                         | chat_room_members BEFORE UPDATE OF room_id/user_id          | room membership 식별자는 DELETE 후 INSERT로만 변경                                                                      |
-| `trg_prevent_direct_chat_pair_update`                                                                 | direct_chat_pairs BEFORE UPDATE                             | direct pair는 생성 후 변경 불가                                                                                          |
-| `trg_update_post_comment_count`                                                                       | comments AFTER INSERT/UPDATE/DELETE                        | OLD/NEW post_id와 deleted_at 변경을 반영해 활성 comment count 증감                                                      |
-| `trg_update_post_reaction_count`                                                                      | post_reactions AFTER INSERT/UPDATE/DELETE                  | OLD/NEW post_id 변경만 반영; reaction type 변경은 count 유지                                                            |
-| `trg_update_space_member_count`                                                                       | space_members AFTER INSERT/DELETE                          | member_count 원자적 증감                                                                                                |
-| `trg_validate_chat_read_state`                                                                        | chat_room_read_states BEFORE INSERT/UPDATE                 | 동일 room 활성 message 및 단조 증가 검증, last_read_at 서버 기록                                                        |
-| `trg_profiles_updated_at`,`trg_posts_updated_at`,`trg_comments_updated_at`,`trg_spaces_updated_at`    | 각 테이블 BEFORE UPDATE                                    | `updated_at = now()`                                                                                                    |
-| `trg_post_reactions_updated_at`,`trg_comment_reactions_updated_at`,`trg_message_reactions_updated_at` | 각 reaction 테이블 BEFORE UPDATE                           | `updated_at = now()`                                                                                                    |
-| `trg_mark_message_edited`                                                                             | messages BEFORE UPDATE OF content                          | 일반 content 수정에만 `is_edited = true`,`edited_at = now()`                                                            |
+| trigger                                                                                                     | table/event                                                | 계약                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Auth profile create/delete lifecycle                                                                        | `auth.users`INSERT/DELETE                                | 신뢰된 profile 생성; 삭제 전 owner/app admin 검사 후 withdrawn 익명화                                                        |
+| `trg_stamp_post_identity`                                                                                 | posts BEFORE INSERT                                        | authenticated 요청이면`auth.uid()`로 조회한 현재 profile ID를 `author_id`에 기록하고 parent space에서 `space_type`설정 |
+| `trg_stamp_comment_identity`                                                                              | comments BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를`author_id`에 기록                                                                 |
+| `trg_stamp_post_reaction_identity`                                                                        | post_reactions BEFORE INSERT                               | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_stamp_comment_reaction_identity`                                                                     | comment_reactions BEFORE INSERT                            | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_stamp_message_identity`                                                                              | messages BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를`sender_id`에 기록                                                                 |
+| `trg_stamp_message_reaction_identity`                                                                     | message_reactions BEFORE INSERT                            | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_stamp_message_read_identity`                                                                         | message_reads BEFORE INSERT                                | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_stamp_room_read_state_identity`                                                                      | chat_room_read_states BEFORE INSERT                        | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_stamp_gongang_identity`                                                                              | gongangs BEFORE INSERT                                     | authenticated 요청이면 현재 profile ID를`owner_id`에 기록                                                                  |
+| `trg_stamp_song_request_identity`                                                                         | song_requests BEFORE INSERT                                | authenticated 요청이면 현재 profile ID를`requester_id`에 기록                                                              |
+| `trg_stamp_club_apply_identity`                                                                           | clubs_apply BEFORE INSERT                                  | authenticated 요청이면 현재 profile ID를`user_id`에 기록                                                                   |
+| `trg_sync_post_space_type`                                                                                | posts BEFORE INSERT/UPDATE OF space_id                     | parent`spaces.type`을 `space_type`에 기록                                                                                |
+| `trg_sync_notification_space_type`                                                                        | notifications BEFORE INSERT                                | parent space type 기록                                                                                                       |
+| `trg_propagate_space_type`                                                                                | spaces AFTER UPDATE OF type                                | 해당 posts/notifications에 type 전파                                                                                         |
+| `trg_validate_comment_parent`                                                                             | comments BEFORE INSERT/UPDATE                              | 동일 post의 활성 최상위 comment만 parent 허용                                                                                |
+| `trg_validate_message_parent`                                                                             | messages BEFORE INSERT/UPDATE                              | 동일 room의 활성 최상위 message만 parent 허용                                                                                |
+| `trg_validate_direct_chat`deferred constraint triggers                                                    | direct_chat_pairs와 chat_room_members INSERT/UPDATE/DELETE | commit 시 pair와 정확히 두 membership 일치                                                                                   |
+| `trg_validate_direct_chat_room`                                                                           | chat_rooms BEFORE UPDATE OF is_group/name                  | direct room이 group 또는 named room으로 변형되지 않도록 차단                                                                 |
+| `trg_prevent_space_membership_identity_update`                                                            | space_members BEFORE UPDATE OF space_id/user_id            | membership 식별자는 DELETE 후 INSERT로만 변경                                                                                |
+| `trg_prevent_chat_membership_identity_update`                                                             | chat_room_members BEFORE UPDATE OF room_id/user_id         | room membership 식별자는 DELETE 후 INSERT로만 변경                                                                           |
+| `trg_prevent_direct_chat_pair_update`                                                                     | direct_chat_pairs BEFORE UPDATE                            | direct pair는 생성 후 변경 불가                                                                                              |
+| `trg_update_post_comment_count`                                                                           | comments AFTER INSERT/UPDATE/DELETE                        | OLD/NEW post_id와 deleted_at 변경을 반영해 활성 comment count 증감                                                           |
+| `trg_update_post_reaction_count`                                                                          | post_reactions AFTER INSERT/UPDATE/DELETE                  | OLD/NEW post_id 변경만 반영; reaction type 변경은 count 유지                                                                 |
+| `trg_update_space_member_count`                                                                           | space_members AFTER INSERT/DELETE                          | member_count 원자적 증감                                                                                                     |
+| `trg_validate_chat_read_state`                                                                            | chat_room_read_states BEFORE INSERT/UPDATE                 | 동일 room 활성 message 및 단조 증가 검증, last_read_at 서버 기록                                                             |
+| `trg_profiles_updated_at`,`trg_posts_updated_at`,`trg_comments_updated_at`,`trg_spaces_updated_at`  | 각 테이블 BEFORE UPDATE                                    | `updated_at = now()`                                                                                                       |
+| `trg_post_reactions_updated_at`,`trg_comment_reactions_updated_at`,`trg_message_reactions_updated_at` | 각 reaction 테이블 BEFORE UPDATE                           | `updated_at = now()`                                                                                                       |
+| `trg_mark_message_edited`                                                                                 | messages BEFORE UPDATE OF content                          | 일반 content 수정에만`is_edited = true`,`edited_at = now()`                                                              |
 
 `messages`에는 `updated_at`이 없으므로 `trg_messages_updated_at`을 만들지 않는다.
 
@@ -869,10 +828,10 @@ EXECUTE grant 계약:
 
 - `authenticated`: 사용자·관리자 권한을 함수 내부에서 검사하는 아래 RPC에 EXECUTE를 부여한다.
   - `create_direct_chat`, `create_space`, `update_space`, `join_space`, `add_space_member`, `leave_space`, `set_space_member_role`, `set_space_member_ban`, `transfer_space_owner`
-  - `create_group_chat`, `add_group_member`, `remove_group_member`, `set_post_pin`
+  - `create_group_chat`, `create_group_chat_with_members`, `add_group_member`, `remove_group_member`, `send_message`, `update_message`, `send_message_with_attachment`, `mark_chat_read`, `set_message_reaction`, `list_chat_rooms`, `get_chat_messages`, `set_post_pin`
   - `submit_onboarding`, `review_profile`, `update_verified_profile_identity`, `set_anonymous_username`, `change_profile_status`, `change_app_role`, `withdraw_profile`
   - `soft_delete_space`, `soft_delete_post`, `soft_delete_comment`, `soft_delete_message`
-  - `finalize_post_attachment`, `finalize_message_attachment`, `finalize_avatar`, `finalize_space_image`
+  - `finalize_post_attachment`, `finalize_avatar`, `finalize_space_image`
   - `search_posts`, `search_messages`
   - `grant_user_permission`, `revoke_user_permission`, `upsert_permission`, `upsert_reaction_type`
   - `create_club`, `update_club`, `delete_club`, `create_club_apply_round`, `update_club_apply_round`, `delete_club_apply_round`
@@ -881,43 +840,50 @@ EXECUTE grant 계약:
 
 필수 RPC 계약:
 
-| 함수                                                                                                                                                                                                                                       | 반환                     | 필수 동작                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `create_direct_chat(p_other_user_id bigint)`                                                                                                                                                                                               | `bigint room_id`         | caller/상대 accepted 검사, pair 정규화, transaction advisory lock, 기존 pair 반환 또는 room/pair/members 2건 원자 생성 |
-| `create_space(p_type space_type, p_name text, p_description text, p_join_policy space_join_policy)`                                                                                                                                        | `bigint space_id`        | community는 accepted 사용자, group은 app admin만 생성; caller owner membership과 원자 생성                             |
-| `update_space(p_space_id bigint, p_name text, p_description text, p_join_policy space_join_policy, p_type space_type default null)`                                                                                                        | `void`                   | owner/admin은 name/description/join_policy, app admin만 type 변경                                                      |
-| `join_space(p_space_id bigint)`                                                                                                                                                                                                            | `void`                   | accepted caller의 활성 `auto_join`space 자기 가입; invite_only/중복/차단 membership 거부                               |
-| `add_space_member(p_space_id bigint, p_user_id bigint)`                                                                                                                                                                                    | `void`                   | owner/admin이 accepted 사용자를 member로 추가                                                                          |
-| `leave_space(p_space_id bigint)`                                                                                                                                                                                                           | `void`                   | caller membership 제거; owner는 거부                                                                                   |
-| `set_space_member_role(p_space_id bigint, p_user_id bigint, p_role member_role)`                                                                                                                                                           | `void`                   | owner만 non-owner를 admin/manager/member로 변경; owner 양도 금지                                                       |
-| `set_space_member_ban(p_space_id bigint, p_user_id bigint, p_banned boolean, p_reason text default null)`                                                                                                                                  | `void`                   | owner/admin이 하위 역할만 ban/unban; 자기 자신, owner, 동급·상위 역할 금지                                             |
-| `transfer_space_owner(p_space_id bigint, p_new_owner_id bigint)`                                                                                                                                                                           | `void`                   | 대상은 accepted·비차단 기존 멤버; 관련 행 잠금; 기존 owner→admin, 신규 owner→owner; commit 시 owner 정확히 1명         |
-| `create_group_chat(p_name text)`                                                                                                                                                                                                           | `bigint room_id`         | accepted caller를 creator/최초 member로 원자 생성                                                                      |
-| `add_group_member(p_room_id bigint, p_user_id bigint)`                                                                                                                                                                                     | `void`                   | 현재 group room 멤버가 accepted 비멤버 추가                                                                            |
-| `remove_group_member(p_room_id bigint, p_user_id bigint)`                                                                                                                                                                                  | `void`                   | 본인 탈퇴 또는 creator/app admin 강제 제거; membership/read state 정리                                                 |
-| `set_post_pin(p_post_id bigint, p_is_pinned boolean)`                                                                                                                                                                                      | `void`                   | 활성 space owner/admin/manager만 호출; pin 감사 필드 원자 설정/해제                                                    |
-| `submit_onboarding(p_name text, p_type profile_type, p_student_number char(6), p_class_no int2, p_cohort int2, p_gender profile_gender, p_phone_number text, p_birthday date, p_description text, p_dorm_room int2)`                       | `void`                   | status none/rejected 본인만; 허용 payload 검증; 학생 필수값 검사;`onboarding_completed_at = now()`, status pending     |
-| `review_profile(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                             | `void`                   | app admin만 pending을 `accepted`또는 `rejected`로 변경하고 status 감사 기록                                            |
-| `update_verified_profile_identity(p_profile_id bigint, p_type profile_type, p_student_number char(6), p_class_no int2, p_cohort int2, p_dorm_room int2)` | `void` | app admin만 non-withdrawn profile의 검증 신원·기숙사 필드를 변경; 학생 필수값과 profile CHECK 재검사 |
-| `set_anonymous_username(p_value text)`                                                                                                                                                                                                     | `void`                   | withdrawn 아닌 본인; NULL 허용; non-NULL trim/길이/정규화 unique 검사                                                  |
-| `change_profile_status(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                      | `void`                   | app admin 전용; owner/app admin을 inactive 상태로 바꾸기 전 이관 검사; withdrawn은 withdrawal lifecycle만 허용         |
-| `change_app_role(p_profile_id bigint, p_role app_role)`                                                                                                                                                                                    | `void`                   | app admin 전용; accepted app admin이 최소 1명 남도록 잠금·검사                                                         |
-| `soft_delete_space/post/comment/message(p_id bigint)`                                                                                                                                                                                      | `void`                   | idempotent soft delete; 권한과 활성 parent 재검사; 대상/관련 membership 잠금                                           |
-| `withdraw_profile()`                                                                                                                                                                                                                       | `void`                   | 본인 profile 잠금; owner/app admin이면 거부; 개인정보 익명화; withdrawn/deleted_at 기록                                |
-| `finalize_post_attachment(p_post_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_sort_order int4, p_alt text, p_width int4, p_height int4)`                                                    | `bigint attachment_id`   | bucket은 `post-files`로 고정; 활성 post 작성자만; object/path/MIME/크기 검사 후 행 생성                                |
-| `finalize_message_attachment(p_message_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_sort_order int4, p_width int4, p_height int4)`                                                          | `bigint attachment_id`   | bucket은 `message-files`로 고정; 활성 message 작성자이자 현재 room 멤버만; object 검증 후 행 생성                      |
-| `finalize_avatar(p_storage_path text)`                                                                                                                                                                                                     | `void`                   | 본인 prefix의 실제 안전한 image만 profile에 연결                                                                       |
-| `finalize_space_image(p_space_id bigint, p_storage_path text)`                                                                                                                                                                             | `void`                   | 활성 space owner/admin만 해당 prefix image 연결                                                                        |
+| 함수                                                                                                                                                                                                                                                                                   | 반환                        | 필수 동작                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_direct_chat(p_other_user_id bigint)`                                                                                                                                                                                                                                         | `bigint room_id`          | caller/상대 accepted 검사, pair 정규화, transaction advisory lock, 기존 pair 반환 또는 room/pair/members 2건 원자 생성                                                 |
+| `create_space(p_type space_type, p_name text, p_description text, p_join_policy space_join_policy)`                                                                                                                                                                                  | `bigint space_id`         | community는 accepted 사용자, group은 app admin만 생성; caller owner membership과 원자 생성                                                                             |
+| `update_space(p_space_id bigint, p_name text, p_description text, p_join_policy space_join_policy, p_type space_type default null)`                                                                                                                                                  | `void`                    | owner/admin은 name/description/join_policy, app admin만 type 변경                                                                                                      |
+| `join_space(p_space_id bigint)`                                                                                                                                                                                                                                                      | `void`                    | accepted caller의 활성`auto_join`space 자기 가입; invite_only/중복/차단 membership 거부                                                                              |
+| `add_space_member(p_space_id bigint, p_user_id bigint)`                                                                                                                                                                                                                              | `void`                    | owner/admin이 accepted 사용자를 member로 추가                                                                                                                          |
+| `leave_space(p_space_id bigint)`                                                                                                                                                                                                                                                     | `void`                    | caller membership 제거; owner는 거부                                                                                                                                   |
+| `set_space_member_role(p_space_id bigint, p_user_id bigint, p_role member_role)`                                                                                                                                                                                                     | `void`                    | owner만 non-owner를 admin/manager/member로 변경; owner 양도 금지                                                                                                       |
+| `set_space_member_ban(p_space_id bigint, p_user_id bigint, p_banned boolean, p_reason text default null)`                                                                                                                                                                            | `void`                    | owner/admin이 하위 역할만 ban/unban; 자기 자신, owner, 동급·상위 역할 금지                                                                                            |
+| `transfer_space_owner(p_space_id bigint, p_new_owner_id bigint)`                                                                                                                                                                                                                     | `void`                    | 대상은 accepted·비차단 기존 멤버; 관련 행 잠금; 기존 owner→admin, 신규 owner→owner; commit 시 owner 정확히 1명                                                      |
+| `create_group_chat(p_name text)`                                                                                                                                                                                                                                                     | `bigint room_id`          | accepted caller를 creator/최초 member로 원자 생성                                                                                                                      |
+| `create_group_chat_with_members(p_name text, p_member_ids bigint[] default '{}')`                                                                                                                                                                                                    | `bigint room_id`          | accepted caller를 creator/최초 member로 생성하고 accepted member_ids를 같은 transaction에서 추가                                                                       |
+| `add_group_member(p_room_id bigint, p_user_id bigint)`                                                                                                                                                                                                                               | `void`                    | 현재 group room 멤버가 accepted 비멤버 추가                                                                                                                            |
+| `remove_group_member(p_room_id bigint, p_user_id bigint)`                                                                                                                                                                                                                            | `void`                    | 본인 탈퇴 또는 creator/app admin 강제 제거; membership/read state 정리                                                                                                 |
+| `send_message(p_room_id bigint, p_content text default null, p_parent_id bigint default null)`                                                                                                                                                                                       | `bigint message_id`       | 현재 room 멤버만; content는 trim 후 1~10000자 필수; 같은 room의 활성 parent 검증; sender를 caller로 기록하고 본인 read_state를 최신 메시지로 이동                       |
+| `update_message(p_message_id bigint, p_content text)`                                                                                                                                                                                                                                 | `void`                    | sender 본인만; 현재 room membership 유지 중인 활성 message만; content는 trim 후 1~10000자; 생성 후 15분 이내만 수정 가능                                              |
+| `send_message_with_attachment(p_room_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_parent_id bigint default null, p_content text default null, p_width int4 default null, p_height int4 default null)`                                 | `bigint message_id`       | 현재 room 멤버만; `room_id/auth.uid()/uuid` 경로의 최근 업로드 object/MIME/크기 검증; content는 NULL 또는 trim 1~10000자; message와 attachment metadata를 원자 생성       |
+| `mark_chat_read(p_room_id bigint, p_last_read_message_id bigint)`                                                                                                                                                                                                                    | `void`                    | 현재 room 멤버만; 같은 room의 활성 message만 허용; read_state를 앞으로만 이동                                                                                          |
+| `set_message_reaction(p_message_id bigint, p_reaction_type_id bigint default null)`                                                                                                                                                                                                  | `void`                    | 현재 room 멤버가 접근 가능한 활성 message에 reaction upsert; NULL이면 본인 reaction 삭제                                                                               |
+| `list_chat_rooms()`                                                                                                                                                                                                                                                                  | table                     | 현재 profile이 속한 room 목록, direct 표시명, 마지막 message, attachment 여부, unread_count, member_count 반환                                                         |
+| `get_chat_messages(p_room_id bigint, p_before_id bigint default null, p_limit int4 default 50)`                                                                                                                                                                                      | table                     | 현재 room 멤버만; id 기준 keyset page를 chronological order로 반환; sender, parent preview, attachments, reactions, reads JSON 포함                                    |
+| `set_post_pin(p_post_id bigint, p_is_pinned boolean)`                                                                                                                                                                                                                                | `void`                    | 활성 space owner/admin/manager만 호출; pin 감사 필드 원자 설정/해제                                                                                                    |
+| `submit_onboarding(p_name text, p_type profile_type, p_student_number char(6), p_class_no int2, p_cohort int2, p_gender profile_gender, p_phone_number text, p_birthday date, p_description text, p_dorm_room int2)`                                                                 | `void`                    | status none/rejected 본인만; 허용 payload 검증; 학생 필수값 검사;`onboarding_completed_at = now()`, status pending                                                   |
+| `review_profile(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                                                                       | `void`                    | app admin만 pending을`accepted`또는 `rejected`로 변경하고 status 감사 기록                                                                                         |
+| `update_verified_profile_identity(p_profile_id bigint, p_type profile_type, p_student_number char(6), p_class_no int2, p_cohort int2, p_dorm_room int2)`                                                                                                                             | `void`                    | app admin만 non-withdrawn profile의 검증 신원·기숙사 필드를 변경; 학생 필수값과 profile CHECK 재검사                                                                  |
+| `set_anonymous_username(p_value text)`                                                                                                                                                                                                                                               | `void`                    | withdrawn 아닌 본인; NULL 허용; non-NULL trim/길이/정규화 unique 검사                                                                                                  |
+| `change_profile_status(p_profile_id bigint, p_status profile_status)`                                                                                                                                                                                                                | `void`                    | app admin 전용; owner/app admin을 inactive 상태로 바꾸기 전 이관 검사; withdrawn은 withdrawal lifecycle만 허용                                                         |
+| `change_app_role(p_profile_id bigint, p_role app_role)`                                                                                                                                                                                                                              | `void`                    | app admin 전용; accepted app admin이 최소 1명 남도록 잠금·검사                                                                                                        |
+| `soft_delete_space/post/comment/message(p_id bigint)`                                                                                                                                                                                                                                | `void`                    | idempotent soft delete; 권한과 활성 parent 재검사; 대상/관련 membership 잠금                                                                                           |
+| `withdraw_profile()`                                                                                                                                                                                                                                                                 | `void`                    | 본인 profile 잠금; owner/app admin이면 거부; 개인정보 익명화; withdrawn/deleted_at 기록                                                                                |
+| `finalize_post_attachment(p_post_id bigint, p_storage_path text, p_file_name text, p_content_type text, p_size_bytes int8, p_sort_order int4, p_alt text, p_width int4, p_height int4)`                                                                                              | `bigint attachment_id`    | bucket은`post-files`로 고정; 활성 post 작성자만; object/path/MIME/크기 검사 후 행 생성                                                                               |
+| `finalize_avatar(p_storage_path text)`                                                                                                                                                                                                                                               | `void`                    | 본인 prefix의 실제 안전한 image만 profile에 연결                                                                                                                       |
+| `finalize_space_image(p_space_id bigint, p_storage_path text)`                                                                                                                                                                                                                       | `void`                    | 활성 space owner/admin만 해당 prefix image 연결                                                                                                                        |
 | `create_notification(p_recipient_id bigint, p_title text, p_body text, p_actor_id bigint default null, p_space_id bigint default null, p_post_id bigint default null, p_comment_id bigint default null, p_message_id bigint default null, p_level notification_level default 'all')` | `bigint? notification_id` | trusted mutation RPC 또는 service role만 호출; accepted recipient와 target 관계를 검증하고 space_id/space_type을 서버에서 유도; space 알림 설정으로 억제되면 NULL 반환 |
-| `search_posts(p_query text, p_space_type space_type default null, p_space_id bigint default null)`                                                                                                                                         | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 접근 가능한 활성 post/comment만 검색; 아래 검색 구현 계약 적용     |
-| `search_messages(p_query text, p_room_id bigint)`                                                                                                                                                                                          | table                    | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 현재 room 멤버의 활성 message 검색; 아래 검색 구현 계약 적용       |
+| `search_posts(p_query text, p_space_type space_type default null, p_space_id bigint default null)`                                                                                                                                                                                   | table                       | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 접근 가능한 활성 post/comment만 검색; 아래 검색 구현 계약 적용                                                          |
+| `search_messages(p_query text, p_room_id bigint)`                                                                                                                                                                                                                                    | table                       | trim 후 query 1 ~ 200자; 띄어쓰기 무시 ILIKE로 현재 room 멤버의 활성 message 검색; 아래 검색 구현 계약 적용                                                            |
 
 soft delete 세부 계약:
 
 - space: community는 owner/admin, group은 app admin만 호출; content 변경 없이 `deleted_at`, `deleted_by` 기록
 - post: 작성자 또는 해당 space owner/admin만 호출, content 변경 없이 삭제 감사 기록
 - comment: 작성자 또는 해당 space owner/admin만 호출, 고정 placeholder로 content 교체 후 삭제 감사 기록. placeholder 교체는 `soft_delete_comment()` 내부에서만 수행한다.
-- message: sender 본인만 호출, content 변경 없이 삭제 감사 기록
+- message: sender 본인만 호출, content를 `삭제된 메시지입니다.`로 교체하고 삭제 감사 기록
 - space 삭제 직후 하위 post/comment/reaction/attachment 읽기·쓰기를 차단한다.
 - post 삭제 직후 새 comment/reaction/attachment 쓰기를 차단한다.
 
@@ -979,8 +945,8 @@ service-role 작업:
 
 private helper:
 
-| 함수                                                                                                                       | 반환      |
-| -------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 함수                                                                                                                         | 반환        |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | `private.is_app_admin()`                                                                                                   | `boolean` |
 | `private.is_space_member(p_space_id bigint, p_allowed_roles member_role[] default null)`                                   | `boolean` |
 | `private.is_room_member(p_room_id bigint)`                                                                                 | `boolean` |
@@ -1007,26 +973,26 @@ helper 계약:
 
 직접 Data API 허용 범위:
 
-| 테이블                                           | authenticated 직접 허용                              |
-| ------------------------------------------------ | ---------------------------------------------------- |
-| spaces                                           | 공개 메타데이터 컬럼 SELECT                          |
-| space_members                                    | SELECT, 자기 `notification_setting`UPDATE            |
-| posts                                            | SELECT, INSERT, 허용 컬럼 UPDATE                     |
-| post_attachments                                 | SELECT                                               |
+| 테이블                                           | authenticated 직접 허용                                |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| spaces                                           | 공개 메타데이터 컬럼 SELECT                            |
+| space_members                                    | SELECT, 자기`notification_setting`UPDATE             |
+| posts                                            | SELECT, INSERT, 허용 컬럼 UPDATE                       |
+| post_attachments                                 | SELECT                                                 |
 | comments                                         | SELECT, INSERT,`content`UPDATE                       |
-| reaction_types                                   | SELECT                                               |
+| reaction_types                                   | SELECT                                                 |
 | post_reactions, comment_reactions                | SELECT, INSERT,`reaction_type_id`UPDATE, 본인 DELETE |
-| chat_rooms, direct_chat_pairs, chat_room_members | SELECT                                               |
-| messages                                         | SELECT, INSERT,`content`UPDATE                       |
-| message_attachments                              | SELECT                                               |
-| message_reactions                                | SELECT, INSERT,`reaction_type_id`UPDATE, 본인 DELETE |
-| message_reads                                    | SELECT, INSERT                                       |
-| chat_room_read_states                            | SELECT, INSERT,`last_read_message_id`UPDATE          |
+| chat_rooms, direct_chat_pairs, chat_room_members | SELECT                                                 |
+| messages                                         | SELECT                                                 |
+| message_attachments                              | SELECT                                                 |
+| message_reactions                                | SELECT                                                 |
+| message_reads                                    | SELECT                                                 |
+| chat_room_read_states                            | SELECT                                                 |
 | notifications                                    | SELECT,`read_at`UPDATE                               |
-| gongangs                                         | permission 보유 본인 행 CRUD                         |
-| song_requests                                    | SELECT, INSERT                                       |
-| clubs, club_apply_rounds                         | SELECT                                               |
-| clubs_apply                                      | SELECT, INSERT, 본인 DELETE                          |
+| gongangs                                         | permission 보유 본인 행 CRUD                           |
+| song_requests                                    | SELECT, INSERT                                         |
+| clubs, club_apply_rounds                         | SELECT                                                 |
+| clubs_apply                                      | SELECT, INSERT, 본인 DELETE                            |
 
 - identity 테이블의 직접 Data API 권한은 section 04에서 구현한다.
 
@@ -1038,10 +1004,6 @@ column-level allowlist:
 - comments 직접 INSERT: `post_id`, `parent_id`, `content`, `is_anonymous`
 - post_reactions 직접 INSERT: `post_id`, `reaction_type_id`
 - comment_reactions 직접 INSERT: `comment_id`, `reaction_type_id`
-- messages 직접 INSERT: `room_id`, `parent_id`, `content`
-- message_reactions 직접 INSERT: `message_id`, `reaction_type_id`
-- message_reads 직접 INSERT: `message_id`
-- chat_room_read_states 직접 INSERT: `room_id`, `last_read_message_id`
 - gongangs 직접 INSERT: `location`, `day_of_week`, `start_minute`, `end_minute`, `valid_from`, `valid_until`
 - song_requests 직접 INSERT: `url`
 - clubs_apply 직접 INSERT: `round_id`, `club_id`
@@ -1051,36 +1013,35 @@ column-level allowlist:
 - `spaces.image_url`: `finalize_space_image()`만 변경
 - `profiles.avatar_url`과 `spaces.image_url`에는 signed URL이 아니라 bucket 내부 canonical object path를 저장한다.
 - posts 직접 UPDATE: `title`, `content`, `is_anonymous`
-- comments/messages 직접 UPDATE: `content`
-- reactions 직접 UPDATE: `reaction_type_id`
+- comments 직접 UPDATE: `content`
+- post/comment reactions 직접 UPDATE: `reaction_type_id`
 - space_members 직접 UPDATE: 자기 행의 `notification_setting`
-- chat_room_read_states 직접 UPDATE: `last_read_message_id`
 - notifications 직접 UPDATE: `read_at`
 - gongangs 직접 UPDATE: 자기 행의 `location`, `day_of_week`, `start_minute`, `end_minute`, `valid_from`, `valid_until`
 - 식별자, owner/author/sender/user ID, 역할, 상태, 감사, soft-delete, cache 컬럼은 직접 변경하지 않는다.
 
 RLS 행 계약:
 
-| 테이블                          | SELECT                                                                                             | INSERT/UPDATE/DELETE                                                                   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| spaces                          | accepted 사용자가 활성 space 공개 컬럼 조회                                                        | client mutation 없음                                                                   |
-| space_members                   | 현재 활성·비차단 해당 space 멤버                                                                   | 자기 notification_setting UPDATE만                                                     |
-| posts                           | accepted·비차단 해당 space 멤버가 활성 post 조회                                                   | 같은 멤버가 자기 author_id로 INSERT; 작성자가 활성 post 허용 컬럼 UPDATE; DELETE 없음  |
+| 테이블                          | SELECT                                                                                               | INSERT/UPDATE/DELETE                                                                   |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| spaces                          | accepted 사용자가 활성 space 공개 컬럼 조회                                                          | client mutation 없음                                                                   |
+| space_members                   | 현재 활성·비차단 해당 space 멤버                                                                    | 자기 notification_setting UPDATE만                                                     |
+| posts                           | accepted·비차단 해당 space 멤버가 활성 post 조회                                                    | 같은 멤버가 자기 author_id로 INSERT; 작성자가 활성 post 허용 컬럼 UPDATE; DELETE 없음  |
 | post_attachments                | `private.can_access_post(post_id)`                                                                 | client mutation 없음                                                                   |
 | comments                        | `private.can_access_post(post_id)`이며 활성 comment 또는 활성 direct reply가 있는 삭제 placeholder | 같은 멤버가 자기 author_id로 INSERT; 작성자가 활성 comment content UPDATE; DELETE 없음 |
-| reaction_types                  | accepted 사용자                                                                                    | client mutation 없음                                                                   |
-| post/comment reactions          | 대응 활성 parent 접근 가능                                                                         | 현재 profile user_id로 INSERT; 본인 reaction_type_id UPDATE/DELETE                     |
-| chat_rooms/direct pairs/members | 현재 room 멤버                                                                                     | client mutation 없음                                                                   |
-| messages                        | accepted 현재 room 멤버가 활성 message 조회                                                        | 현재 profile sender_id로 INSERT; sender가 생성 후 15분 내 content UPDATE; DELETE 없음  |
+| reaction_types                  | accepted 사용자                                                                                      | client mutation 없음                                                                   |
+| post/comment reactions          | 대응 활성 parent 접근 가능                                                                           | 현재 profile user_id로 INSERT; 본인 reaction_type_id UPDATE/DELETE                     |
+| chat_rooms/direct pairs/members | 현재 room 멤버                                                                                       | client mutation 없음                                                                   |
+| messages                        | accepted 현재 room 멤버가 활성 message 조회                                                          | client mutation 없음; send/edit/delete는 RPC 사용                                      |
 | message_attachments             | `private.can_access_message(message_id)`                                                           | client mutation 없음                                                                   |
-| message_reactions               | 현재 room 멤버가 활성 message reaction 조회                                                        | 현재 profile user_id로 INSERT; 본인 reaction_type_id UPDATE/DELETE                     |
-| message_reads                   | 현재 room 멤버                                                                                     | 자신의 활성 message read INSERT만                                                      |
-| chat_room_read_states           | 현재 room 멤버가 자신의 행 조회                                                                    | 자신의 행 INSERT 및 last_read_message_id UPDATE                                        |
-| notifications                   | recipient 본인                                                                                     | read_at UPDATE만; INSERT/DELETE 없음                                                   |
+| message_reactions               | 현재 room 멤버가 활성 message reaction 조회                                                          | client mutation 없음; set_message_reaction() RPC 사용                                  |
+| message_reads                   | 현재 room 멤버                                                                                       | client mutation 없음                                                                   |
+| chat_room_read_states           | 현재 room 멤버가 자신의 행 조회                                                                      | client mutation 없음; mark_chat_read() RPC 사용                                        |
+| notifications                   | accepted recipient 본인                                                                              | read_at UPDATE만; INSERT/DELETE 없음                                                   |
 | gongangs                        | `gongang`permission 보유 accepted 사용자                                                           | 본인 owner_id로 CRUD                                                                   |
-| song_requests                   | permission 보유 accepted 사용자                                                                    | 본인 requester_id로 INSERT만                                                           |
-| clubs/rounds                    | accepted 사용자                                                                                    | client mutation 없음                                                                   |
-| clubs_apply                     | accepted 사용자가 조회                                                                             | 열린 round에 본인 INSERT; round 종료 전 본인 DELETE                                    |
+| song_requests                   | permission 보유 accepted 사용자                                                                      | 본인 requester_id로 INSERT만                                                           |
+| clubs/rounds                    | accepted 사용자                                                                                      | client mutation 없음                                                                   |
+| clubs_apply                     | accepted 사용자가 조회                                                                               | 열린 round에 본인 INSERT; round 종료 전 본인 DELETE                                    |
 
 - identity 테이블의 RLS 행 계약은 section 04에서 구현한다.
 
@@ -1118,7 +1079,7 @@ service role:
 - identity 테이블과 `profiles_id_seq`의 service-role 권한은 section 04에서 구현한다.
 - private 객체와 service 전용 함수는 `anon`, `authenticated`에 부여하지 않는다.
 - 이후 migration이 만드는 새 객체는 해당 migration에서 service-role GRANT를 추가한다.
-- authenticated에는 직접 INSERT를 허용한 다음 sequence에만 `USAGE, SELECT`를 부여한다: `posts_id_seq`, `comments_id_seq`, `post_reactions_id_seq`, `comment_reactions_id_seq`, `messages_id_seq`, `message_reactions_id_seq`, `gongangs_id_seq`, `song_requests_id_seq`, `clubs_apply_id_seq`.
+- authenticated에는 직접 INSERT를 허용한 다음 sequence에만 `USAGE, SELECT`를 부여한다: `posts_id_seq`, `comments_id_seq`, `post_reactions_id_seq`, `comment_reactions_id_seq`, `gongangs_id_seq`, `song_requests_id_seq`, `clubs_apply_id_seq`.
 - RPC 전용 INSERT 테이블의 sequence는 authenticated에 부여하지 않는다.
 
 ---
@@ -1129,8 +1090,8 @@ service role:
 
 private bucket:
 
-| bucket          | 최대 크기 |
-| --------------- | --------- |
+| bucket            | 최대 크기 |
+| ----------------- | --------- |
 | `avatars`       | 5 MB      |
 | `space-images`  | 10 MB     |
 | `post-files`    | 25 MB     |
@@ -1229,7 +1190,7 @@ finalize는 생성 후 24시간 이내 object만 허용하여 48시간 orphan cl
 - 익명 이름 변경은 기존 익명 콘텐츠에도 반영되고, 이름이 없으면 `익명 {author_id}`를 표시한다.
 - feed keyset pagination은 페이지 사이 완전한 snapshot 일관성을 제공하지 않는다.
 - message는 15분 이후 편집할 수 없지만 sender가 언제든 soft delete할 수 있다.
-- 삭제 message의 답글은 유지하고 parent 본문은 숨긴다.
+- 삭제 message의 답글은 유지하고 parent 본문은 `삭제된 메시지입니다.`로 저장한다.
 - space admin/manager는 역할 이관 없이 withdrawal할 수 있다.
 - group chat creator가 비활성화되면 타인 강제 제거는 app admin이 담당한다.
 - song_requests는 처리 상태 없는 append-only 로그다.

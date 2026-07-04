@@ -25,7 +25,7 @@ create table public.messages (
   room_id bigint not null references public.chat_rooms (id) on delete restrict,
   sender_id bigint not null references public.profiles (id) on delete restrict,
   parent_id bigint null references public.messages (id) on delete restrict,
-  content text not null,
+  content text null,
   is_edited boolean not null default false,
   edited_at timestamptz null,
   deleted_at timestamptz null,
