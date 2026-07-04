@@ -105,20 +105,6 @@ public domain table들의 RLS policy와 role별 grant를 정의한다. `authenti
 
 Storage bucket, storage object RLS, attachment finalize RPC, cleanup queue, maintenance RPC를 만든다. 파일 업로드/다운로드를 object path 은닉에 의존하지 않고 DB 권한과 연결한다. 삭제된 content의 파일 정리와 cached count reconciliation도 이 파일에서 service role 작업으로 묶는다.
 
-## Test / Verification 파일
-
-### `supabase/tests/schema_runtime_check.sql`
-
-migration 적용 후 runtime 계약을 확인하는 SQL이다. Auth trigger, direct chat 재사용, 검색, direct chat 불변성, soft delete/purge, 권한 제한, storage cleanup queue, MIME allowlist, service role grant를 검사한다. `BEGIN`/`ROLLBACK`으로 감싸져 반복 실행해도 상태를 남기지 않는다.
-
-### `supabase/tests/schema_rls_check.sql`
-
-RLS와 identity stamping을 실제 `authenticated` role context에서 확인한다. author/sender id 주입 차단, post/message/read state 자동 stamping, room membership 제거 후 read state 접근 차단을 검사한다. policy가 문서대로 작동하는지 확인하는 방어용 스크립트다.
-
-### `supabase/tests/storage_maintenance_check.ps1`
-
-로컬 Supabase와 `storage-maintenance` Edge Function을 함께 검증하는 PowerShell 스크립트다. cleanup queue에 임시 작업을 넣고 maintenance function이 claim/complete하는지 확인한다. SQL만으로 검증하기 어려운 Storage API 삭제 worker 경계를 테스트하기 위해 필요하다.
-
 ## Edge Function 파일
 
 ### `supabase/functions/README.md`
@@ -141,5 +127,4 @@ secret key로만 호출되는 maintenance worker다. cleanup queue를 claim하�
 2. `docs/SCHEMA.md`에서 테이블과 관계의 전체 지도를 본다.
 3. `docs/migration.md`에서 migration 적용 순서와 보안/운영 계약을 읽는다.
 4. `supabase/migrations/`를 파일명 순서대로 읽는다.
-5. `supabase/tests/`로 어떤 계약을 실제로 검증하는지 확인한다.
-6. `supabase/functions/`로 Storage 권한 흐름과 운영 maintenance를 확인한다.
+5. `supabase/functions/`로 Storage 권한 흐름과 운영 maintenance를 확인한다.

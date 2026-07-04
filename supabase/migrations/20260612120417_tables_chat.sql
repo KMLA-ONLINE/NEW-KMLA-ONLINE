@@ -25,7 +25,7 @@ create table public.messages (
   room_id bigint not null references public.chat_rooms (id) on delete restrict,
   sender_id bigint not null references public.profiles (id) on delete restrict,
   parent_id bigint null references public.messages (id) on delete restrict,
-  content text not null,
+  content text null,
   is_edited boolean not null default false,
   edited_at timestamptz null,
   deleted_at timestamptz null,
@@ -54,13 +54,6 @@ create table public.message_reactions (
   reaction_type_id bigint not null references public.reaction_types (id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz null
-);
-
-create table public.message_reads (
-  message_id bigint not null references public.messages (id) on delete restrict,
-  user_id bigint not null references public.profiles (id) on delete restrict,
-  read_at timestamptz not null default now(),
-  primary key (message_id, user_id)
 );
 
 create table public.chat_room_read_states (
