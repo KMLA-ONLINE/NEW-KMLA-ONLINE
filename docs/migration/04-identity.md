@@ -119,3 +119,14 @@ user_permissions(
 - `current_profile_id()`는 중복 profile이 생기면 가장 작은 `id`를 반환한다.
 - Auth user 삭제 lifecycle은 이 파일이 아니라 trigger migration에서 구현된다.
 - `updated_at` 자동 갱신은 여기서 하지 않는다.
+
+## 기존 합의 세부 규칙
+
+- profile 최초 생성은 Auth trigger 또는 service-role 서버 경로만 사용한다.
+- Auth profile 생성 시 `auth_user_id`만 신뢰 식별자로 사용하고, user metadata를 role/status/permission 판정에 사용하지 않는다.
+- `anonymous_username`은 trim 후 1~50자, 대소문자 비구분 전역 unique를 목표로 한다.
+- Auth 사용자 직접 삭제 시 owner/app admin이면 거부하고, 나머지는 withdrawn 익명화 처리한다.
+- withdrawn 익명화 시 `name='탈퇴한 사용자'`, `role='user'`, 개인식별성 필드는 NULL로 정리하는 흐름을 따른다.
+- 상태 전이는 onboarding, review, withdrawal, lifecycle/admin RPC로 제한하는 것이 원래 합의다.
+- accepted 본인이 직접 바꿀 수 있는 profile 필드는 제한적이어야 한다.
+- `permissions` 초기 registry는 `gongang`, `karaoke`를 기준으로 유지한다.

@@ -83,3 +83,11 @@ clubs_apply(
 
 - `clubs.name` unique, `(round_id, user_id, club_id)` unique, `starts_at < ends_at`, round overlap exclusion은 later constraint migration에서 완성된다.
 - admin-only management와 applicant direct access 범위는 later RPC/RLS migration에서 보강된다.
+
+## 기존 합의 세부 규칙
+
+- `club_apply_rounds`는 generated stored `apply_range`를 사용한다.
+- 기간이 겹치는 round는 exclusion constraint로 막는 방향을 유지한다.
+- 신청은 accepted 사용자가 열린 round에 자기 `user_id`로만 생성하는 것이 원래 합의다.
+- 신청 취소는 round 종료 전 본인 row delete만 허용하는 방향을 유지한다.
+- clubs와 rounds의 생성/수정/삭제는 app admin RPC 전용을 목표로 한다.

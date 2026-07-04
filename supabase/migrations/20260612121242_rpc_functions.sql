@@ -233,7 +233,6 @@ begin
     and not exists(select 1 from public.profiles where id=caller_id and role='admin')
     then raise exception 'not allowed to remove member'; end if;
   delete from public.chat_room_read_states where room_id=p_room_id and user_id=p_user_id;
-  delete from public.message_reads mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id and mr.user_id=p_user_id;
   delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id and mr.user_id=p_user_id;
   delete from public.chat_room_members where room_id=p_room_id and user_id=p_user_id;
 end;
@@ -287,10 +286,6 @@ begin
   values(p_room_id,caller_id,p_parent_id,normalized_content)
   returning id into message_id;
 
-  insert into public.message_reads(message_id,user_id,read_at)
-  values(message_id,caller_id,now())
-  on conflict(message_id,user_id) do nothing;
-
   insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
   values(p_room_id,caller_id,message_id)
   on conflict(room_id,user_id) do update
@@ -335,7 +330,7 @@ $$;
 
 create function public.mark_chat_read(p_room_id bigint,p_last_read_message_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true); previous_last_read_message_id bigint;
+declare caller_id bigint := private.require_current_profile(true);
 begin
   if not exists(select 1 from public.chat_room_members where room_id=p_room_id and user_id=caller_id) then
     raise exception 'room membership required';
@@ -343,20 +338,6 @@ begin
   if not exists(select 1 from public.messages where id=p_last_read_message_id and room_id=p_room_id and deleted_at is null) then
     raise exception 'active message in room required';
   end if;
-
-  select rs.last_read_message_id into previous_last_read_message_id
-  from public.chat_room_read_states rs
-  where rs.room_id=p_room_id and rs.user_id=caller_id
-  for update;
-
-  insert into public.message_reads(message_id,user_id,read_at)
-  select m.id,caller_id,now()
-  from public.messages m
-  where m.room_id=p_room_id
-    and m.deleted_at is null
-    and m.id<=p_last_read_message_id
-    and (previous_last_read_message_id is null or m.id>previous_last_read_message_id)
-  on conflict(message_id,user_id) do nothing;
 
   insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
   values(p_room_id,caller_id,p_last_read_message_id)
@@ -375,7 +356,12 @@ begin
     select 1
     from public.messages m
     join public.chat_room_members crm on crm.room_id=m.room_id and crm.user_id=caller_id
-    where m.id=p_message_id and m.deleted_at is null
+    where m.id=p_message_id
+      and m.deleted_at is null
+      and (
+        m.content is not null
+        or exists(select 1 from public.message_attachments a where a.message_id=m.id)
+      )
   ) then raise exception 'active message access required'; end if;
 
   if p_reaction_type_id is null then
@@ -515,9 +501,11 @@ begin
     where mr.message_id=page.id
   ) reactions on true
   left join lateral (
-    select jsonb_agg(jsonb_build_object('user_id',mr.user_id,'user_name',reader.name,'read_at',mr.read_at) order by mr.read_at,mr.user_id) as items
-    from public.message_reads mr join public.profiles reader on reader.id=mr.user_id
-    where mr.message_id=page.id
+    select jsonb_agg(jsonb_build_object('user_id',rs.user_id,'user_name',reader.name,'read_at',rs.last_read_at) order by rs.last_read_at,rs.user_id) as items
+    from public.chat_room_read_states rs join public.profiles reader on reader.id=rs.user_id
+    where rs.room_id=page.room_id
+      and rs.last_read_message_id is not null
+      and rs.last_read_message_id>=page.id
   ) reads on true
   order by page.id asc;
 end;
@@ -606,8 +594,21 @@ begin
   select sender_id into target_sender_id from public.messages where id=p_id and deleted_at is null for update;
   if target_sender_id is null then return; end if;
   if target_sender_id<>caller_id then raise exception 'message sender required'; end if;
+
+  insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by)
+  select a.storage_bucket,a.storage_path,caller_id
+  from public.message_attachments a
+  where a.message_id=p_id
+  on conflict(storage_bucket,storage_path) do update
+  set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),
+      processed_at=null,
+      last_error=null;
+
+  delete from public.message_attachments where message_id=p_id;
+  delete from public.message_reactions where message_id=p_id;
+
   update public.messages
-  set content='삭제된 메시지입니다.',deleted_at=now(),deleted_by=caller_id
+  set content=null,deleted_at=now(),deleted_by=caller_id
   where id=p_id;
 end;
 $$;
@@ -784,7 +785,6 @@ begin
     raise exception 'message attachments must be removed before purging room';
   end if;
   delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id;
-  delete from public.message_reads mr using public.messages m where mr.message_id=m.id and m.room_id=p_room_id;
   delete from public.chat_room_read_states where room_id=p_room_id;
   delete from public.messages where room_id=p_room_id and parent_id is not null;
   delete from public.messages where room_id=p_room_id;
@@ -796,7 +796,6 @@ returns bigint language plpgsql security definer set search_path='' as $$
 declare result bigint; begin perform private.require_service_role(); delete from public.notifications where read_at is not null and created_at<now()-interval '30 days'; get diagnostics result=row_count; return result; end $$;
 create function public.purge_deleted_content(p_entity_type text,p_entity_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
-declare affected_read_state record; replacement_message_id bigint;
 begin
   perform private.require_service_role();
   case p_entity_type
@@ -807,35 +806,6 @@ begin
       delete from public.comment_reactions where comment_id in (select id from public.comments where id=p_entity_id or parent_id=p_entity_id);
       delete from public.comments where parent_id=p_entity_id and deleted_at is not null;
       delete from public.comments where id=p_entity_id and deleted_at is not null;
-    when 'message' then
-      perform 1 from public.messages where id=p_entity_id and deleted_at is not null for update;
-      if not found then return; end if;
-      if exists(select 1 from public.messages where parent_id=p_entity_id and deleted_at is null) then raise exception 'active message reply blocks purge'; end if;
-      if exists(select 1 from public.message_attachments where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id)) then raise exception 'message attachments must be removed before purge'; end if;
-      delete from public.message_reads where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id);
-      for affected_read_state in
-        select rs.room_id,rs.user_id
-        from public.chat_room_read_states rs
-        where rs.last_read_message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id)
-      loop
-        select max(mr.message_id) into replacement_message_id
-        from public.message_reads mr
-        join public.messages remaining_message on remaining_message.id=mr.message_id
-        where mr.user_id=affected_read_state.user_id
-          and remaining_message.room_id=affected_read_state.room_id
-          and remaining_message.deleted_at is null;
-
-        delete from public.chat_room_read_states
-        where room_id=affected_read_state.room_id and user_id=affected_read_state.user_id;
-
-        if replacement_message_id is not null then
-          insert into public.chat_room_read_states(room_id,user_id,last_read_message_id,last_read_at)
-          values(affected_read_state.room_id,affected_read_state.user_id,replacement_message_id,now());
-        end if;
-      end loop;
-      delete from public.message_reactions where message_id in (select id from public.messages where id=p_entity_id or parent_id=p_entity_id);
-      delete from public.messages where parent_id=p_entity_id and deleted_at is not null;
-      delete from public.messages where id=p_entity_id and deleted_at is not null;
     when 'post' then
       perform 1 from public.posts where id=p_entity_id and deleted_at is not null for update;
       if not found then return; end if;

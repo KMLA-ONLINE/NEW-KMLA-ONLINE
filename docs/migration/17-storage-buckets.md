@@ -47,8 +47,8 @@
 
 ### cleanup queue
 
-- 즉시 삭제 대신 `private.attachment_cleanup_queue`에 넣는다.
-- `request_attachment_removal()`은 사용자가 자기 attachment 제거를 요청하는 enqueue 함수다.
+- 실제 blob 삭제 대신 먼저 `private.attachment_cleanup_queue`에 넣는다.
+- `request_attachment_removal()`은 사용자가 자기 attachment 제거를 요청하는 함수다. message attachment는 metadata row와 related reaction을 즉시 지우고, attachment-only message가 비면 `content=null` soft delete까지 처리한 뒤 실제 blob 삭제만 queue로 넘긴다.
 - service-role worker는 아래 lifecycle 함수를 사용한다.
   - `enqueue_due_storage_cleanup()`
   - `claim_storage_cleanup()`
@@ -68,6 +68,7 @@
 - 이 프로젝트의 파일 모델은 “Storage object를 먼저 만들고, DB row는 나중에 확정”하는 2단계 구조다.
 - DB attachment row가 없으면 object가 orphan가 될 수 있어서 cleanup queue/maintenance가 중요하다.
 - `complete_storage_cleanup()`는 DB 참조와 queue 상태를 정리하지만 실제 object 삭제는 SQL 밖에서 처리하는 구조다.
+- `soft_delete_message()`는 연결된 message attachment metadata와 message reaction을 즉시 제거하고 실제 blob 삭제는 같은 cleanup queue로 넘긴다.
 
 ## 미구현 / 계약과 차이
 
@@ -75,3 +76,19 @@
 - SQL에는 `finalize_message_attachment()`가 남아 있지만, 현재 앱의 사용자 경로에서는 쓰지 않는다.
 - `cleanup_deleted_content()`는 현재 post/comment만 자동 purge하고 message/space는 자동 purge하지 않는다.
 - `reconcile_cached_counts()`는 banned member 포함 전체 `space_members`를 센다.
+- service-role `purge_deleted_content('space', ...)` hard purge 경로는 별도로 존재한다.
+
+## 기존 합의 세부 규칙
+
+- 모든 bucket은 private으로 유지한다.
+- 오브젝트 경로 은닉에 의존하지 않고 storage RLS로 접근을 제어하는 방향을 유지한다.
+- 업로드/다운로드는 Supabase Storage SDK를 직접 사용한다.
+- authenticated의 `storage.objects` 직접 INSERT는 bucket별 RLS policy로만 제한하고, UPDATE/upsert/DELETE는 열지 않는 방향을 유지한다.
+- finalize RPC는 object 존재, parent 권한, 경로, 크기, MIME, 허용 형식을 다시 검증한다.
+- SVG/HTML 및 실행 가능한 위험 형식은 거부한다.
+- avatars/space-images는 raster image만 허용한다.
+- post/message file은 이미지 + 문서 계열 allowlist만 허용한다.
+- 이미지 외 파일은 attachment disposition으로 다운로드하는 방향을 유지한다.
+- Storage object path 최대 길이는 1024자를 기준으로 한다.
+- attachment 제거는 cleanup queue와 service-role worker만 수행한다.
+- finalize는 생성 후 24시간 이내 object만 허용하고, orphan cleanup은 48시간 이후를 기준으로 하는 방향을 유지한다.

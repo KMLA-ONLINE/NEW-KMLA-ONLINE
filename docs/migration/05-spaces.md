@@ -86,8 +86,24 @@ space_members(
 - `member_count`는 이 시점에서는 단순 stored column이다.
 - count를 어떻게 갱신할지, owner를 어떻게 강제할지는 later migration에 의존한다.
 - membership row 하나가 active member인지, banned member인지, 관리자 권한이 있는지는 후속 helper와 policy에서 해석된다.
+- `spaces.updated_at`은 현재 SQL 기준 자동 갱신되지 않는다.
 
 ## 미구현 / 계약과 차이
 
 - 이 파일 alone 기준으로는 owner unique, active group name unique, ban state check가 없다.
 - `updated_at` 자동 갱신은 later trigger migration에서 구현된다.
+
+## 기존 합의 세부 규칙
+
+- `group`은 앱 관리자가 관리하는 공식 공간, `community`는 사용자가 만드는 비공식 공간으로 보는 해석을 유지한다.
+- group/community 구조 차이는 같은 테이블을 공유하고, 정책 차이는 RLS와 제약으로 처리하는 방향을 유지한다.
+- `spaces`는 hard delete하지 않고 `deleted_at`, `deleted_by` 기반 soft delete를 사용한다.
+- service-role `purge_deleted_content('space', ...)` hard purge 경로는 별도로 존재한다.
+- space 생성과 최초 owner membership은 `create_space()`에서 한 transaction으로 처리한다.
+- owner는 space마다 정확히 1명이어야 한다.
+- owner 양도는 RPC만 허용한다.
+- `private.is_space_member()`는 accepted, non-deleted profile과 활성 space, 비차단 membership을 기준으로 판단하는 것이 원래 합의다.
+- accepted 사용자는 community를 생성할 수 있고, group 생성/삭제는 app admin만 수행하는 방향을 유지한다.
+- active group 이름은 `lower(btrim(name))` 기준 unique를 목표로 한다.
+- space 이름은 trim 후 1~100자, description은 최대 5000자를 목표로 한다.
+- `member_count`는 cached counter이며 exact truth와 구분해서 취급한다.

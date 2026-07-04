@@ -122,10 +122,6 @@ begin
   insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
   values(message_id,'message-files',p_storage_path,p_file_name,p_content_type,p_size_bytes,0,p_width,p_height);
 
-  insert into public.message_reads(message_id,user_id,read_at)
-  values(message_id,caller_id,now())
-  on conflict(message_id,user_id) do nothing;
-
   insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
   values(p_room_id,caller_id,message_id)
   on conflict(room_id,user_id) do update
@@ -160,16 +156,34 @@ end $$;
 
 create function public.request_attachment_removal(p_attachment_kind text,p_attachment_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
-declare caller_id bigint:=private.require_current_profile(true); bucket text; path text;
+declare caller_id bigint:=private.require_current_profile(true); bucket text; path text; target_message_id bigint;
 begin
   if p_attachment_kind='post' then
     select a.storage_bucket,a.storage_path into bucket,path from public.post_attachments a join public.posts p on p.id=a.post_id where a.id=p_attachment_id and p.author_id=caller_id and p.deleted_at is null;
   elsif p_attachment_kind='message' then
-    select a.storage_bucket,a.storage_path into bucket,path from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
+    select a.storage_bucket,a.storage_path,a.message_id into bucket,path,target_message_id from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
   else raise exception 'invalid attachment kind'; end if;
   if path is null then raise exception 'attachment not found or not owned'; end if;
+
   insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by) values(bucket,path,caller_id)
-  on conflict(storage_bucket,storage_path) do update set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),processed_at=null;
+  on conflict(storage_bucket,storage_path) do update
+  set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),
+      processed_at=null,
+      last_error=null;
+
+  if p_attachment_kind='post' then
+    delete from public.post_attachments where id=p_attachment_id and storage_path=path;
+  else
+    delete from public.message_attachments where id=p_attachment_id and storage_path=path;
+    delete from public.message_reactions where message_id=target_message_id;
+
+    update public.messages m
+    set content=null,deleted_at=now(),deleted_by=caller_id
+    where m.id=target_message_id
+      and m.deleted_at is null
+      and m.content is null
+      and not exists(select 1 from public.message_attachments a where a.message_id=m.id);
+  end if;
 end $$;
 
 create function public.enqueue_due_storage_cleanup()

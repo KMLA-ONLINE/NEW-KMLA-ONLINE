@@ -67,7 +67,7 @@ comment_reactions(
 ## 권한과 쓰기 경로
 
 - 실제 user identity stamping, 중복 방지, 접근 제어는 later migration에서 완성된다.
-- post 반응 수 cache는 later trigger/RPC에서 연동된다.
+- post 반응 수 cache는 현재 SQL 기준 즉시 동기화되지 않고 `reconcile_cached_counts()` maintenance에 의존한다.
 
 ## 현재 주의점
 
@@ -77,3 +77,13 @@ comment_reactions(
 
 - registry key unique와 per-user uniqueness는 later constraint migration에서 붙는다.
 - stamp trigger와 RLS는 later migration에서 구현된다.
+
+## 기존 합의 세부 규칙
+
+- 초기 reaction type은 `like`, `love`를 유지한다.
+- reaction parent FK는 `RESTRICT`를 기본으로 한다.
+- reaction 변경은 `reaction_type_id` update로 처리하는 방향을 따른다.
+- reaction 취소는 본인 row delete로 처리한다.
+- cached reaction count는 `posts.reaction_count`만 유지한다.
+- comment/message reaction count는 cache하지 않는 것이 원래 합의다.
+- 사용자는 parent당 reaction 하나만 가질 수 있는 방향을 유지한다.

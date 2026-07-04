@@ -72,3 +72,12 @@ song_requests(
 
 - 요일/시간/기간 check와 gongang overlap exclusion은 later constraint migration에서 붙는다.
 - permission 기반 RLS와 identity stamping은 later migration에서 구현된다.
+
+## 기존 합의 세부 규칙
+
+- `gongangs`는 `time_range`, `validity_range` generated column을 사용한다.
+- 같은 location/day/time/validity 충돌은 exclusion constraint로 막는 방향을 유지한다.
+- `gongangs` mutation은 `gongang` permission 보유자 본인 행만 허용하는 것이 원래 합의다.
+- `song_requests`는 처리 상태 없는 append-only 로그로 유지한다.
+- song request URL은 HTTPS, 최대 2048자를 기준으로 한다.
+- `song_requests`는 `karaoke` permission 보유자만 사용하고, 직접 UPDATE/DELETE는 금지하는 방향을 유지한다.

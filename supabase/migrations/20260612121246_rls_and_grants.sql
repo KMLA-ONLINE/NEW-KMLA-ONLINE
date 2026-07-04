@@ -61,7 +61,6 @@ alter table public.chat_room_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.message_attachments enable row level security;
 alter table public.message_reactions enable row level security;
-alter table public.message_reads enable row level security;
 alter table public.chat_room_read_states enable row level security;
 alter table public.notifications enable row level security;
 alter table public.gongangs enable row level security;
@@ -98,7 +97,6 @@ create policy chat_room_members_select on public.chat_room_members for select to
 create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_room_member(room_id));
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_select on public.message_reactions for select to authenticated using (private.can_access_message(message_id));
-create policy message_reads_select on public.message_reads for select to authenticated using (private.is_room_member((select room_id from public.messages where id=message_id)));
 create policy chat_room_read_states_select on public.chat_room_read_states for select to authenticated using (user_id=private.current_profile_id() and private.is_room_member(room_id));
 
 create policy notifications_select on public.notifications for select to authenticated using (private.is_accepted_user() and recipient_id=private.current_profile_id());
@@ -120,7 +118,7 @@ grant execute on function private.current_profile_id(),private.is_accepted_user(
 grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]) to authenticated;
 
 grant select (id,pub_id,type,name,description,image_url,join_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
-grant select on public.space_members,public.posts,public.post_attachments,public.comments,public.reaction_types,public.post_reactions,public.comment_reactions,public.chat_rooms,public.direct_chat_pairs,public.chat_room_members,public.messages,public.message_attachments,public.message_reactions,public.message_reads,public.chat_room_read_states,public.notifications,public.gongangs,public.song_requests,public.clubs,public.club_apply_rounds,public.clubs_apply to authenticated;
+grant select on public.space_members,public.posts,public.post_attachments,public.comments,public.reaction_types,public.post_reactions,public.comment_reactions,public.chat_rooms,public.direct_chat_pairs,public.chat_room_members,public.messages,public.message_attachments,public.message_reactions,public.chat_room_read_states,public.notifications,public.gongangs,public.song_requests,public.clubs,public.club_apply_rounds,public.clubs_apply to authenticated;
 grant insert (space_id,author_id,title,content,is_anonymous) on public.posts to authenticated;
 grant update (title,content,is_anonymous) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;

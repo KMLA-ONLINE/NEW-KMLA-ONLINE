@@ -24,6 +24,7 @@
 - `spaces`는 accepted 사용자 전체에게 active space 공개 메타를 보여준다.
 - membership, posts, comments, chat 데이터는 대부분 현재 membership이 있을 때만 읽힌다.
 - deleted comment/message도 active direct reply가 있으면 placeholder 용도로 계속 읽히는 구조다.
+- room 멤버는 `chat_room_read_states`도 직접 SELECT할 수 있다.
 - notifications는 recipient 본인만 읽을 수 있다.
 - gongang/song request/club apply는 permission 또는 round-open helper와 조합해서 읽힌다.
 
@@ -39,7 +40,6 @@
 - 반대로 chat core write는 direct SQL이 아니라 RPC 전용으로 둔다.
   - messages
   - message_reactions
-  - message_reads
   - chat_room_read_states
   - room/member 구조
 
@@ -54,6 +54,7 @@
 - 이 프로젝트는 “accepted 여부”와 “현재 membership 존재 여부”가 권한 모델의 핵심이다.
 - direct write가 허용된 테이블도 column-level grant와 RLS가 같이 걸려 있어, 허용 컬럼만 바꿀 수 있다.
 - chat은 읽기는 direct select 가능하지만 쓰기는 RPC로 몰아 둔 구조다.
+- room-wide 읽음 상태는 direct `chat_room_read_states` 조회나 `get_chat_messages()` 결과에서 확인할 수 있다.
 
 ## 미구현 / 계약과 차이
 

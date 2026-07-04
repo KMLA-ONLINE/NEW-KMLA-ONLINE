@@ -39,6 +39,11 @@
 - The `lint`, `lint:fix`, and `format` scripts only target `app/`; root config files are outside those scripts.
 - Pre-commit runs `npx lint-staged` on staged `app/**/*.{ts,tsx}` only.
 
+## Documentation
+
+- When changing code, schema, migrations, or behavior, update any related Markdown docs in the repo during the same task when such docs already exist.
+- In Markdown prose, use spaced range notation like `1 ~ 100`, not `1~100`.
+
 ## Imports / Aliases
 
 - The only verified TS path alias is `~/* -> app/*` in `tsconfig.json`.

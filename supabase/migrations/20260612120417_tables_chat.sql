@@ -56,13 +56,6 @@ create table public.message_reactions (
   updated_at timestamptz null
 );
 
-create table public.message_reads (
-  message_id bigint not null references public.messages (id) on delete restrict,
-  user_id bigint not null references public.profiles (id) on delete restrict,
-  read_at timestamptz not null default now(),
-  primary key (message_id, user_id)
-);
-
 create table public.chat_room_read_states (
   room_id bigint not null references public.chat_rooms (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,

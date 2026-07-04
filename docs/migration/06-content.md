@@ -90,6 +90,7 @@ comments(
 - `soft_delete_comment()`: comment를 placeholder로 바꾸고 soft delete한다.
 - `finalize_post_attachment()`: Storage object를 post attachment row로 확정한다.
 - `search_posts()`: 접근 가능한 post/comment를 검색 결과로 묶어 반환한다.
+- service-role `purge_deleted_content('post'|'comment', ...)`는 soft-deleted row를 hard purge한다.
 
 현재 SQL 기준으로 post/comment의 기본 작성과 수정은 RPC 전용이 아니라 direct SQL + RLS 경로도 함께 사용한다.
 
@@ -103,8 +104,25 @@ comments(
 
 - `comment_count`, `reaction_count`는 진실 원천이 아니라 cache 역할이다.
 - 익명 표시 자체는 이 파일에서 계산하지 않고, 뒤 helper/RPC에서 해석한다.
+- 현재 SQL 기준으로 `comment_count`, `reaction_count`는 write 시점 즉시 동기화가 아니라 `reconcile_cached_counts()` maintenance에 의존한다.
 
 ## 미구현 / 계약과 차이
 
 - text length check, `pub_id` unique, pin/delete state check는 later constraint migration에서 붙는다.
 - 댓글 1레벨 제한은 later trigger migration에서 강제된다.
+
+## 기존 합의 세부 규칙
+
+- 모든 post는 하나의 space에 속하고, 작성자는 그 space 멤버여야 한다.
+- post/comment 검색은 `lower()` + 공백 제거 후 `ILIKE` 비교를 기준으로 한다.
+- comments는 1레벨 답글만 허용하는 방향을 유지한다.
+- 사용자 경로에서는 post/comment를 hard delete하지 않는다.
+- 삭제 댓글은 답글이 있으면 placeholder로 노출하고, 답글이 없으면 숨기는 동작을 목표로 한다.
+- 익명 표시명은 `anonymous_username`, 없으면 `익명 {author_id}`를 사용한다.
+- post/message 첨부는 이미지, PDF, 일반 텍스트/Markdown/CSV/RTF, Word/Excel/PowerPoint, HWP/HWPX, OpenDocument allowlist를 사용한다.
+- 파일 내용 기반 악성코드 검사는 수행하지 않고, 이미지 외 파일은 attachment disposition으로 다운로드하는 방향을 유지한다.
+- post feed는 `(created_at DESC, id DESC)` keyset cursor를 사용한다.
+- post title은 1 ~ 200자, post content는 1 ~ 50000자, comment content는 1 ~ 10000자를 목표로 한다.
+- comment placeholder 문자열은 `삭제된 댓글입니다.`를 사용한다.
+
+- comment placeholder 문자열은 `삭제된 댓글입니다.`를 사용한다.
