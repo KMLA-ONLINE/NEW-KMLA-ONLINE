@@ -5,7 +5,12 @@ export default [
     index("./routes/_app._index.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
     route("community", "./routes/_app.community.tsx"),
-    route("messenger", "./routes/_app.messenger.tsx"),
+    route("messenger", "./routes/_app.messenger.tsx", [
+      index("./routes/_app.messenger-index.tsx"),
+      route(":roomId", "./routes/_app.messenger-room.tsx", [
+        route("details", "./routes/_app.messenger-room-details.tsx"),
+      ]),
+    ]),
     route("menu", "./routes/_app.menu.tsx"),
     route("profile", "./routes/_app.profile.tsx"),
   ]),

@@ -17,7 +17,11 @@ export function AppSidebar() {
   const year = new Date().getFullYear()
 
   return (
-    <Sidebar variant="floating" collapsible="icon" className="md:top-14 md:h-[calc(100svh-3.5rem)]">
+    <Sidebar
+      variant="sidebar"
+      collapsible="icon"
+      className="data-[side=left]:border-r-0 data-[side=left]:group-data-[hovered=true]/sidebar:border-r md:top-14 md:h-[calc(100svh-3.5rem)]"
+    >
       <SidebarContent className="py-2">
         <SidebarGroup>
           <SidebarGroupContent>

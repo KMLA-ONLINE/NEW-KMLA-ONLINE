@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import { useLocation, useNavigate, useParams } from "react-router"
 import {
   ArrowLeftIcon,
+  CameraIcon,
   CheckCheckIcon,
   ImageIcon,
   InfoIcon,
-  MicIcon,
   PanelRightCloseIcon,
   PhoneIcon,
   PlusIcon,
+  ReplyIcon,
   SearchIcon,
   SendIcon,
   SmileIcon,
@@ -17,13 +19,12 @@ import {
   XIcon,
 } from "lucide-react"
 
-import { Avatar, AvatarBadge, AvatarFallback } from "~/components/ui/avatar"
+import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { cn } from "~/lib/utils"
 
-type MobileScreen = "list" | "room" | "detail"
 type RoomType = "direct" | "group"
 type MessageGroupPosition = "single" | "start" | "middle" | "end"
 
@@ -31,8 +32,6 @@ type Participant = {
   id: string
   name: string
   initials: string
-  role?: string
-  online?: boolean
 }
 
 type ImageAttachment = {
@@ -63,27 +62,24 @@ type Room = {
   type: RoomType
   name: string
   initials: string
-  role: string
   participants: Participant[]
   messages: Message[]
   unreadCount?: number
   muted?: boolean
-  online?: boolean
-  statusNote?: string
 }
 
 type PersistedMessengerState = {
   rooms: Room[]
-  selectedRoomId: string
-  isDetailOpen: boolean
+}
+
+export const handle = {
+  mobileContentPadding: "none",
 }
 
 const CURRENT_USER: Participant = {
   id: "me",
   name: "You",
   initials: "ME",
-  role: "KMLA Online",
-  online: true,
 }
 
 const STORAGE_KEY = "kmla-online:messenger:v1"
@@ -94,13 +90,7 @@ const seedRooms: Room[] = [
     type: "direct",
     name: "Minji Kang",
     initials: "MK",
-    role: "Dorm 2-1",
-    online: true,
-    statusNote: "Usually replies in a few minutes",
-    participants: [
-      CURRENT_USER,
-      { id: "minji", name: "Minji Kang", initials: "MK", role: "Dorm 2-1", online: true },
-    ],
+    participants: [CURRENT_USER, { id: "minji", name: "Minji Kang", initials: "MK" }],
     unreadCount: 2,
     messages: [
       {
@@ -167,13 +157,11 @@ const seedRooms: Room[] = [
     type: "group",
     name: "Student Council Ops",
     initials: "SC",
-    role: "Group chat",
-    statusNote: "4 members",
     participants: [
       CURRENT_USER,
-      { id: "daniel", name: "Daniel Choi", initials: "DC", role: "Council" },
-      { id: "sora", name: "Sora Han", initials: "SH", role: "Council", online: true },
-      { id: "yujin", name: "Yujin Seo", initials: "YS", role: "Council" },
+      { id: "daniel", name: "Daniel Choi", initials: "DC" },
+      { id: "sora", name: "Sora Han", initials: "SH" },
+      { id: "yujin", name: "Yujin Seo", initials: "YS" },
     ],
     messages: [
       {
@@ -203,12 +191,8 @@ const seedRooms: Room[] = [
     type: "direct",
     name: "Junseo Park",
     initials: "JP",
-    role: "Class 3-2",
     muted: true,
-    participants: [
-      CURRENT_USER,
-      { id: "junseo", name: "Junseo Park", initials: "JP", role: "Class 3-2" },
-    ],
+    participants: [CURRENT_USER, { id: "junseo", name: "Junseo Park", initials: "JP" }],
     messages: [
       {
         id: "junseo-1",
@@ -223,12 +207,11 @@ const seedRooms: Room[] = [
     type: "group",
     name: "Debate Prep Room",
     initials: "DP",
-    role: "Club chat",
     unreadCount: 5,
     participants: [
       CURRENT_USER,
-      { id: "arin", name: "Arin Moon", initials: "AM", role: "Debate" },
-      { id: "tae", name: "Tae Kim", initials: "TK", role: "Debate" },
+      { id: "arin", name: "Arin Moon", initials: "AM" },
+      { id: "tae", name: "Tae Kim", initials: "TK" },
     ],
     messages: [
       {
@@ -253,11 +236,7 @@ const seedRooms: Room[] = [
     type: "direct",
     name: "Library Desk",
     initials: "LD",
-    role: "Official",
-    participants: [
-      CURRENT_USER,
-      { id: "library", name: "Library Desk", initials: "LD", role: "Official" },
-    ],
+    participants: [CURRENT_USER, { id: "library", name: "Library Desk", initials: "LD" }],
     messages: [
       {
         id: "library-1",
@@ -272,12 +251,7 @@ const seedRooms: Room[] = [
     type: "direct",
     name: "Hani Lee",
     initials: "HL",
-    role: "Class 1-4",
-    online: true,
-    participants: [
-      CURRENT_USER,
-      { id: "hani", name: "Hani Lee", initials: "HL", role: "Class 1-4", online: true },
-    ],
+    participants: [CURRENT_USER, { id: "hani", name: "Hani Lee", initials: "HL" }],
     messages: [
       {
         id: "hani-1",
@@ -378,11 +352,11 @@ function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPositio
   if (isMine) {
     switch (groupPosition) {
       case "start":
-        return "rounded-[1.25rem] rounded-br-md"
+        return "rounded-[1.25rem] rounded-br-none"
       case "middle":
-        return "rounded-[1.25rem] rounded-tr-md rounded-br-md"
+        return "rounded-[1.25rem] rounded-tr-none rounded-br-none"
       case "end":
-        return "rounded-[1.25rem] rounded-tr-md"
+        return "rounded-[1.25rem] rounded-tr-none"
       default:
         return "rounded-[1.25rem]"
     }
@@ -390,11 +364,11 @@ function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPositio
 
   switch (groupPosition) {
     case "start":
-      return "rounded-[1.25rem] rounded-bl-md"
+      return "rounded-[1.25rem] rounded-bl-none"
     case "middle":
-      return "rounded-[1.25rem] rounded-tl-md rounded-bl-md"
+      return "rounded-[1.25rem] rounded-tl-none rounded-bl-none"
     case "end":
-      return "rounded-[1.25rem] rounded-tl-md"
+      return "rounded-[1.25rem] rounded-tl-none"
     default:
       return "rounded-[1.25rem]"
   }
@@ -430,9 +404,7 @@ function getMessageGroupPosition(messages: Message[], index: number): MessageGro
 }
 
 function getRoomSubtitle(room: Room) {
-  return (
-    room.statusNote ?? (room.type === "group" ? `${room.participants.length} members` : room.role)
-  )
+  return room.type === "group" ? `${room.participants.length} members` : ""
 }
 
 function getDesktopGridClass(isDetailOpen: boolean) {
@@ -447,7 +419,7 @@ function isPersistedState(value: unknown): value is PersistedMessengerState {
   }
 
   const candidate = value as Partial<PersistedMessengerState>
-  return Array.isArray(candidate.rooms) && typeof candidate.selectedRoomId === "string"
+  return Array.isArray(candidate.rooms)
 }
 
 function ChatListPane({
@@ -458,7 +430,7 @@ function ChatListPane({
   onSelectRoom,
 }: {
   rooms: Room[]
-  selectedRoomId: string
+  selectedRoomId: string | null
   searchValue: string
   onSearchChange: (value: string) => void
   onSelectRoom: (roomId: string) => void
@@ -481,7 +453,7 @@ function ChatListPane({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 md:p-2">
+      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(0.75rem+4rem+env(safe-area-inset-bottom))] md:p-2">
         {rooms.length > 0 ? (
           <div className="flex flex-col gap-1" aria-label="Conversation list">
             {rooms.map((room) => {
@@ -498,9 +470,8 @@ function ChatListPane({
                   )}
                   onClick={() => onSelectRoom(room.id)}
                 >
-                  <Avatar size="lg" className="relative">
+                  <Avatar size="lg">
                     <AvatarFallback>{room.initials}</AvatarFallback>
-                    {room.online ? <AvatarBadge aria-label="Online" /> : null}
                   </Avatar>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
@@ -513,9 +484,6 @@ function ChatListPane({
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                       {getMessagePreview(lastMessage)}
-                    </span>
-                    <span className="text-muted-foreground mt-1 block text-xs">
-                      {getRoomSubtitle(room)}
                     </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-2">
@@ -569,7 +537,10 @@ function MessageImage({ image, className }: { image: ImageAttachment; className?
 
   return (
     <figure
-      className={cn("bg-muted w-72 max-w-full overflow-hidden rounded-3xl border", className)}
+      className={cn(
+        "bg-muted w-72 max-w-[14rem] overflow-hidden rounded-3xl border sm:max-w-[16rem]",
+        className
+      )}
     >
       <img src={image.src} alt={image.title} className="max-h-72 w-full object-cover" />
       <figcaption className="bg-background/90 border-t px-4 py-3">
@@ -610,6 +581,7 @@ function MessageBubble({
   const bubbleShapeClass = getBubbleShapeClass(isMine, groupPosition)
   const groupedStackOffsetClass =
     groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
+  const bubbleToneClass = isMine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
 
   return (
     <div className={cn("flex flex-col gap-1", groupedStackOffsetClass)}>
@@ -630,41 +602,49 @@ function MessageBubble({
         ) : null}
         <div
           className={cn(
-            "flex max-w-[min(22rem,82vw)] flex-col gap-1 sm:max-w-[70%]",
+            "flex max-w-[min(20rem,70%)] flex-col gap-1 sm:max-w-[70%]",
             isMine ? "items-end" : "items-start"
           )}
         >
           {message.replyTo ? (
             <div
-              className={cn(
-                "max-w-full rounded-2xl px-3 py-2 text-xs",
-                isMine ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              )}
+              className={cn("flex max-w-full flex-col gap-1", isMine ? "items-end" : "items-start")}
             >
-              <p className="font-medium">Replying to {message.replyTo.author}</p>
-              <p className="mt-0.5 line-clamp-2">{message.replyTo.text}</p>
+              <div className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                <ReplyIcon className="size-3.5" />
+                <span>{message.replyTo.author}</span>
+              </div>
+              <div
+                className={cn(
+                  "bg-muted text-muted-foreground max-w-[calc(100%-1.25rem)] rounded-2xl px-2.5 pt-1.5 pb-4 text-sm",
+                  isMine ? "rounded-br-md" : "rounded-bl-md"
+                )}
+              >
+                <div className="line-clamp-3 whitespace-pre-wrap">{message.replyTo.text}</div>
+              </div>
             </div>
           ) : null}
-          {message.image ? (
-            <MessageImage image={message.image} className={bubbleShapeClass} />
-          ) : null}
-          {message.content ? (
-            <p
-              className={cn(
-                "px-4 py-2.5 text-sm leading-6 whitespace-pre-wrap shadow-xs",
-                bubbleShapeClass,
-                isMine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
-              )}
-            >
-              {message.content}
-            </p>
+          {message.content || message.image ? (
+            <div className={cn("flex flex-col gap-1", message.replyTo ? "-mt-4" : "")}>
+              <div className={cn("px-3 py-2", bubbleShapeClass, bubbleToneClass)}>
+                {message.content ? (
+                  <p className="text-sm leading-5 whitespace-pre-wrap">{message.content}</p>
+                ) : null}
+                {message.image ? (
+                  <MessageImage
+                    image={message.image}
+                    className={cn(message.content ? "mt-2" : "", "max-w-[14rem] sm:max-w-[16rem]")}
+                  />
+                ) : null}
+              </div>
+            </div>
           ) : null}
         </div>
       </div>
       <div className={cn("flex", isMine ? "justify-end" : "pl-10")}>
         <div
           className={cn(
-            "flex max-w-[min(22rem,82vw)] items-center gap-1.5 px-1 sm:max-w-[70%]",
+            "-mt-0.5 flex max-w-[min(20rem,70%)] items-center gap-1.5 px-1 sm:max-w-[70%]",
             isMine ? "justify-end" : "justify-start"
           )}
         >
@@ -697,33 +677,49 @@ function MessageBubble({
   )
 }
 
-function TypingIndicator({ room }: { room: Room }) {
-  const participant =
-    room.participants.find((item) => item.id !== CURRENT_USER.id) ?? room.participants[0]
-
+const MessageList = memo(function MessageList({
+  room,
+  onReply,
+}: {
+  room: Room
+  onReply: (message: Message) => void
+}) {
   return (
-    <div className="flex items-end gap-2 pl-0">
-      <Avatar size="sm">
-        <AvatarFallback>{participant.initials}</AvatarFallback>
-      </Avatar>
-      <div className="bg-muted flex items-center gap-1 rounded-[1.25rem] rounded-bl-md px-4 py-3">
-        <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
-        <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
-        <span className="bg-muted-foreground/60 size-1.5 rounded-full" />
-      </div>
+    <div className="mx-auto flex w-full flex-col gap-4">
+      {room.messages.map((message, index) => {
+        const groupPosition = getMessageGroupPosition(room.messages, index)
+        const isMine = message.senderId === CURRENT_USER.id
+        const showAvatar = !isMine && (groupPosition === "single" || groupPosition === "end")
+        const showName =
+          room.type === "group" &&
+          !isMine &&
+          (groupPosition === "single" || groupPosition === "start")
+        const showTime = groupPosition === "single" || groupPosition === "end"
+
+        return (
+          <MessageBubble
+            key={message.id}
+            room={room}
+            message={message}
+            groupPosition={groupPosition}
+            showAvatar={showAvatar}
+            showName={showName}
+            showTime={showTime}
+            onReply={onReply}
+          />
+        )
+      })}
     </div>
   )
-}
+})
 
 function RoomPane({
   room,
-  composerValue,
   attachedImage,
   replyTo,
   showBackButton = false,
   onBack,
   onOpenDetail,
-  onComposerChange,
   onAttachImage,
   onRemoveImage,
   onClearReply,
@@ -731,21 +727,36 @@ function RoomPane({
   onSend,
 }: {
   room: Room
-  composerValue: string
   attachedImage: ImageAttachment | null
   replyTo: ReplyPreview | null
   showBackButton?: boolean
   onBack?: () => void
   onOpenDetail: () => void
-  onComposerChange: (value: string) => void
   onAttachImage: () => void
   onRemoveImage: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
-  onSend: () => void
+  onSend: (draft: string) => boolean
 }) {
-  const canSend = composerValue.trim().length > 0 || attachedImage
+  const [draft, setDraft] = useState("")
+  const canSend = draft.trim().length > 0 || attachedImage
   const subtitle = getRoomSubtitle(room)
+  const messagesViewportRef = useRef<HTMLDivElement>(null)
+  const lastMessageId = room.messages[room.messages.length - 1]?.id
+  const [isComposerFocused, setIsComposerFocused] = useState(false)
+
+  useEffect(() => {
+    const viewport = messagesViewportRef.current
+    if (!viewport) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [room.id, lastMessageId])
 
   return (
     <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
@@ -762,18 +773,12 @@ function RoomPane({
                 <ArrowLeftIcon />
               </Button>
             ) : null}
-            <Avatar size="lg" className="relative">
+            <Avatar size="lg">
               <AvatarFallback>{room.initials}</AvatarFallback>
-              {room.online ? <AvatarBadge aria-label="Online" /> : null}
             </Avatar>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-sm font-semibold sm:text-base">{room.name}</h2>
-                {room.online ? (
-                  <Badge variant="secondary" className="hidden sm:inline-flex">
-                    Active now
-                  </Badge>
-                ) : null}
               </div>
               <p className="text-muted-foreground truncate text-xs">{subtitle}</p>
             </div>
@@ -806,40 +811,18 @@ function RoomPane({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5">
-          <div className="mx-auto flex w-full flex-col gap-4">
-            {room.messages.map((message, index) => {
-              const groupPosition = getMessageGroupPosition(room.messages, index)
-              const isMine = message.senderId === CURRENT_USER.id
-              const showAvatar = !isMine && (groupPosition === "single" || groupPosition === "end")
-              const showName =
-                room.type === "group" &&
-                !isMine &&
-                (groupPosition === "single" || groupPosition === "start")
-              const showTime = groupPosition === "single" || groupPosition === "end"
-
-              return (
-                <MessageBubble
-                  key={message.id}
-                  room={room}
-                  message={message}
-                  groupPosition={groupPosition}
-                  showAvatar={showAvatar}
-                  showName={showName}
-                  showTime={showTime}
-                  onReply={onReply}
-                />
-              )
-            })}
-          </div>
-          {room.online ? <TypingIndicator room={room} /> : null}
+        <div
+          ref={messagesViewportRef}
+          className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
+        >
+          <MessageList room={room} onReply={onReply} />
         </div>
 
-        <footer className="bg-card/95 shrink-0 border-t px-3 py-2 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
+        <footer className="bg-card/95 shrink-0 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))] md:px-3 md:py-2">
           {replyTo ? (
             <div className="bg-muted mb-2 flex items-start justify-between gap-3 rounded-2xl px-3 py-2">
               <div className="min-w-0 text-xs">
-                <p className="font-medium">Replying to {replyTo.author}</p>
+                <p className="font-medium">{replyTo.author}에게 답장</p>
                 <p className="text-muted-foreground line-clamp-1">{replyTo.text}</p>
               </div>
               <Button
@@ -881,54 +864,118 @@ function RoomPane({
               </Button>
             </div>
           ) : null}
-          <div className="bg-muted flex items-end gap-1 rounded-[1.75rem] p-1.5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Add attachment"
-              onClick={onAttachImage}
+          <div className="flex items-center gap-1 p-1.5">
+            <div
+              className={cn(
+                "flex origin-left items-center gap-1 overflow-hidden transition-[max-width,opacity,transform,margin] duration-200 ease-out motion-reduce:transition-none",
+                isComposerFocused
+                  ? "max-sm:-mr-1 max-sm:max-w-0 max-sm:scale-95 max-sm:opacity-0"
+                  : "max-sm:max-w-32 max-sm:opacity-100"
+              )}
             >
-              <PlusIcon />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Add attachment"
+                onClick={onAttachImage}
+              >
+                <PlusIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open camera"
+                className="sm:hidden"
+                onClick={onAttachImage}
+              >
+                <CameraIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Attach image"
+                onClick={onAttachImage}
+              >
+                <ImageIcon />
+              </Button>
+            </div>
+
+            <div className="flex min-w-0 flex-1 items-center self-stretch transition-[flex-basis] duration-200 ease-out motion-reduce:transition-none">
+              <textarea
+                value={draft}
+                rows={1}
+                aria-label="Message input"
+                placeholder={`Aa`}
+                className="bg-muted placeholder:text-muted-foreground min-h-10 min-w-0 flex-1 resize-none rounded-[1.5rem] border-0 px-4 py-2 text-sm leading-5 shadow-none outline-none"
+                onChange={(event) => setDraft(event.target.value)}
+                onFocus={() => setIsComposerFocused(true)}
+                onBlur={() => setIsComposerFocused(false)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault()
+                    if (onSend(draft)) {
+                      setDraft("")
+                    }
+                  }
+                }}
+              />
+            </div>
+
             <Button
-              variant="ghost"
+              variant={isComposerFocused ? "default" : "ghost"}
               size="icon-sm"
-              aria-label="Attach image"
-              onClick={onAttachImage}
+              aria-label={isComposerFocused ? "Send message" : "Choose emoji"}
+              disabled={isComposerFocused ? !canSend : false}
+              className="relative shrink-0 overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={
+                isComposerFocused
+                  ? () => {
+                      if (onSend(draft)) {
+                        setDraft("")
+                      }
+                    }
+                  : undefined
+              }
             >
-              <ImageIcon />
+              <span className="relative block size-4">
+                <SmileIcon
+                  className={cn(
+                    "absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+                    isComposerFocused ? "scale-90 opacity-0" : "scale-100 opacity-100"
+                  )}
+                />
+                <SendIcon
+                  className={cn(
+                    "absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+                    isComposerFocused ? "scale-100 opacity-100" : "scale-90 opacity-0"
+                  )}
+                />
+              </span>
             </Button>
-            <textarea
-              value={composerValue}
-              rows={1}
-              aria-label="Message input"
-              placeholder={`Message ${room.name}`}
-              className="bg-background placeholder:text-muted-foreground focus-visible:ring-ring/50 min-h-10 min-w-0 flex-1 resize-none rounded-[1.5rem] border-0 px-4 py-2.5 text-sm leading-5 shadow-none outline-none focus-visible:ring-2"
-              onChange={(event) => onComposerChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault()
-                  onSend()
-                }
-              }}
-            />
+
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label="Choose emoji"
               className="hidden sm:inline-flex"
+              onMouseDown={(event) => event.preventDefault()}
             >
               <SmileIcon />
             </Button>
+
             <Button
-              variant="ghost"
               size="icon-sm"
-              aria-label="Record voice message"
+              aria-label="Send message"
+              disabled={!canSend}
               className="hidden sm:inline-flex"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                if (onSend(draft)) {
+                  setDraft("")
+                }
+              }}
             >
-              <MicIcon />
-            </Button>
-            <Button size="icon-sm" aria-label="Send message" disabled={!canSend} onClick={onSend}>
               <SendIcon />
             </Button>
           </div>
@@ -985,11 +1032,10 @@ function DetailPane({
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
+      <div className="messenger-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
         <section className="bg-muted/50 rounded-[1.5rem] p-5 text-center">
-          <Avatar size="lg" className="relative mx-auto">
+          <Avatar size="lg" className="mx-auto">
             <AvatarFallback>{room.initials}</AvatarFallback>
-            {room.online ? <AvatarBadge aria-label="Online" /> : null}
           </Avatar>
           <h2 className="mt-3 text-lg font-semibold">{room.name}</h2>
           <p className="text-muted-foreground mt-1 text-sm">{getRoomSubtitle(room)}</p>
@@ -1006,15 +1052,11 @@ function DetailPane({
                 key={participant.id}
                 className="hover:bg-muted/60 flex items-center gap-3 rounded-2xl p-2"
               >
-                <Avatar size="sm" className="relative">
+                <Avatar size="sm">
                   <AvatarFallback>{participant.initials}</AvatarFallback>
-                  {participant.online ? <AvatarBadge aria-label="Online" /> : null}
                 </Avatar>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{participant.name}</p>
-                  {participant.role ? (
-                    <p className="text-muted-foreground truncate text-xs">{participant.role}</p>
-                  ) : null}
                 </div>
               </div>
             ))}
@@ -1061,15 +1103,16 @@ function DetailPane({
 
 export default function MessengerPage() {
   const [rooms, setRooms] = useState(seedRooms)
-  const [selectedRoomId, setSelectedRoomId] = useState(seedRooms[0]?.id ?? "")
   const [searchValue, setSearchValue] = useState("")
-  const [composerValue, setComposerValue] = useState("")
   const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
-  const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [mobileScreen, setMobileScreen] = useState<MobileScreen>("list")
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { roomId } = useParams()
+  const isDetailOpen = location.pathname.endsWith("/details")
+  const selectedRoomId = roomId ?? null
 
   useEffect(() => {
     try {
@@ -1082,8 +1125,6 @@ export default function MessengerPage() {
       const parsedValue: unknown = JSON.parse(storedValue)
       if (isPersistedState(parsedValue)) {
         setRooms(parsedValue.rooms)
-        setSelectedRoomId(parsedValue.selectedRoomId)
-        setIsDetailOpen(Boolean(parsedValue.isDetailOpen))
       }
     } finally {
       setHasLoadedStorage(true)
@@ -1097,12 +1138,10 @@ export default function MessengerPage() {
 
     const payload: PersistedMessengerState = {
       rooms,
-      selectedRoomId,
-      isDetailOpen,
     }
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [hasLoadedStorage, isDetailOpen, rooms, selectedRoomId])
+  }, [hasLoadedStorage, rooms])
 
   const filteredRooms = useMemo(() => {
     const normalizedSearchValue = searchValue.trim().toLowerCase()
@@ -1114,36 +1153,29 @@ export default function MessengerPage() {
       const preview = getMessagePreview(getLastMessage(room)).toLowerCase()
       return (
         room.name.toLowerCase().includes(normalizedSearchValue) ||
-        room.role.toLowerCase().includes(normalizedSearchValue) ||
+        getRoomSubtitle(room).toLowerCase().includes(normalizedSearchValue) ||
         preview.includes(normalizedSearchValue)
       )
     })
   }, [rooms, searchValue])
 
-  const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? rooms[0]
+  const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
 
   const selectRoom = (roomId: string) => {
-    setSelectedRoomId(roomId)
     setReplyTo(null)
     setAttachedImage(null)
-    setComposerValue("")
     setRooms((previousRooms) =>
       previousRooms.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room))
     )
-  }
-
-  const selectMobileRoom = (roomId: string) => {
-    selectRoom(roomId)
-    setMobileScreen("room")
+    navigate(isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`)
   }
 
   const openReply = (message: Message) => {
-    const room = rooms.find((item) => item.id === selectedRoomId)
-    if (!room) {
+    if (!selectedRoom) {
       return
     }
 
-    const author = getMessageAuthor(room, message)
+    const author = getMessageAuthor(selectedRoom, message)
     setReplyTo({
       messageId: message.id,
       author: author.name,
@@ -1151,15 +1183,17 @@ export default function MessengerPage() {
     })
   }
 
-  const sendMessage = () => {
-    if (!selectedRoom || (!composerValue.trim() && !attachedImage)) {
-      return
+  const sendMessage = (draft: string) => {
+    const nextContent = draft.trim()
+
+    if (!selectedRoom || (!nextContent && !attachedImage)) {
+      return false
     }
 
     const nextMessage: Message = {
       id: `local-${Date.now()}`,
       senderId: CURRENT_USER.id,
-      content: composerValue.trim() || undefined,
+      content: nextContent || undefined,
       image: attachedImage ?? undefined,
       replyTo: replyTo ?? undefined,
       createdAt: new Date().toISOString(),
@@ -1173,12 +1207,13 @@ export default function MessengerPage() {
           : room
       )
     )
-    setComposerValue("")
     setAttachedImage(null)
     setReplyTo(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+
+    return true
   }
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1202,16 +1237,16 @@ export default function MessengerPage() {
     reader.readAsDataURL(file)
   }
 
-  if (!selectedRoom) {
+  if (rooms.length === 0) {
     return (
-      <div className="flex h-[calc(100svh-10.5rem)] items-center justify-center border border-dashed md:h-[calc(100svh-6.5rem)] md:rounded-[1.75rem]">
+      <div className="flex h-full min-h-0 items-center justify-center border border-dashed md:rounded-[1.75rem]">
         <p className="text-muted-foreground text-sm">No conversations available.</p>
       </div>
     )
   }
 
   return (
-    <div className="h-[calc(100svh-10.5rem)] min-h-[32rem] w-full overflow-hidden md:h-[calc(100svh-6.5rem)] md:rounded-[1.75rem] md:border">
+    <div className="h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border">
       <input
         ref={fileInputRef}
         type="file"
@@ -1221,26 +1256,25 @@ export default function MessengerPage() {
       />
 
       <main className="h-full min-h-0 md:hidden">
-        {mobileScreen === "list" ? (
+        {!selectedRoom ? (
           <ChatListPane
             rooms={filteredRooms}
             selectedRoomId={selectedRoomId}
             searchValue={searchValue}
             onSearchChange={setSearchValue}
-            onSelectRoom={selectMobileRoom}
+            onSelectRoom={selectRoom}
           />
         ) : null}
 
-        {mobileScreen === "room" ? (
+        {selectedRoom && !isDetailOpen ? (
           <RoomPane
+            key={selectedRoom.id}
             room={selectedRoom}
-            composerValue={composerValue}
             attachedImage={attachedImage}
             replyTo={replyTo}
             showBackButton={true}
-            onBack={() => setMobileScreen("list")}
-            onOpenDetail={() => setMobileScreen("detail")}
-            onComposerChange={setComposerValue}
+            onBack={() => navigate("/messenger")}
+            onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
             onAttachImage={() => fileInputRef.current?.click()}
             onRemoveImage={() => setAttachedImage(null)}
             onClearReply={() => setReplyTo(null)}
@@ -1249,8 +1283,12 @@ export default function MessengerPage() {
           />
         ) : null}
 
-        {mobileScreen === "detail" ? (
-          <DetailPane room={selectedRoom} compact={true} onBack={() => setMobileScreen("room")} />
+        {selectedRoom && isDetailOpen ? (
+          <DetailPane
+            room={selectedRoom}
+            compact={true}
+            onBack={() => navigate(`/messenger/${selectedRoom.id}`)}
+          />
         ) : null}
       </main>
 
@@ -1268,25 +1306,43 @@ export default function MessengerPage() {
           onSelectRoom={selectRoom}
         />
 
-        <div className={cn("h-full min-h-0", isDetailOpen && "hidden lg:block")}>
-          <RoomPane
-            room={selectedRoom}
-            composerValue={composerValue}
-            attachedImage={attachedImage}
-            replyTo={replyTo}
-            onOpenDetail={() => setIsDetailOpen((value) => !value)}
-            onComposerChange={setComposerValue}
-            onAttachImage={() => fileInputRef.current?.click()}
-            onRemoveImage={() => setAttachedImage(null)}
-            onClearReply={() => setReplyTo(null)}
-            onReply={openReply}
-            onSend={sendMessage}
-          />
-        </div>
+        {selectedRoom ? (
+          <>
+            <div className={cn("h-full min-h-0", isDetailOpen && "hidden lg:block")}>
+              <RoomPane
+                key={selectedRoom.id}
+                room={selectedRoom}
+                attachedImage={attachedImage}
+                replyTo={replyTo}
+                onOpenDetail={() =>
+                  navigate(
+                    isDetailOpen
+                      ? `/messenger/${selectedRoom.id}`
+                      : `/messenger/${selectedRoom.id}/details`
+                  )
+                }
+                onAttachImage={() => fileInputRef.current?.click()}
+                onRemoveImage={() => setAttachedImage(null)}
+                onClearReply={() => setReplyTo(null)}
+                onReply={openReply}
+                onSend={sendMessage}
+              />
+            </div>
 
-        {isDetailOpen ? (
-          <DetailPane room={selectedRoom} onClose={() => setIsDetailOpen(false)} />
-        ) : null}
+            {isDetailOpen ? (
+              <DetailPane
+                room={selectedRoom}
+                onClose={() => navigate(`/messenger/${selectedRoom.id}`)}
+              />
+            ) : null}
+          </>
+        ) : (
+          <div className="flex min-h-[24rem] items-center justify-center">
+            <div className="text-muted-foreground rounded-3xl border border-dashed p-8 text-center text-sm">
+              Select a conversation to start chatting.
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

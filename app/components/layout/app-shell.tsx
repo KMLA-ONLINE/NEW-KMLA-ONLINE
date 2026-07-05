@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from "react-router"
+import { Outlet, useMatches } from "react-router"
 
 import { AppHeader } from "~/components/layout/app-header"
 import { AppSidebar } from "~/components/layout/app-sidebar"
@@ -9,9 +9,20 @@ type AppShellProps = {
   email: string
 }
 
+type AppLayoutHandle = {
+  mobileContentPadding?: "default" | "none"
+  showMobileTabBar?: boolean
+}
+
 export function AppShell({ email }: AppShellProps) {
-  const location = useLocation()
-  const isMessengerRoute = location.pathname.startsWith("/messenger")
+  const matches = useMatches()
+  const handles = matches.map((match) => match.handle as AppLayoutHandle | undefined)
+  const mobileContentPadding =
+    [...handles].reverse().find((handle) => handle?.mobileContentPadding)?.mobileContentPadding ??
+    "default"
+  const showMobileTabBar =
+    [...handles].reverse().find((handle) => typeof handle?.showMobileTabBar === "boolean")
+      ?.showMobileTabBar ?? true
 
   return (
     <SidebarProvider defaultOpen={false}>
@@ -21,15 +32,17 @@ export function AppShell({ email }: AppShellProps) {
           <AppSidebar />
           <SidebarInset className="min-h-0">
             <div
-              className={`flex flex-1 flex-col overflow-y-auto ${
-                isMessengerRoute ? "p-0 md:p-6" : "p-4 pb-24 sm:p-6 md:pb-6"
-              }`}
+              className={
+                mobileContentPadding === "none"
+                  ? "flex flex-1 flex-col overflow-hidden p-0 md:overflow-y-auto md:p-6 md:pb-6"
+                  : "flex flex-1 flex-col overflow-y-auto p-4 pb-24 sm:p-6 md:pb-6"
+              }
             >
               <Outlet />
             </div>
           </SidebarInset>
         </div>
-        <MobileTabBar />
+        {showMobileTabBar ? <MobileTabBar /> : null}
       </div>
     </SidebarProvider>
   )
