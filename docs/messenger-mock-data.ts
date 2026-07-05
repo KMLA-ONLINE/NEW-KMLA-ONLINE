@@ -1,52 +1,5 @@
-export type RoomType = "direct" | "group"
-
-export type Participant = {
-  id: string
-  name: string
-  initials: string
-}
-
-export type ImageAttachment = {
-  src?: string
-  title: string
-  subtitle?: string
-}
-
-export type ReplyPreview = {
-  messageId: string
-  author: string
-  text: string
-}
-
-export type Message = {
-  id: string
-  senderId: string
-  content?: string
-  createdAt: string
-  deletedAt?: string
-  deletedBy?: string
-  image?: ImageAttachment
-  replyTo?: ReplyPreview
-  reaction?: string
-  read?: boolean
-}
-
-export type Room = {
-  id: string
-  type: RoomType
-  name: string
-  initials: string
-  participants: Participant[]
-  messages: Message[]
-  unreadCount?: number
-  muted?: boolean
-}
-
-export const CURRENT_USER: Participant = {
-  id: "me",
-  name: "You",
-  initials: "ME",
-}
+import { CURRENT_USER } from "../app/lib/messenger/constants"
+import type { Room } from "../app/lib/messenger/types"
 
 export const seedRooms: Room[] = [
   {
