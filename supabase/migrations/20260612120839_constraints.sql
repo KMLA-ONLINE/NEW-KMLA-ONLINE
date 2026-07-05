@@ -105,7 +105,7 @@ alter table public.direct_chat_pairs
 
 alter table public.messages
   add constraint messages_parent_check check (parent_id is null or parent_id <> id),
-  add constraint messages_content_check check (char_length(btrim(content)) between 1 and 10000),
+  add constraint messages_content_check check (content is null or char_length(btrim(content)) between 1 and 10000),
   add constraint messages_deleted_state_check check (deleted_at is not null or deleted_by is null),
   add constraint messages_edit_state_check check (
     (is_edited = false and edited_at is null)
