@@ -27,7 +27,7 @@ const tabs = ["정보", "그룹", "게시물", "활동"]
 
 export function ProfilePageContent() {
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <ProfileHero />
       <ProfileTabs />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -86,12 +86,12 @@ function ProfileHero() {
 
 function ProfileActions() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:flex sm:pb-1">
-      <Button type="button" className="h-11 px-5 sm:h-10">
+    <div className="flex flex-col gap-3 sm:flex-row sm:pb-1">
+      <Button type="button" className="h-11 w-full px-5 sm:h-10 sm:w-auto">
         <UserRoundIcon className="size-4" />
         프로필 편집
       </Button>
-      <Button type="button" variant="outline" className="h-11 px-5 sm:h-10">
+      <Button type="button" variant="outline" className="h-11 w-full px-5 sm:h-10 sm:w-auto">
         <MessageCircleIcon className="text-primary size-4" />
         메시지
       </Button>
