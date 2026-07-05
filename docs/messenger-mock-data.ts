@@ -1,0 +1,356 @@
+export type RoomType = "direct" | "group"
+
+export type Participant = {
+  id: string
+  name: string
+  initials: string
+}
+
+export type ImageAttachment = {
+  src?: string
+  title: string
+  subtitle?: string
+}
+
+export type ReplyPreview = {
+  messageId: string
+  author: string
+  text: string
+}
+
+export type Message = {
+  id: string
+  senderId: string
+  content?: string
+  createdAt: string
+  deletedAt?: string
+  deletedBy?: string
+  image?: ImageAttachment
+  replyTo?: ReplyPreview
+  reaction?: string
+  read?: boolean
+}
+
+export type Room = {
+  id: string
+  type: RoomType
+  name: string
+  initials: string
+  participants: Participant[]
+  messages: Message[]
+  unreadCount?: number
+  muted?: boolean
+}
+
+export const CURRENT_USER: Participant = {
+  id: "me",
+  name: "You",
+  initials: "ME",
+}
+
+export const seedRooms: Room[] = [
+  {
+    id: "room-minji",
+    type: "direct",
+    name: "Minji Kang",
+    initials: "MK",
+    participants: [CURRENT_USER, { id: "minji", name: "Minji Kang", initials: "MK" }],
+    unreadCount: 2,
+    messages: [
+      {
+        id: "minji-system-1",
+        senderId: "system",
+        content: "Today, 8:41 PM",
+        createdAt: "2026-07-03T20:41:00.000Z",
+      },
+      {
+        id: "minji-1",
+        senderId: "minji",
+        content: "Are you still in the science building?",
+        createdAt: "2026-07-03T20:41:00.000Z",
+      },
+      {
+        id: "minji-2",
+        senderId: "me",
+        content: "Yes, finishing the lab notes now.",
+        createdAt: "2026-07-03T20:42:00.000Z",
+        read: true,
+      },
+      {
+        id: "minji-3",
+        senderId: "minji",
+        replyTo: {
+          messageId: "minji-2",
+          author: "You",
+          text: "Yes, finishing the lab notes now.",
+        },
+        content:
+          "Perfect. Can you send the board photo again? The first image was cropped on my phone.",
+        createdAt: "2026-07-03T20:43:00.000Z",
+      },
+      {
+        id: "minji-4",
+        senderId: "me",
+        image: {
+          title: "Whiteboard snapshot",
+          subtitle: "Organic chemistry reaction map",
+        },
+        createdAt: "2026-07-03T20:44:00.000Z",
+        read: true,
+      },
+      {
+        id: "minji-5",
+        senderId: "me",
+        content:
+          "This one should include the whole reaction sequence. I also marked the step where Professor Kim said most people make the sign mistake, so check that part before copying it into the shared notes.",
+        createdAt: "2026-07-03T20:44:20.000Z",
+        reaction: "Liked",
+        read: true,
+      },
+      {
+        id: "minji-6",
+        senderId: "minji",
+        content:
+          "Got it. The long paragraph wraps correctly here too, which is useful for checking the message bubble width on desktop and mobile layouts.",
+        createdAt: "2026-07-03T20:46:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "room-council",
+    type: "group",
+    name: "Student Council Ops",
+    initials: "SC",
+    participants: [
+      CURRENT_USER,
+      { id: "daniel", name: "Daniel Choi", initials: "DC" },
+      { id: "sora", name: "Sora Han", initials: "SH" },
+      { id: "yujin", name: "Yujin Seo", initials: "YS" },
+    ],
+    messages: [
+      {
+        id: "council-1",
+        senderId: "daniel",
+        content: "I moved the checklist into the drive folder.",
+        createdAt: "2026-07-03T19:11:00.000Z",
+      },
+      {
+        id: "council-2",
+        senderId: "sora",
+        content: "Great. I will verify the volunteer names before dinner.",
+        createdAt: "2026-07-03T19:18:00.000Z",
+      },
+      {
+        id: "council-3",
+        senderId: "me",
+        content:
+          "Please leave the booth layout unchanged until the advisor confirms the power outlets.",
+        createdAt: "2026-07-03T19:24:00.000Z",
+        read: true,
+      },
+    ],
+  },
+  {
+    id: "room-junseo",
+    type: "direct",
+    name: "Junseo Park",
+    initials: "JP",
+    muted: true,
+    participants: [CURRENT_USER, { id: "junseo", name: "Junseo Park", initials: "JP" }],
+    messages: [
+      {
+        id: "junseo-1",
+        senderId: "junseo",
+        content: "Long answer, but the short version is yes.",
+        createdAt: "2026-07-03T18:32:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "room-debate",
+    type: "group",
+    name: "Debate Prep Room",
+    initials: "DP",
+    unreadCount: 5,
+    participants: [
+      CURRENT_USER,
+      { id: "arin", name: "Arin Moon", initials: "AM" },
+      { id: "tae", name: "Tae Kim", initials: "TK" },
+    ],
+    messages: [
+      {
+        id: "debate-1",
+        senderId: "arin",
+        image: {
+          title: "Case map draft",
+          subtitle: "Tournament prep board",
+        },
+        createdAt: "2026-07-03T17:12:00.000Z",
+      },
+      {
+        id: "debate-2",
+        senderId: "tae",
+        content: "Photo attached. The second column needs the strongest evidence first.",
+        createdAt: "2026-07-03T17:13:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "room-library",
+    type: "direct",
+    name: "Library Desk",
+    initials: "LD",
+    participants: [CURRENT_USER, { id: "library", name: "Library Desk", initials: "LD" }],
+    messages: [
+      {
+        id: "library-1",
+        senderId: "library",
+        content: "Your reservation has been extended until 9:30 PM.",
+        createdAt: "2026-07-03T15:07:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "room-hani",
+    type: "direct",
+    name: "Hani Lee",
+    initials: "HL",
+    participants: [CURRENT_USER, { id: "hani", name: "Hani Lee", initials: "HL" }],
+    messages: [
+      {
+        id: "hani-1",
+        senderId: "me",
+        content: "I left the notebook with the front desk.",
+        createdAt: "2026-07-02T21:15:00.000Z",
+        read: true,
+      },
+      {
+        id: "hani-2",
+        senderId: "hani",
+        content: "Thanks! I will check after study hall.",
+        createdAt: "2026-07-02T21:17:00.000Z",
+      },
+    ],
+  },
+  {
+    id: "room-soyeon",
+    type: "direct",
+    name: "Soyeon Kim",
+    initials: "SK",
+    participants: [CURRENT_USER, { id: "soyeon", name: "Soyeon Kim", initials: "SK" }],
+    messages: [],
+  },
+  {
+    id: "room-jaehyun",
+    type: "direct",
+    name: "Jaehyun Lim",
+    initials: "JL",
+    participants: [CURRENT_USER, { id: "jaehyun", name: "Jaehyun Lim", initials: "JL" }],
+    messages: [],
+  },
+  {
+    id: "room-yebin",
+    type: "direct",
+    name: "Yebin Cho",
+    initials: "YC",
+    participants: [CURRENT_USER, { id: "yebin", name: "Yebin Cho", initials: "YC" }],
+    messages: [],
+  },
+  {
+    id: "room-dorm-a",
+    type: "group",
+    name: "Dorm A Floor 2",
+    initials: "DA",
+    participants: [
+      CURRENT_USER,
+      { id: "hyun", name: "Hyun Woo", initials: "HW" },
+      { id: "seoha", name: "Seoha Yoon", initials: "SY" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-math-team",
+    type: "group",
+    name: "Math Team",
+    initials: "MT",
+    participants: [
+      CURRENT_USER,
+      { id: "jiho", name: "Jiho Nam", initials: "JN" },
+      { id: "eun", name: "Eun Cha", initials: "EC" },
+      { id: "min", name: "Min Koo", initials: "MK" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-orchestra",
+    type: "group",
+    name: "Orchestra Strings",
+    initials: "OS",
+    participants: [
+      CURRENT_USER,
+      { id: "haru", name: "Haru Shin", initials: "HS" },
+      { id: "nari", name: "Nari Bae", initials: "NB" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-physics",
+    type: "group",
+    name: "Physics Lab 3",
+    initials: "PL",
+    participants: [
+      CURRENT_USER,
+      { id: "dohyun", name: "Dohyun Kwon", initials: "DK" },
+      { id: "ray", name: "Ray Jung", initials: "RJ" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-art-club",
+    type: "group",
+    name: "Art Club Posters",
+    initials: "AC",
+    participants: [
+      CURRENT_USER,
+      { id: "mira", name: "Mira Song", initials: "MS" },
+      { id: "taerin", name: "Taerin Oh", initials: "TO" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-cafeteria",
+    type: "direct",
+    name: "Cafeteria Office",
+    initials: "CO",
+    participants: [CURRENT_USER, { id: "cafeteria", name: "Cafeteria Office", initials: "CO" }],
+    messages: [],
+  },
+  {
+    id: "room-semina",
+    type: "direct",
+    name: "Semina Yoo",
+    initials: "SY",
+    participants: [CURRENT_USER, { id: "semina", name: "Semina Yoo", initials: "SY" }],
+    messages: [],
+  },
+  {
+    id: "room-broadcast",
+    type: "group",
+    name: "Broadcast Team",
+    initials: "BT",
+    participants: [
+      CURRENT_USER,
+      { id: "noah", name: "Noah Jin", initials: "NJ" },
+      { id: "hani2", name: "Hani Seo", initials: "HS" },
+    ],
+    messages: [],
+  },
+  {
+    id: "room-admissions",
+    type: "direct",
+    name: "Admissions Desk",
+    initials: "AD",
+    participants: [CURRENT_USER, { id: "admissions", name: "Admissions Desk", initials: "AD" }],
+    messages: [],
+  },
+]

@@ -1,9 +1,20 @@
-import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
+import { Dialog as DialogPrimitive } from "radix-ui"
 import { useLocation, useNavigate, useParams } from "react-router"
 import {
   ArrowLeftIcon,
   CameraIcon,
   CheckCheckIcon,
+  CopyIcon,
   ImageIcon,
   InfoIcon,
   PanelRightCloseIcon,
@@ -24,49 +35,16 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { cn } from "~/lib/utils"
+import {
+  CURRENT_USER,
+  seedRooms,
+  type ImageAttachment,
+  type Message,
+  type ReplyPreview,
+  type Room,
+} from "../../docs/messenger-mock-data"
 
-type RoomType = "direct" | "group"
 type MessageGroupPosition = "single" | "start" | "middle" | "end"
-
-type Participant = {
-  id: string
-  name: string
-  initials: string
-}
-
-type ImageAttachment = {
-  src?: string
-  title: string
-  subtitle?: string
-}
-
-type ReplyPreview = {
-  messageId: string
-  author: string
-  text: string
-}
-
-type Message = {
-  id: string
-  senderId: string
-  content?: string
-  createdAt: string
-  image?: ImageAttachment
-  replyTo?: ReplyPreview
-  reaction?: string
-  read?: boolean
-}
-
-type Room = {
-  id: string
-  type: RoomType
-  name: string
-  initials: string
-  participants: Participant[]
-  messages: Message[]
-  unreadCount?: number
-  muted?: boolean
-}
 
 type PersistedMessengerState = {
   rooms: Room[]
@@ -76,199 +54,217 @@ export const handle = {
   mobileContentPadding: "none",
 }
 
-const CURRENT_USER: Participant = {
-  id: "me",
-  name: "You",
-  initials: "ME",
+const STORAGE_KEY = "kmla-online:messenger:v1"
+const MESSAGE_CLUSTER_BREAK_MINUTES = 5
+const DELETED_MESSAGE_LABEL = "삭제된 메시지입니다."
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const
+
+function isQuickReaction(reaction: string) {
+  return QUICK_REACTIONS.includes(reaction as (typeof QUICK_REACTIONS)[number])
 }
 
-const STORAGE_KEY = "kmla-online:messenger:v1"
+function isDeletedMessage(message: Message) {
+  return Boolean(message.deletedAt)
+}
 
-const seedRooms: Room[] = [
-  {
-    id: "room-minji",
-    type: "direct",
-    name: "Minji Kang",
-    initials: "MK",
-    participants: [CURRENT_USER, { id: "minji", name: "Minji Kang", initials: "MK" }],
-    unreadCount: 2,
-    messages: [
-      {
-        id: "minji-system-1",
-        senderId: "system",
-        content: "Today, 8:41 PM",
-        createdAt: "2026-07-03T20:41:00.000Z",
-      },
-      {
-        id: "minji-1",
-        senderId: "minji",
-        content: "Are you still in the science building?",
-        createdAt: "2026-07-03T20:41:00.000Z",
-      },
-      {
-        id: "minji-2",
-        senderId: "me",
-        content: "Yes, finishing the lab notes now.",
-        createdAt: "2026-07-03T20:42:00.000Z",
-        read: true,
-      },
-      {
-        id: "minji-3",
-        senderId: "minji",
-        replyTo: {
-          messageId: "minji-2",
-          author: "You",
-          text: "Yes, finishing the lab notes now.",
-        },
-        content:
-          "Perfect. Can you send the board photo again? The first image was cropped on my phone.",
-        createdAt: "2026-07-03T20:43:00.000Z",
-      },
-      {
-        id: "minji-4",
-        senderId: "me",
-        image: {
-          title: "Whiteboard snapshot",
-          subtitle: "Organic chemistry reaction map",
-        },
-        createdAt: "2026-07-03T20:44:00.000Z",
-        read: true,
-      },
-      {
-        id: "minji-5",
-        senderId: "me",
-        content:
-          "This one should include the whole reaction sequence. I also marked the step where Professor Kim said most people make the sign mistake, so check that part before copying it into the shared notes.",
-        createdAt: "2026-07-03T20:44:20.000Z",
-        reaction: "Liked",
-        read: true,
-      },
-      {
-        id: "minji-6",
-        senderId: "minji",
-        content:
-          "Got it. The long paragraph wraps correctly here too, which is useful for checking the message bubble width on desktop and mobile layouts.",
-        createdAt: "2026-07-03T20:46:00.000Z",
-      },
-    ],
-  },
-  {
-    id: "room-council",
-    type: "group",
-    name: "Student Council Ops",
-    initials: "SC",
-    participants: [
-      CURRENT_USER,
-      { id: "daniel", name: "Daniel Choi", initials: "DC" },
-      { id: "sora", name: "Sora Han", initials: "SH" },
-      { id: "yujin", name: "Yujin Seo", initials: "YS" },
-    ],
-    messages: [
-      {
-        id: "council-1",
-        senderId: "daniel",
-        content: "I moved the checklist into the drive folder.",
-        createdAt: "2026-07-03T19:11:00.000Z",
-      },
-      {
-        id: "council-2",
-        senderId: "sora",
-        content: "Great. I will verify the volunteer names before dinner.",
-        createdAt: "2026-07-03T19:18:00.000Z",
-      },
-      {
-        id: "council-3",
-        senderId: "me",
-        content:
-          "Please leave the booth layout unchanged until the advisor confirms the power outlets.",
-        createdAt: "2026-07-03T19:24:00.000Z",
-        read: true,
-      },
-    ],
-  },
-  {
-    id: "room-junseo",
-    type: "direct",
-    name: "Junseo Park",
-    initials: "JP",
-    muted: true,
-    participants: [CURRENT_USER, { id: "junseo", name: "Junseo Park", initials: "JP" }],
-    messages: [
-      {
-        id: "junseo-1",
-        senderId: "junseo",
-        content: "Long answer, but the short version is yes.",
-        createdAt: "2026-07-03T18:32:00.000Z",
-      },
-    ],
-  },
-  {
-    id: "room-debate",
-    type: "group",
-    name: "Debate Prep Room",
-    initials: "DP",
-    unreadCount: 5,
-    participants: [
-      CURRENT_USER,
-      { id: "arin", name: "Arin Moon", initials: "AM" },
-      { id: "tae", name: "Tae Kim", initials: "TK" },
-    ],
-    messages: [
-      {
-        id: "debate-1",
-        senderId: "arin",
-        image: {
-          title: "Case map draft",
-          subtitle: "Tournament prep board",
-        },
-        createdAt: "2026-07-03T17:12:00.000Z",
-      },
-      {
-        id: "debate-2",
-        senderId: "tae",
-        content: "Photo attached. The second column needs the strongest evidence first.",
-        createdAt: "2026-07-03T17:13:00.000Z",
-      },
-    ],
-  },
-  {
-    id: "room-library",
-    type: "direct",
-    name: "Library Desk",
-    initials: "LD",
-    participants: [CURRENT_USER, { id: "library", name: "Library Desk", initials: "LD" }],
-    messages: [
-      {
-        id: "library-1",
-        senderId: "library",
-        content: "Your reservation has been extended until 9:30 PM.",
-        createdAt: "2026-07-03T15:07:00.000Z",
-      },
-    ],
-  },
-  {
-    id: "room-hani",
-    type: "direct",
-    name: "Hani Lee",
-    initials: "HL",
-    participants: [CURRENT_USER, { id: "hani", name: "Hani Lee", initials: "HL" }],
-    messages: [
-      {
-        id: "hani-1",
-        senderId: "me",
-        content: "I left the notebook with the front desk.",
-        createdAt: "2026-07-02T21:15:00.000Z",
-        read: true,
-      },
-      {
-        id: "hani-2",
-        senderId: "hani",
-        content: "Thanks! I will check after study hall.",
-        createdAt: "2026-07-02T21:17:00.000Z",
-      },
-    ],
-  },
-]
+function QuickReactionList({
+  onSelect,
+  className,
+}: {
+  onSelect: (reaction: string) => void
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "messenger-scrollbar flex flex-nowrap items-center gap-2 overflow-x-auto",
+        className
+      )}
+    >
+      {QUICK_REACTIONS.map((reaction) => (
+        <button
+          key={reaction}
+          type="button"
+          className="bg-background hover:bg-muted flex size-10 shrink-0 items-center justify-center rounded-full border text-lg transition-colors"
+          aria-label={`React with ${reaction}`}
+          onClick={() => onSelect(reaction)}
+        >
+          <span aria-hidden="true">{reaction}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function BubbleOverflowMenu({
+  isMine,
+  align,
+  onDelete,
+  onClose,
+}: {
+  isMine: boolean
+  align: "left" | "right"
+  onDelete: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        "bg-popover absolute bottom-[calc(100%+0.5rem)] z-20 min-w-32 rounded-2xl border p-1 shadow-lg",
+        align === "left" ? "left-0" : "right-0"
+      )}
+    >
+      {isMine ? (
+        <button
+          type="button"
+          className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
+          onClick={onDelete}
+        >
+          Delete
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
+        onClick={onClose}
+      >
+        Forward
+      </button>
+      <button
+        type="button"
+        className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
+        onClick={onClose}
+      >
+        Pin
+      </button>
+    </div>
+  )
+}
+
+function MessageActionButton({
+  icon,
+  label,
+  className,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  className?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "hover:bg-muted flex min-w-0 flex-col items-center gap-2 rounded-2xl border px-3 py-3 text-center transition-colors",
+        className
+      )}
+      onClick={onClick}
+    >
+      <span className="bg-muted flex size-11 items-center justify-center rounded-full border">
+        {icon}
+      </span>
+      <span className="text-xs font-medium">{label}</span>
+    </button>
+  )
+}
+
+function MessageActionSheet({
+  message,
+  open,
+  onOpenChange,
+  onReply,
+  onDelete,
+}: {
+  message: Message | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onReply: (message: Message) => void
+  onDelete: (message: Message) => void
+}) {
+  const [isMoreOpen, setIsMoreOpen] = useState(false)
+
+  if (!message) {
+    return null
+  }
+
+  if (isDeletedMessage(message)) {
+    return null
+  }
+
+  const isMine = message.senderId === CURRENT_USER.id
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setIsMoreOpen(false)
+    }
+
+    onOpenChange(nextOpen)
+  }
+
+  const handleCopy = () => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(getReplyText(message))
+    }
+
+    handleOpenChange(false)
+  }
+
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content className="bg-card data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-6 fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto w-auto max-w-md rounded-[1.75rem] border p-4 shadow-xl duration-150 outline-none">
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-[1.5rem]">
+              <div className="grid grid-cols-4 gap-2">
+                <MessageActionButton
+                  icon={<ReplyIcon className="size-5" />}
+                  label="Reply"
+                  onClick={() => {
+                    onReply(message)
+                    handleOpenChange(false)
+                  }}
+                />
+                <MessageActionButton
+                  icon={<CopyIcon className="size-5" />}
+                  label="Copy"
+                  onClick={handleCopy}
+                />
+                {isMine ? (
+                  <MessageActionButton
+                    icon={<XIcon className="size-5" />}
+                    label="Delete"
+                    className="text-destructive"
+                    onClick={() => {
+                      onDelete(message)
+                      handleOpenChange(false)
+                    }}
+                  />
+                ) : (
+                  <MessageActionButton
+                    icon={<SendIcon className="size-5" />}
+                    label="Forward"
+                    onClick={() => handleOpenChange(false)}
+                  />
+                )}
+                <MessageActionButton
+                  icon={<span className="text-lg leading-none tracking-[-0.18em]">...</span>}
+                  label="More"
+                  onClick={() => setIsMoreOpen((previous) => !previous)}
+                />
+              </div>
+
+              {isMoreOpen ? <div className="h-12 rounded-2xl border" /> : null}
+            </div>
+          </div>
+          <DialogPrimitive.Title className="sr-only">Message actions</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sr-only">
+            Choose a reaction or message action.
+          </DialogPrimitive.Description>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  )
+}
 
 function getLastMessage(room: Room) {
   return [...room.messages].reverse().find((message) => message.senderId !== "system")
@@ -277,6 +273,10 @@ function getLastMessage(room: Room) {
 function getMessagePreview(message: Message | undefined) {
   if (!message) {
     return "No messages yet"
+  }
+
+  if (isDeletedMessage(message)) {
+    return DELETED_MESSAGE_LABEL
   }
 
   if (message.content) {
@@ -337,6 +337,10 @@ function formatRoomTime(value: string | undefined) {
 }
 
 function getReplyText(message: Message) {
+  if (isDeletedMessage(message)) {
+    return DELETED_MESSAGE_LABEL
+  }
+
   if (message.content) {
     return message.content
   }
@@ -346,6 +350,16 @@ function getReplyText(message: Message) {
   }
 
   return "Attachment"
+}
+
+function getReplyPreviewText(room: Room, replyPreview: ReplyPreview) {
+  const referencedMessage = room.messages.find((message) => message.id === replyPreview.messageId)
+
+  if (!referencedMessage) {
+    return replyPreview.text
+  }
+
+  return getReplyText(referencedMessage)
 }
 
 function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPosition) {
@@ -403,6 +417,26 @@ function getMessageGroupPosition(messages: Message[], index: number): MessageGro
   return "single"
 }
 
+function shouldSeparateMessages(previousMessage: Message | undefined, currentMessage: Message) {
+  if (!previousMessage) {
+    return false
+  }
+
+  if (previousMessage.senderId === "system" || currentMessage.senderId === "system") {
+    return true
+  }
+
+  if (previousMessage.senderId !== currentMessage.senderId) {
+    return true
+  }
+
+  const previousTime = new Date(previousMessage.createdAt).getTime()
+  const currentTime = new Date(currentMessage.createdAt).getTime()
+  const diffMinutes = (currentTime - previousTime) / (1000 * 60)
+
+  return diffMinutes >= MESSAGE_CLUSTER_BREAK_MINUTES
+}
+
 function getRoomSubtitle(room: Room) {
   return room.type === "group" ? `${room.participants.length} members` : ""
 }
@@ -439,15 +473,14 @@ function ChatListPane({
     <section className="bg-card flex h-full min-h-0 flex-col overflow-hidden md:border-r">
       <div className="shrink-0 space-y-3 px-4 py-4 md:px-5 md:py-4">
         <div className="hidden space-y-1 md:block">
-          <h1 className="text-xl font-semibold md:text-lg">Messages</h1>
-          <p className="text-muted-foreground text-xs">Direct and group conversations</p>
+          <h1 className="text-xl font-semibold md:text-lg">채팅</h1>
         </div>
         <div className="relative">
           <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
           <Input
             value={searchValue}
-            className="bg-muted h-10 rounded-full border-0 pl-9 shadow-none"
-            placeholder="Search Messenger"
+            className="bg-muted h-10 rounded-full border-0 pl-11 shadow-none"
+            placeholder="방 검색" //실제로는 RPC로 검색할듯
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
@@ -498,7 +531,7 @@ function ChatListPane({
           </div>
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center rounded-2xl border border-dashed p-8 text-center text-sm">
-            No conversations match your search.
+            일치하는 방이 없습니다.
           </div>
         )}
       </div>
@@ -523,7 +556,7 @@ function MockImage({ title, subtitle, className }: ImageAttachment & { className
         </div>
       </div>
       <div className="bg-background/90 border-t px-4 py-3">
-        <p className="text-sm font-medium">{title}</p>
+        <p className="text-primary text-sm font-medium">{title}</p>
         {subtitle ? <p className="text-muted-foreground text-xs">{subtitle}</p> : null}
       </div>
     </div>
@@ -559,6 +592,11 @@ function MessageBubble({
   showName,
   showTime,
   onReply,
+  onReact,
+  onDelete,
+  onOpenActions,
+  isMobileActionActive,
+  onCloseActions,
 }: {
   room: Room
   message: Message
@@ -567,7 +605,101 @@ function MessageBubble({
   showName: boolean
   showTime: boolean
   onReply: (message: Message) => void
+  onReact: (message: Message, reaction: string) => void
+  onDelete: (message: Message) => void
+  onOpenActions: (message: Message) => void
+  isMobileActionActive: boolean
+  onCloseActions: () => void
 }) {
+  const isMine = message.senderId === CURRENT_USER.id
+  const author = getMessageAuthor(room, message)
+  const isDeleted = isDeletedMessage(message)
+  const bubbleShapeClass = getBubbleShapeClass(isMine, groupPosition)
+  const groupedStackOffsetClass =
+    groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
+  const bubbleToneClass = isDeleted
+    ? "bg-muted/80 text-muted-foreground border border-border/60 italic"
+    : isMine
+      ? "bg-primary text-primary-foreground"
+      : "bg-muted text-foreground"
+  const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false)
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false)
+  const interactionRef = useRef<HTMLDivElement>(null)
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressStartPointRef = useRef<{ x: number; y: number } | null>(null)
+  const isDesktopActionOpen = isReactionPickerOpen || isOverflowOpen
+  const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+
+    longPressStartPointRef.current = null
+  }
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" || isDeleted) {
+      return
+    }
+
+    clearLongPress()
+    longPressStartPointRef.current = { x: event.clientX, y: event.clientY }
+    longPressTimerRef.current = window.setTimeout(() => {
+      onOpenActions(message)
+      clearLongPress()
+    }, 450)
+  }
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!longPressStartPointRef.current || longPressTimerRef.current === null) {
+      return
+    }
+
+    const movedX = Math.abs(event.clientX - longPressStartPointRef.current.x)
+    const movedY = Math.abs(event.clientY - longPressStartPointRef.current.y)
+
+    if (movedX > 8 || movedY > 8) {
+      clearLongPress()
+    }
+  }
+
+  useEffect(() => {
+    if (!isDesktopActionOpen) {
+      return
+    }
+
+    const handlePointerDownOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        return
+      }
+
+      if (!interactionRef.current?.contains(target)) {
+        setIsReactionPickerOpen(false)
+        setIsOverflowOpen(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsReactionPickerOpen(false)
+        setIsOverflowOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDownOutside)
+    document.addEventListener("keydown", handleEscape)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [isDesktopActionOpen])
+
+  useEffect(() => clearLongPress, [])
+
   if (message.senderId === "system") {
     return (
       <div className="flex justify-center">
@@ -576,12 +708,64 @@ function MessageBubble({
     )
   }
 
-  const isMine = message.senderId === CURRENT_USER.id
-  const author = getMessageAuthor(room, message)
-  const bubbleShapeClass = getBubbleShapeClass(isMine, groupPosition)
-  const groupedStackOffsetClass =
-    groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
-  const bubbleToneClass = isMine ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
+  const actionRail = (
+    <div className="relative">
+      <div
+        className={cn(
+          "hidden items-center gap-1 p-1 transition-[opacity,transform] duration-150 [@media(any-hover:hover)]:flex",
+          isDesktopActionOpen
+            ? "opacity-100"
+            : "pointer-events-none scale-95 opacity-0 group-hover/message:pointer-events-auto group-hover/message:scale-100 group-hover/message:opacity-100"
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Add reaction"
+          onClick={() => {
+            setIsReactionPickerOpen((previous) => !previous)
+            setIsOverflowOpen(false)
+          }}
+        >
+          <SmileIcon />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Reply to message"
+          onClick={() => onReply(message)}
+        >
+          <ReplyIcon />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="More message actions"
+          onClick={() => {
+            setIsOverflowOpen((previous) => !previous)
+            setIsReactionPickerOpen(false)
+          }}
+        >
+          <span className="text-sm leading-none tracking-[-0.18em]">...</span>
+        </Button>
+      </div>
+
+      {isOverflowOpen ? (
+        <BubbleOverflowMenu
+          isMine={isMine}
+          align={isMine ? "left" : "right"}
+          onDelete={() => {
+            onDelete(message)
+            setIsOverflowOpen(false)
+          }}
+          onClose={() => setIsOverflowOpen(false)}
+        />
+      ) : null}
+    </div>
+  )
 
   return (
     <div className={cn("flex flex-col gap-1", groupedStackOffsetClass)}>
@@ -590,11 +774,15 @@ function MessageBubble({
           <span className="text-muted-foreground text-xs font-medium">{author.name}</span>
         </div>
       ) : null}
-      <div className={cn("group flex items-end gap-2", isMine && "justify-end")}>
+      <div
+        ref={interactionRef}
+        className={cn("group/message flex items-end gap-2", isMine && "justify-end")}
+      >
+        {isMine && !isDeleted ? actionRail : null}
         {!isMine ? (
           <div className="flex w-8 shrink-0 items-end">
             {showAvatar ? (
-              <Avatar size="sm">
+              <Avatar>
                 <AvatarFallback>{author.initials}</AvatarFallback>
               </Avatar>
             ) : null}
@@ -602,10 +790,33 @@ function MessageBubble({
         ) : null}
         <div
           className={cn(
-            "flex max-w-[min(20rem,70%)] flex-col gap-1 sm:max-w-[70%]",
+            "relative flex max-w-[min(20rem,70%)] flex-col gap-1 sm:max-w-[70%]",
             isMine ? "items-end" : "items-start"
           )}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={clearLongPress}
+          onPointerCancel={clearLongPress}
+          onPointerLeave={clearLongPress}
         >
+          {isReactionPickerVisible ? (
+            <div
+              className={cn(
+                "bg-popover absolute bottom-[calc(100%+0.5rem)] z-[60] rounded-2xl border p-2 shadow-lg",
+                isMine ? "left-0" : "right-0"
+              )}
+            >
+              <QuickReactionList
+                onSelect={(reaction) => {
+                  onReact(message, reaction)
+                  setIsReactionPickerOpen(false)
+                  if (isMobileActionActive) {
+                    onCloseActions()
+                  }
+                }}
+              />
+            </div>
+          ) : null}
           {message.replyTo ? (
             <div
               className={cn("flex max-w-full flex-col gap-1", isMine ? "items-end" : "items-start")}
@@ -620,17 +831,21 @@ function MessageBubble({
                   isMine ? "rounded-br-md" : "rounded-bl-md"
                 )}
               >
-                <div className="line-clamp-3 whitespace-pre-wrap">{message.replyTo.text}</div>
+                <div className="line-clamp-3 whitespace-pre-wrap">
+                  {getReplyPreviewText(room, message.replyTo)}
+                </div>
               </div>
             </div>
           ) : null}
-          {message.content || message.image ? (
+          {message.content || message.image || isDeleted ? (
             <div className={cn("flex flex-col gap-1", message.replyTo ? "-mt-4" : "")}>
               <div className={cn("px-3 py-2", bubbleShapeClass, bubbleToneClass)}>
-                {message.content ? (
+                {isDeleted ? (
+                  <p className="text-sm leading-5 whitespace-pre-wrap">{DELETED_MESSAGE_LABEL}</p>
+                ) : message.content ? (
                   <p className="text-sm leading-5 whitespace-pre-wrap">{message.content}</p>
                 ) : null}
-                {message.image ? (
+                {!isDeleted && message.image ? (
                   <MessageImage
                     image={message.image}
                     className={cn(message.content ? "mt-2" : "", "max-w-[14rem] sm:max-w-[16rem]")}
@@ -640,6 +855,7 @@ function MessageBubble({
             </div>
           ) : null}
         </div>
+        {!isMine && !isDeleted ? actionRail : null}
       </div>
       <div className={cn("flex", isMine ? "justify-end" : "pl-10")}>
         <div
@@ -648,27 +864,29 @@ function MessageBubble({
             isMine ? "justify-end" : "justify-start"
           )}
         >
-          {message.reaction ? (
+          {!isDeleted && message.reaction ? (
             <Badge variant="secondary" className="gap-1">
-              <ThumbsUpIcon className="size-3.5" />
-              {message.reaction}
+              {isQuickReaction(message.reaction) ? (
+                <>
+                  <span aria-hidden="true" className="text-sm leading-none">
+                    {message.reaction}
+                  </span>
+                  <span className="sr-only">{message.reaction} reaction</span>
+                </>
+              ) : (
+                <>
+                  <ThumbsUpIcon className="size-3.5" />
+                  {message.reaction}
+                </>
+              )}
             </Badge>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground h-6 rounded-full px-2 text-[11px]"
-            onClick={() => onReply(message)}
-          >
-            Reply
-          </Button>
           {showTime ? (
             <span className="text-muted-foreground text-[11px]">
               {formatMessageTime(message.createdAt)}
             </span>
           ) : null}
-          {isMine && showTime && message.read ? (
+          {isMine && !isDeleted && showTime && message.read ? (
             <CheckCheckIcon className="text-primary size-3.5" aria-label="Read" />
           ) : null}
         </div>
@@ -680,13 +898,24 @@ function MessageBubble({
 const MessageList = memo(function MessageList({
   room,
   onReply,
+  onReact,
+  onDelete,
+  onOpenActions,
+  activeMobileActionMessageId,
+  onCloseActions,
 }: {
   room: Room
   onReply: (message: Message) => void
+  onReact: (message: Message, reaction: string) => void
+  onDelete: (message: Message) => void
+  onOpenActions: (message: Message) => void
+  activeMobileActionMessageId: string | null
+  onCloseActions: () => void
 }) {
   return (
-    <div className="mx-auto flex w-full flex-col gap-4">
+    <div className="mx-auto flex w-full flex-col">
       {room.messages.map((message, index) => {
+        const previousMessage = room.messages[index - 1]
         const groupPosition = getMessageGroupPosition(room.messages, index)
         const isMine = message.senderId === CURRENT_USER.id
         const showAvatar = !isMine && (groupPosition === "single" || groupPosition === "end")
@@ -695,18 +924,25 @@ const MessageList = memo(function MessageList({
           !isMine &&
           (groupPosition === "single" || groupPosition === "start")
         const showTime = groupPosition === "single" || groupPosition === "end"
+        const shouldSeparate = shouldSeparateMessages(previousMessage, message)
 
         return (
-          <MessageBubble
-            key={message.id}
-            room={room}
-            message={message}
-            groupPosition={groupPosition}
-            showAvatar={showAvatar}
-            showName={showName}
-            showTime={showTime}
-            onReply={onReply}
-          />
+          <div key={message.id} className={cn(shouldSeparate && "mt-4")}>
+            <MessageBubble
+              room={room}
+              message={message}
+              groupPosition={groupPosition}
+              showAvatar={showAvatar}
+              showName={showName}
+              showTime={showTime}
+              onReply={onReply}
+              onReact={onReact}
+              onDelete={onDelete}
+              onOpenActions={onOpenActions}
+              isMobileActionActive={activeMobileActionMessageId === message.id}
+              onCloseActions={onCloseActions}
+            />
+          </div>
         )
       })}
     </div>
@@ -724,6 +960,8 @@ function RoomPane({
   onRemoveImage,
   onClearReply,
   onReply,
+  onReact,
+  onDelete,
   onSend,
 }: {
   room: Room
@@ -736,6 +974,8 @@ function RoomPane({
   onRemoveImage: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
+  onReact: (message: Message, reaction: string) => void
+  onDelete: (message: Message) => void
   onSend: (draft: string) => boolean
 }) {
   const [draft, setDraft] = useState("")
@@ -744,6 +984,25 @@ function RoomPane({
   const messagesViewportRef = useRef<HTMLDivElement>(null)
   const lastMessageId = room.messages[room.messages.length - 1]?.id
   const [isComposerFocused, setIsComposerFocused] = useState(false)
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false)
+  const [activeActionMessage, setActiveActionMessage] = useState<Message | null>(null)
+
+  const openActionSheet = (message: Message) => {
+    if (isDeletedMessage(message)) {
+      return
+    }
+
+    setActiveActionMessage(message)
+    setIsActionSheetOpen(true)
+  }
+
+  const handleActionSheetChange = (nextOpen: boolean) => {
+    setIsActionSheetOpen(nextOpen)
+
+    if (!nextOpen) {
+      setActiveActionMessage(null)
+    }
+  }
 
   useEffect(() => {
     const viewport = messagesViewportRef.current
@@ -815,8 +1074,27 @@ function RoomPane({
           ref={messagesViewportRef}
           className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
         >
-          <MessageList room={room} onReply={onReply} />
+          <MessageList
+            room={room}
+            onReply={onReply}
+            onReact={onReact}
+            onDelete={onDelete}
+            onOpenActions={openActionSheet}
+            activeMobileActionMessageId={
+              isActionSheetOpen ? (activeActionMessage?.id ?? null) : null
+            }
+            onCloseActions={() => handleActionSheetChange(false)}
+          />
         </div>
+
+        <MessageActionSheet
+          key={activeActionMessage?.id ?? "message-actions"}
+          message={activeActionMessage}
+          open={isActionSheetOpen}
+          onOpenChange={handleActionSheetChange}
+          onReply={onReply}
+          onDelete={onDelete}
+        />
 
         <footer className="bg-card/95 shrink-0 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))] md:px-3 md:py-2">
           {replyTo ? (
@@ -1016,9 +1294,7 @@ function DetailPane({
               <ArrowLeftIcon />
             </Button>
           ) : null}
-          <p className="text-sm font-semibold">
-            {room.type === "group" ? "Group info" : "Conversation info"}
-          </p>
+          <p className="text-sm font-semibold">{room.type === "group" ? "그룹 정보" : "정보"}</p>
         </div>
         {!compact && onClose ? (
           <Button
@@ -1149,14 +1425,7 @@ export default function MessengerPage() {
       return rooms
     }
 
-    return rooms.filter((room) => {
-      const preview = getMessagePreview(getLastMessage(room)).toLowerCase()
-      return (
-        room.name.toLowerCase().includes(normalizedSearchValue) ||
-        getRoomSubtitle(room).toLowerCase().includes(normalizedSearchValue) ||
-        preview.includes(normalizedSearchValue)
-      )
-    })
+    return rooms.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
   }, [rooms, searchValue])
 
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
@@ -1171,7 +1440,7 @@ export default function MessengerPage() {
   }
 
   const openReply = (message: Message) => {
-    if (!selectedRoom) {
+    if (!selectedRoom || isDeletedMessage(message)) {
       return
     }
 
@@ -1181,6 +1450,54 @@ export default function MessengerPage() {
       author: author.name,
       text: getReplyText(message),
     })
+  }
+
+  const reactToMessage = (message: Message, reaction: string) => {
+    if (!selectedRoom) {
+      return
+    }
+
+    setRooms((previousRooms) =>
+      previousRooms.map((room) =>
+        room.id === selectedRoom.id
+          ? {
+              ...room,
+              messages: room.messages.map((candidate) =>
+                candidate.id === message.id ? { ...candidate, reaction } : candidate
+              ),
+            }
+          : room
+      )
+    )
+  }
+
+  const deleteMessage = (message: Message) => {
+    if (!selectedRoom || message.senderId !== CURRENT_USER.id || isDeletedMessage(message)) {
+      return
+    }
+
+    setRooms((previousRooms) =>
+      previousRooms.map((room) =>
+        room.id === selectedRoom.id
+          ? {
+              ...room,
+              messages: room.messages.map((candidate) =>
+                candidate.id === message.id
+                  ? {
+                      ...candidate,
+                      deletedAt: new Date().toISOString(),
+                      deletedBy: CURRENT_USER.id,
+                    }
+                  : candidate
+              ),
+            }
+          : room
+      )
+    )
+
+    if (replyTo?.messageId === message.id) {
+      setReplyTo(null)
+    }
   }
 
   const sendMessage = (draft: string) => {
@@ -1279,6 +1596,8 @@ export default function MessengerPage() {
             onRemoveImage={() => setAttachedImage(null)}
             onClearReply={() => setReplyTo(null)}
             onReply={openReply}
+            onReact={reactToMessage}
+            onDelete={deleteMessage}
             onSend={sendMessage}
           />
         ) : null}
@@ -1325,6 +1644,8 @@ export default function MessengerPage() {
                 onRemoveImage={() => setAttachedImage(null)}
                 onClearReply={() => setReplyTo(null)}
                 onReply={openReply}
+                onReact={reactToMessage}
+                onDelete={deleteMessage}
                 onSend={sendMessage}
               />
             </div>
