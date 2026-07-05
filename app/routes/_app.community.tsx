@@ -71,15 +71,9 @@ export default function CommunityPage() {
         </div>
 
         {viewMode === "list" ? (
-          <section className="grid gap-3 md:grid-cols-2">
+          <section className="flex flex-col gap-4">
             {communitySpaces.map((space) => (
-              <SpaceDirectoryCard
-                key={space.name}
-                name={space.name}
-                category={space.category}
-                description={space.description}
-                latestActivity={space.latestActivity}
-              />
+              <FacebookStyleCommunityCard key={space.name} space={space} />
             ))}
           </section>
         ) : (
