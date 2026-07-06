@@ -218,8 +218,8 @@ export function MessageBubble({
       <Badge
         variant="secondary"
         className={cn(
-          "bg-background text-foreground absolute right-1 -bottom-2 z-10 h-5 rounded-full border-0 px-1.5 py-0 shadow-md",
-          reactionCount === 1 ? "size-5 px-0" : "gap-0.5"
+          "bg-background text-foreground absolute right-1 -bottom-3.5 z-10 h-5 rounded-full border-0 px-1 py-0 shadow-sm",
+          reactionCount === 1 ? "size-5 px-0" : "gap-0"
         )}
       >
         {uniqueReactionValues.map((reactionValue) => (
@@ -228,7 +228,7 @@ export function MessageBubble({
           </span>
         ))}
         {reactionCount > 1 ? (
-          <span className="text-[11px] leading-none">{reactionCount}</span>
+          <span className="ml-1 text-[11px] leading-none">{reactionCount}</span>
         ) : null}
         <span className="sr-only">{reactionCount} reactions</span>
       </Badge>
@@ -342,11 +342,7 @@ export function MessageBubble({
                 <div
                   className={cn(
                     "flex min-w-0 flex-col gap-1",
-                    isMine
-                      ? showTime
-                        ? "max-w-[min(20rem,calc(100%-3rem))] sm:max-w-[70%]" //숫자 바꾼다고 안바뀌는뎁쇼?
-                        : "max-w-[min(20rem,78%)] sm:max-w-[70%]"
-                      : "max-w-[min(20rem,70%)] sm:max-w-[70%]",
+                    isMine ? "max-w-[74%] sm:max-w-[70%] md:max-w-[68%]" : "max-w-[70%]",
                     message.replyTo ? "-mt-4" : "",
                     reactionBadge && "mb-2"
                   )}
@@ -397,11 +393,11 @@ export function MessageBubble({
         </div>
       </div>
       <div className="flex justify-end">
-        <div className="-mt-0.5 flex max-w-[min(20rem,70%)] items-center justify-end px-1 sm:max-w-[70%]">
+        <div className="flex max-w-[min(20rem,70%)] items-center justify-end px-1 sm:max-w-[70%]">
           {!isDeleted && readReceipts.length > 0 ? (
             <div className="flex -space-x-1" aria-label="Read by">
               {readReceipts.map((participant) => (
-                <Avatar key={participant.id} className="ring-background !size-3.5 ring-1">
+                <Avatar key={participant.id} className="ring-background mt-2 !size-4 ring-1">
                   <AvatarFallback className="!text-[7px]">{participant.initials}</AvatarFallback>
                 </Avatar>
               ))}
