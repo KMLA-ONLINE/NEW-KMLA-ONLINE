@@ -85,6 +85,11 @@ export const seedRooms: Room[] = [
         id: "council-1",
         senderId: "daniel",
         content: "I moved the checklist into the drive folder.",
+        createdAt: "2026-07-03T19:11:00.000Z",
+      },
+      {
+        id: "council-1-file",
+        senderId: "daniel",
         attachments: [
           {
             id: "council-1-file-1",
@@ -93,7 +98,7 @@ export const seedRooms: Room[] = [
             sizeBytes: 348_160,
           },
         ],
-        createdAt: "2026-07-03T19:11:00.000Z",
+        createdAt: "2026-07-03T19:11:05.000Z",
       },
       {
         id: "council-2",

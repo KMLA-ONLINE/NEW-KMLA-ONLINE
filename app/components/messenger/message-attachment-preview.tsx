@@ -67,15 +67,15 @@ function FilePreview({
   return (
     <div
       className={cn(
-        "bg-muted text-foreground flex w-56 max-w-full items-center gap-2.5 rounded-2xl border px-2.5 py-2.5 sm:w-60",
+        "bg-muted text-foreground flex w-44 max-w-full items-center gap-2 rounded-2xl border px-2 py-2 sm:w-52",
         className
       )}
     >
-      <span className="bg-background flex size-8 shrink-0 items-center justify-center rounded-xl border">
-        <FileIcon className="text-muted-foreground size-4" />
+      <span className="bg-background flex size-7 shrink-0 items-center justify-center rounded-lg border">
+        <FileIcon className="text-muted-foreground size-3.5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{attachment.name}</span>
+        <span className="block truncate text-[13px] font-medium">{attachment.name}</span>
         <span className="text-muted-foreground mt-0.5 block truncate text-xs">
           {[getFileTypeLabel(attachment), fileSize].filter(Boolean).join(" · ")}
         </span>

@@ -188,9 +188,14 @@ export function MessageBubble({
     </div>
   )
 
-  const messageActionSlot =
+  const messageSideSlot =
     showTime || !isDeleted ? (
-      <div className="relative mb-1 flex shrink-0 items-center">
+      <div
+        className={cn(
+          "relative mb-1 flex shrink-0 items-center",
+          !showTime && "hidden w-0 [@media(any-hover:hover)]:flex"
+        )}
+      >
         {showTime ? (
           <span
             className={cn(
@@ -255,7 +260,7 @@ export function MessageBubble({
             interactionRef.current = element
             swipeElementRef.current = element
           }}
-          className={cn("group/message flex items-end gap-2", isMine && "justify-end")}
+          className={cn("group/message flex w-full items-end gap-2", isMine && "justify-end")}
         >
           {!isMine ? (
             <div className="flex w-8 shrink-0 items-end">
@@ -268,7 +273,7 @@ export function MessageBubble({
           ) : null}
           <div
             className={cn(
-              "relative flex max-w-[min(20rem,70%)] [touch-action:pan-y] flex-col gap-1 sm:max-w-[70%]",
+              "relative flex min-w-0 flex-1 [touch-action:pan-y] flex-col gap-1",
               isMine ? "items-end" : "items-start"
             )}
             {...pointerHandlers}
@@ -327,11 +332,21 @@ export function MessageBubble({
               </button>
             ) : null}
             {message.content || hasAttachments || isDeleted ? (
-              <div className={cn("flex max-w-full items-end gap-2", isMine && "justify-end")}>
-                {isMine ? messageActionSlot : null}
+              <div
+                className={cn(
+                  "flex w-full items-end gap-1.5",
+                  isMine ? "justify-end" : "justify-start"
+                )}
+              >
+                {isMine ? messageSideSlot : null}
                 <div
                   className={cn(
                     "flex min-w-0 flex-col gap-1",
+                    isMine
+                      ? showTime
+                        ? "max-w-[min(20rem,calc(100%-3rem))] sm:max-w-[70%]" //숫자 바꾼다고 안바뀌는뎁쇼?
+                        : "max-w-[min(20rem,78%)] sm:max-w-[70%]"
+                      : "max-w-[min(20rem,70%)] sm:max-w-[70%]",
                     message.replyTo ? "-mt-4" : "",
                     reactionBadge && "mb-2"
                   )}
@@ -375,7 +390,7 @@ export function MessageBubble({
                     </div>
                   ) : null}
                 </div>
-                {!isMine ? messageActionSlot : null}
+                {!isMine ? messageSideSlot : null}
               </div>
             ) : null}
           </div>
