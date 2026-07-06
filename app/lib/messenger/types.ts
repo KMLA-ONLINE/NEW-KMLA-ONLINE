@@ -20,6 +20,11 @@ export type ReplyPreview = {
   text: string
 }
 
+export type MessageReaction = {
+  userId: string
+  value: string
+}
+
 export type Message = {
   id: string
   senderId: string
@@ -29,8 +34,9 @@ export type Message = {
   deletedBy?: string
   image?: ImageAttachment
   replyTo?: ReplyPreview
-  reaction?: string
+  reactions?: MessageReaction[]
   read?: boolean
+  readBy?: string[]
 }
 
 export type Room = {

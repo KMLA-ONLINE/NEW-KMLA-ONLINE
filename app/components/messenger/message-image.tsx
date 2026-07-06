@@ -34,10 +34,7 @@ export function MessageImage({ image, className }: { image: ImageAttachment; cla
 
   return (
     <figure
-      className={cn(
-        "bg-muted w-72 max-w-[14rem] overflow-hidden rounded-3xl border sm:max-w-[16rem]",
-        className
-      )}
+      className={cn("bg-muted w-72 max-w-[14rem] overflow-hidden rounded-3xl border", className)}
     >
       <img src={image.src} alt={image.title} className="max-h-72 w-full object-cover" />
       <figcaption className="bg-background/90 border-t px-4 py-3">

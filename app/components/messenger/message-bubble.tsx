@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
-import { CheckCheckIcon, ReplyIcon, SmileIcon, ThumbsUpIcon } from "lucide-react"
+import { EllipsisIcon, ReplyIcon, SmileIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { BubbleOverflowMenu, QuickReactionList } from "~/components/messenger/message-actions"
 import { MessageImage } from "~/components/messenger/message-image"
-import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
+import { CURRENT_USER, DELETED_MESSAGE_LABEL, QUICK_REACTIONS } from "~/lib/messenger/constants"
 import {
   formatMessageTime,
   getBubbleShapeClass,
   getMessageAuthor,
   getReplyPreviewText,
   isDeletedMessage,
-  isQuickReaction,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, MessageGroupPosition, Room } from "~/lib/messenger/types"
+import type { Message, MessageGroupPosition, Participant, Room } from "~/lib/messenger/types"
 
 const SWIPE_REPLY_START_DISTANCE = 8
 const SWIPE_REPLY_TRIGGER_DISTANCE = 48
@@ -25,6 +24,7 @@ const SWIPE_REPLY_MAX_DISTANCE = 72
 export function MessageBubble({
   room,
   message,
+  readReceipts,
   groupPosition,
   showAvatar,
   showName,
@@ -38,6 +38,7 @@ export function MessageBubble({
 }: {
   room: Room
   message: Message
+  readReceipts: Participant[]
   groupPosition: MessageGroupPosition
   showAvatar: boolean
   showName: boolean
@@ -72,6 +73,21 @@ export function MessageBubble({
   const hasSwipeGestureRef = useRef(false)
   const isDesktopActionOpen = isReactionPickerOpen || isOverflowOpen
   const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
+  const reactionValues = message.reactions?.map((reaction) => reaction.value) ?? []
+  const uniqueReactionValues = [...new Set(reactionValues)].sort(
+    (firstReaction, secondReaction) => {
+      const firstIndex = QUICK_REACTIONS.indexOf(firstReaction as (typeof QUICK_REACTIONS)[number])
+      const secondIndex = QUICK_REACTIONS.indexOf(
+        secondReaction as (typeof QUICK_REACTIONS)[number]
+      )
+
+      return (
+        (firstIndex === -1 ? QUICK_REACTIONS.length : firstIndex) -
+        (secondIndex === -1 ? QUICK_REACTIONS.length : secondIndex)
+      )
+    }
+  )
+  const reactionCount = reactionValues.length
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -226,7 +242,7 @@ export function MessageBubble({
             setIsOverflowOpen(false)
           }}
         >
-          <SmileIcon />
+          <SmileIcon className="size-3.5" />
         </Button>
         <Button
           type="button"
@@ -235,7 +251,7 @@ export function MessageBubble({
           aria-label="Reply to message"
           onClick={() => onReply(message)}
         >
-          <ReplyIcon />
+          <ReplyIcon className="size-3.5" />
         </Button>
         <Button
           type="button"
@@ -247,7 +263,7 @@ export function MessageBubble({
             setIsReactionPickerOpen(false)
           }}
         >
-          <span className="text-sm leading-none tracking-[-0.18em]">...</span>
+          <EllipsisIcon className="size-3.5" />
         </Button>
       </div>
 
@@ -264,6 +280,47 @@ export function MessageBubble({
       ) : null}
     </div>
   )
+
+  const messageActionSlot =
+    showTime || !isDeleted ? (
+      <div className="relative mb-1 flex shrink-0 items-center">
+        {showTime ? (
+          <span
+            className={cn(
+              "text-muted-foreground shrink-0 text-[11px] leading-none transition-opacity duration-150",
+              !isDeleted && "[@media(any-hover:hover)]:group-hover/message:opacity-0",
+              isDesktopActionOpen && "opacity-0"
+            )}
+          >
+            {formatMessageTime(message.createdAt)}
+          </span>
+        ) : null}
+        {!isDeleted ? (
+          <div className={cn("absolute bottom-0", isMine ? "right-0" : "left-0")}>{actionRail}</div>
+        ) : null}
+      </div>
+    ) : null
+
+  const reactionBadge =
+    !isDeleted && reactionCount > 0 ? (
+      <Badge
+        variant="secondary"
+        className={cn(
+          "text-foreground dark:text-foreground absolute right-1 -bottom-2 z-10 h-5 rounded-full border-0 bg-white px-1.5 py-0 shadow-md dark:bg-white",
+          reactionCount === 1 ? "size-5 px-0" : "gap-0.5"
+        )}
+      >
+        {uniqueReactionValues.map((reactionValue) => (
+          <span key={reactionValue} aria-hidden="true" className="text-sm leading-none">
+            {reactionValue}
+          </span>
+        ))}
+        {reactionCount > 1 ? (
+          <span className="text-[11px] leading-none">{reactionCount}</span>
+        ) : null}
+        <span className="sr-only">{reactionCount} reactions</span>
+      </Badge>
+    ) : null
 
   return (
     <div className={cn("flex flex-col gap-1", groupedStackOffsetClass)}>
@@ -295,7 +352,7 @@ export function MessageBubble({
             transition: isSwiping ? "none" : "transform 160ms ease-out",
           }}
         >
-          {isMine && !isDeleted ? actionRail : null}
+          {isMine ? messageActionSlot : null}
           {!isMine ? (
             <div className="flex w-8 shrink-0 items-end">
               {showAvatar ? (
@@ -338,7 +395,7 @@ export function MessageBubble({
               <div
                 className={cn(
                   "flex max-w-full flex-col gap-1",
-                  isMine ? "items-end" : "items-start"
+                  isMine ? "mr-2 items-end" : "ml-2 items-start"
                 )}
               >
                 <div className="text-muted-foreground inline-flex items-center gap-1 text-xs">
@@ -351,15 +408,21 @@ export function MessageBubble({
                     isMine ? "rounded-br-md" : "rounded-bl-md"
                   )}
                 >
-                  <div className="line-clamp-3 whitespace-pre-wrap">
+                  <div className="line-clamp-2 whitespace-pre-wrap">
                     {getReplyPreviewText(room, message.replyTo)}
                   </div>
                 </div>
               </div>
             ) : null}
             {message.content || message.image || isDeleted ? (
-              <div className={cn("flex flex-col gap-1", message.replyTo ? "-mt-4" : "")}>
-                <div className={cn("px-3 py-2", bubbleShapeClass, bubbleToneClass)}>
+              <div
+                className={cn(
+                  "flex flex-col gap-1",
+                  message.replyTo ? "-mt-4" : "",
+                  reactionBadge && "mb-2"
+                )}
+              >
+                <div className={cn("relative px-3 py-2", bubbleShapeClass, bubbleToneClass)}>
                   {isDeleted ? (
                     <p className="text-sm leading-5 whitespace-pre-wrap">{DELETED_MESSAGE_LABEL}</p>
                   ) : message.content ? (
@@ -374,11 +437,12 @@ export function MessageBubble({
                       )}
                     />
                   ) : null}
+                  {reactionBadge}
                 </div>
               </div>
             ) : null}
           </div>
-          {!isMine && !isDeleted ? actionRail : null}
+          {!isMine ? messageActionSlot : null}
         </div>
       </div>
       <div className={cn("flex", isMine ? "justify-end" : "pl-10")}>
@@ -388,30 +452,14 @@ export function MessageBubble({
             isMine ? "justify-end" : "justify-start"
           )}
         >
-          {!isDeleted && message.reaction ? (
-            <Badge variant="secondary" className="gap-1">
-              {isQuickReaction(message.reaction) ? (
-                <>
-                  <span aria-hidden="true" className="text-sm leading-none">
-                    {message.reaction}
-                  </span>
-                  <span className="sr-only">{message.reaction} reaction</span>
-                </>
-              ) : (
-                <>
-                  <ThumbsUpIcon className="size-3.5" />
-                  {message.reaction}
-                </>
-              )}
-            </Badge>
-          ) : null}
-          {showTime ? (
-            <span className="text-muted-foreground text-[11px]">
-              {formatMessageTime(message.createdAt)}
-            </span>
-          ) : null}
-          {isMine && !isDeleted && showTime && message.read ? (
-            <CheckCheckIcon className="text-primary size-3.5" aria-label="Read" />
+          {!isDeleted && readReceipts.length > 0 ? (
+            <div className="flex -space-x-1" aria-label="Read by">
+              {readReceipts.map((participant) => (
+                <Avatar key={participant.id} size="sm" className="ring-background size-4 ring-1">
+                  <AvatarFallback className="text-[8px]">{participant.initials}</AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
           ) : null}
         </div>
       </div>

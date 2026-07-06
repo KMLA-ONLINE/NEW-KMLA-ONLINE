@@ -1,10 +1,16 @@
 import { memo } from "react"
 
+import { Badge } from "~/components/ui/badge"
 import { MessageBubble } from "~/components/messenger/message-bubble"
 import { CURRENT_USER } from "~/lib/messenger/constants"
-import { getMessageGroupPosition, shouldSeparateMessages } from "~/lib/messenger/utils"
+import {
+  formatMessageDateLabel,
+  getMessageGroupPosition,
+  shouldSeparateMessages,
+  shouldShowDateSeparator,
+} from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, Room } from "~/lib/messenger/types"
+import type { Message, Participant, Room } from "~/lib/messenger/types"
 
 export const MessageList = memo(function MessageList({
   room,
@@ -23,6 +29,25 @@ export const MessageList = memo(function MessageList({
   activeMobileActionMessageId: string | null
   onCloseActions: () => void
 }) {
+  const readReceiptParticipantsByMessageId = new Map<string, Participant[]>()
+
+  for (const participant of room.participants) {
+    if (participant.id === CURRENT_USER.id) {
+      continue
+    }
+
+    for (let index = room.messages.length - 1; index >= 0; index -= 1) {
+      const message = room.messages[index]
+
+      if (message?.readBy?.includes(participant.id)) {
+        const readReceiptParticipants = readReceiptParticipantsByMessageId.get(message.id) ?? []
+        readReceiptParticipants.push(participant)
+        readReceiptParticipantsByMessageId.set(message.id, readReceiptParticipants)
+        break
+      }
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full flex-col">
       {room.messages.map((message, index) => {
@@ -36,12 +61,19 @@ export const MessageList = memo(function MessageList({
           (groupPosition === "single" || groupPosition === "start")
         const showTime = groupPosition === "single" || groupPosition === "end"
         const shouldSeparate = shouldSeparateMessages(previousMessage, message)
+        const showDateSeparator = shouldShowDateSeparator(previousMessage, message)
 
         return (
           <div key={message.id} className={cn(shouldSeparate && "mt-4")}>
+            {showDateSeparator ? (
+              <div className="mb-4 flex justify-center">
+                <Badge variant="secondary">{formatMessageDateLabel(message.createdAt)}</Badge>
+              </div>
+            ) : null}
             <MessageBubble
               room={room}
               message={message}
+              readReceipts={readReceiptParticipantsByMessageId.get(message.id) ?? []}
               groupPosition={groupPosition}
               showAvatar={showAvatar}
               showName={showName}

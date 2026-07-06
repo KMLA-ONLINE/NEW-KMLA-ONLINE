@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeftIcon, InfoIcon, PhoneIcon, VideoIcon } from "lucide-react"
+import { ArrowLeftIcon, InfoIcon, PhoneIcon } from "lucide-react"
 
 import { MessageActionPanel } from "~/components/messenger/message-actions"
 import { MessageComposer } from "~/components/messenger/message-composer"
@@ -40,7 +40,9 @@ export function RoomPane({
 }) {
   const subtitle = getRoomSubtitle(room)
   const messagesViewportRef = useRef<HTMLDivElement>(null)
+  const previousRoomIdRef = useRef<string | null>(null)
   const lastMessageId = room.messages[room.messages.length - 1]?.id
+  const [isMessageListReady, setIsMessageListReady] = useState(!showBackButton)
   const [isActionPanelOpen, setIsActionPanelOpen] = useState(false)
   const [activeActionMessage, setActiveActionMessage] = useState<Message | null>(null)
 
@@ -62,17 +64,35 @@ export function RoomPane({
   }
 
   useEffect(() => {
+    if (!showBackButton) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setIsMessageListReady(true)
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [showBackButton])
+
+  useEffect(() => {
+    if (!isMessageListReady) {
+      return
+    }
+
     const viewport = messagesViewportRef.current
     if (!viewport) {
       return
     }
 
+    const isSameRoom = previousRoomIdRef.current === room.id
     const frameId = window.requestAnimationFrame(() => {
-      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" })
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: isSameRoom ? "smooth" : "auto" })
+      previousRoomIdRef.current = room.id
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [room.id, lastMessageId])
+  }, [isMessageListReady, room.id, lastMessageId])
 
   return (
     <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
@@ -100,22 +120,11 @@ export function RoomPane({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Start voice call"
-              className="hidden sm:inline-flex"
-            >
-              <PhoneIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Start video call"
-              className="hidden sm:inline-flex"
-            >
-              <VideoIcon />
-            </Button>
+            {room.type === "direct" ? (
+              <Button variant="ghost" size="icon-sm" aria-label="Start voice call">
+                <PhoneIcon />
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -131,17 +140,19 @@ export function RoomPane({
           ref={messagesViewportRef}
           className="messenger-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
         >
-          <MessageList
-            room={room}
-            onReply={onReply}
-            onReact={onReact}
-            onDelete={onDelete}
-            onOpenActions={openActionPanel}
-            activeMobileActionMessageId={
-              isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
-            }
-            onCloseActions={() => handleActionPanelChange(false)}
-          />
+          {isMessageListReady ? (
+            <MessageList
+              room={room}
+              onReply={onReply}
+              onReact={onReact}
+              onDelete={onDelete}
+              onOpenActions={openActionPanel}
+              activeMobileActionMessageId={
+                isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
+              }
+              onCloseActions={() => handleActionPanelChange(false)}
+            />
+          ) : null}
         </div>
 
         <MessageActionPanel

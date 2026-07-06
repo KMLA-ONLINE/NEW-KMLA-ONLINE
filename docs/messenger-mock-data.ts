@@ -11,12 +11,6 @@ export const seedRooms: Room[] = [
     unreadCount: 2,
     messages: [
       {
-        id: "minji-system-1",
-        senderId: "system",
-        content: "Today, 8:41 PM",
-        createdAt: "2026-07-03T20:41:00.000Z",
-      },
-      {
         id: "minji-1",
         senderId: "minji",
         content: "Are you still in the science building?",
@@ -28,6 +22,7 @@ export const seedRooms: Room[] = [
         content: "Yes, finishing the lab notes now.",
         createdAt: "2026-07-03T20:42:00.000Z",
         read: true,
+        readBy: ["minji"],
       },
       {
         id: "minji-3",
@@ -50,6 +45,7 @@ export const seedRooms: Room[] = [
         },
         createdAt: "2026-07-03T20:44:00.000Z",
         read: true,
+        readBy: ["minji"],
       },
       {
         id: "minji-5",
@@ -57,8 +53,9 @@ export const seedRooms: Room[] = [
         content:
           "This one should include the whole reaction sequence. I also marked the step where Professor Kim said most people make the sign mistake, so check that part before copying it into the shared notes.",
         createdAt: "2026-07-03T20:44:20.000Z",
-        reaction: "Liked",
+        reactions: [{ userId: "minji", value: "👍" }],
         read: true,
+        readBy: ["minji"],
       },
       {
         id: "minji-6",
@@ -92,6 +89,11 @@ export const seedRooms: Room[] = [
         senderId: "sora",
         content: "Great. I will verify the volunteer names before dinner.",
         createdAt: "2026-07-03T19:18:00.000Z",
+        reactions: [
+          { userId: "daniel", value: "❤️" },
+          { userId: "yujin", value: "❤️" },
+        ],
+        readBy: ["yujin"],
       },
       {
         id: "council-3",
@@ -99,7 +101,13 @@ export const seedRooms: Room[] = [
         content:
           "Please leave the booth layout unchanged until the advisor confirms the power outlets.",
         createdAt: "2026-07-03T19:24:00.000Z",
+        reactions: [
+          { userId: "daniel", value: "👍" },
+          { userId: "sora", value: "❤️" },
+          { userId: "yujin", value: "😂" },
+        ],
         read: true,
+        readBy: ["daniel", "sora"],
       },
     ],
   },
@@ -176,6 +184,7 @@ export const seedRooms: Room[] = [
         content: "I left the notebook with the front desk.",
         createdAt: "2026-07-02T21:15:00.000Z",
         read: true,
+        readBy: ["hani"],
       },
       {
         id: "hani-2",

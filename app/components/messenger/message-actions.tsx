@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
-import { CopyIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
+import { CopyIcon, EllipsisIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
 
 import { QUICK_REACTIONS } from "~/lib/messenger/constants"
 import { getReplyText, isDeletedMessage } from "~/lib/messenger/utils"
@@ -17,7 +17,7 @@ export function QuickReactionList({
   return (
     <div
       className={cn(
-        "messenger-scrollbar flex flex-nowrap items-center gap-2 overflow-x-auto",
+        "messenger-scrollbar flex flex-nowrap items-center gap-1 overflow-x-auto",
         className
       )}
     >
@@ -25,7 +25,7 @@ export function QuickReactionList({
         <button
           key={reaction}
           type="button"
-          className="bg-background hover:bg-muted flex size-10 shrink-0 items-center justify-center rounded-full border text-lg transition-colors"
+          className="bg-background hover:bg-muted flex size-10 shrink-0 items-center justify-center rounded-full text-lg transition-colors"
           aria-label={`React with ${reaction}`}
           onClick={() => onSelect(reaction)}
         >
@@ -182,7 +182,7 @@ export function MessageActionPanel({
                 />
               )}
               <MessageActionButton
-                icon={<span className="text-lg leading-none tracking-[-0.18em]">...</span>}
+                icon={<EllipsisIcon className="size-5" />}
                 label="More"
                 onClick={() => setIsMoreOpen((previous) => !previous)}
               />

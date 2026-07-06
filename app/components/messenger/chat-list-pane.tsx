@@ -1,4 +1,5 @@
 import { SearchIcon } from "lucide-react"
+import { Link } from "react-router"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -11,12 +12,14 @@ export function ChatListPane({
   rooms,
   selectedRoomId,
   searchValue,
+  getRoomHref,
   onSearchChange,
   onSelectRoom,
 }: {
   rooms: Room[]
   selectedRoomId: string | null
   searchValue: string
+  getRoomHref: (roomId: string) => string
   onSearchChange: (value: string) => void
   onSelectRoom: (roomId: string) => void
 }) {
@@ -27,7 +30,7 @@ export function ChatListPane({
           <h1 className="text-xl font-semibold md:text-lg">채팅</h1>
         </div>
         <div className="relative">
-          <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
+          <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
           <Input
             value={searchValue}
             className="bg-muted h-10 rounded-full border-0 pl-11 shadow-none"
@@ -45,9 +48,9 @@ export function ChatListPane({
               const isSelected = room.id === selectedRoomId
 
               return (
-                <button
+                <Link
                   key={room.id}
-                  type="button"
+                  to={getRoomHref(room.id)}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors",
                     isSelected ? "bg-muted" : "hover:bg-muted/70"
@@ -78,7 +81,7 @@ export function ChatListPane({
                       {room.unreadCount ? <Badge>{room.unreadCount}</Badge> : null}
                     </span>
                   </span>
-                </button>
+                </Link>
               )
             })}
           </div>

@@ -1,4 +1,9 @@
-import { CURRENT_USER, DELETED_MESSAGE_LABEL, QUICK_REACTIONS } from "~/lib/messenger/constants"
+import {
+  CURRENT_USER,
+  DELETED_MESSAGE_LABEL,
+  MESSAGE_CLUSTER_WINDOW_MINUTES,
+  QUICK_REACTIONS,
+} from "~/lib/messenger/constants"
 import type {
   Message,
   MessageGroupPosition,
@@ -63,6 +68,26 @@ export function formatMessageTime(value: string) {
   )
 }
 
+export function isSameMessageDate(firstMessage: Message, secondMessage: Message) {
+  const firstDate = new Date(firstMessage.createdAt)
+  const secondDate = new Date(secondMessage.createdAt)
+
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate()
+  )
+}
+
+export function formatMessageDateLabel(value: string) {
+  return new Intl.DateTimeFormat("ko", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(value))
+}
+
 export function formatRoomTime(value: string | undefined) {
   if (!value) {
     return ""
@@ -115,11 +140,11 @@ export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroup
   if (isMine) {
     switch (groupPosition) {
       case "start":
-        return "rounded-[1.25rem] rounded-br-none"
+        return "rounded-[1.25rem] rounded-br-sm"
       case "middle":
-        return "rounded-[1.25rem] rounded-tr-none rounded-br-none"
+        return "rounded-[1.25rem] rounded-tr-sm rounded-br-sm"
       case "end":
-        return "rounded-[1.25rem] rounded-tr-none"
+        return "rounded-[1.25rem] rounded-tr-sm"
       default:
         return "rounded-[1.25rem]"
     }
@@ -127,17 +152,17 @@ export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroup
 
   switch (groupPosition) {
     case "start":
-      return "rounded-[1.25rem] rounded-bl-none"
+      return "rounded-[1.25rem] rounded-bl-sm"
     case "middle":
-      return "rounded-[1.25rem] rounded-tl-none rounded-bl-none"
+      return "rounded-[1.25rem] rounded-tl-sm rounded-bl-sm"
     case "end":
-      return "rounded-[1.25rem] rounded-tl-none"
+      return "rounded-[1.25rem] rounded-tl-sm"
     default:
       return "rounded-[1.25rem]"
   }
 }
 
-export function isSameMessageMinute(firstMessage: Message, secondMessage: Message) {
+export function isSameMessageCluster(firstMessage: Message, secondMessage: Message) {
   const firstDate = new Date(firstMessage.createdAt)
   const secondDate = new Date(secondMessage.createdAt)
 
@@ -146,7 +171,8 @@ export function isSameMessageMinute(firstMessage: Message, secondMessage: Messag
     firstDate.getMonth() === secondDate.getMonth() &&
     firstDate.getDate() === secondDate.getDate() &&
     firstDate.getHours() === secondDate.getHours() &&
-    firstDate.getMinutes() === secondDate.getMinutes()
+    Math.floor(firstDate.getMinutes() / MESSAGE_CLUSTER_WINDOW_MINUTES) ===
+      Math.floor(secondDate.getMinutes() / MESSAGE_CLUSTER_WINDOW_MINUTES)
   )
 }
 
@@ -161,12 +187,14 @@ export function getMessageGroupPosition(messages: Message[], index: number): Mes
   const nextMessage = messages[index + 1]
   const hasPreviousFromSameSender =
     previousMessage?.senderId === message.senderId &&
+    !message.replyTo &&
     previousMessage.senderId !== "system" &&
-    isSameMessageMinute(previousMessage, message)
+    isSameMessageCluster(previousMessage, message)
   const hasNextFromSameSender =
     nextMessage?.senderId === message.senderId &&
+    !nextMessage.replyTo &&
     nextMessage.senderId !== "system" &&
-    isSameMessageMinute(message, nextMessage)
+    isSameMessageCluster(message, nextMessage)
 
   if (hasPreviousFromSameSender && hasNextFromSameSender) {
     return "middle"
@@ -191,6 +219,10 @@ export function shouldSeparateMessages(
     return false
   }
 
+  if (currentMessage.replyTo) {
+    return true
+  }
+
   if (previousMessage.senderId === "system" || currentMessage.senderId === "system") {
     return true
   }
@@ -199,7 +231,18 @@ export function shouldSeparateMessages(
     return true
   }
 
-  return !isSameMessageMinute(previousMessage, currentMessage)
+  return !isSameMessageCluster(previousMessage, currentMessage)
+}
+
+export function shouldShowDateSeparator(
+  previousMessage: Message | undefined,
+  currentMessage: Message
+) {
+  if (!previousMessage) {
+    return true
+  }
+
+  return !isSameMessageDate(previousMessage, currentMessage)
 }
 
 export function getRoomSubtitle(room: Room) {

@@ -4,9 +4,11 @@ import { BellIcon, SearchIcon, XIcon } from "lucide-react"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
+import { cn } from "~/lib/utils"
 
 type AppHeaderProps = {
   email: string
+  className?: string
 }
 
 function getInitials(email: string) {
@@ -14,7 +16,7 @@ function getInitials(email: string) {
   return base.slice(0, 2).toUpperCase()
 }
 
-export function AppHeader({ email }: AppHeaderProps) {
+export function AppHeader({ email, className }: AppHeaderProps) {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
   const mobileSearchInputRef = useRef<HTMLInputElement>(null)
 
@@ -27,7 +29,12 @@ export function AppHeader({ email }: AppHeaderProps) {
   }, [isMobileSearchOpen])
 
   return (
-    <header className="bg-background/95 fixed top-0 z-10 grid h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 backdrop-blur sm:px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+    <header
+      className={cn(
+        "bg-background/95 fixed top-0 z-10 grid h-14 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 backdrop-blur sm:px-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]",
+        className
+      )}
+    >
       <div className="flex items-center gap-2">
         <a
           href="/"

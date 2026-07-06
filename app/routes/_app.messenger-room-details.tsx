@@ -1,4 +1,5 @@
 export const handle = {
+  showMobileHeader: false,
   showMobileTabBar: false,
 }
 

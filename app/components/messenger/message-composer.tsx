@@ -1,9 +1,19 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { CameraIcon, ImageIcon, PlusIcon, SendIcon, SmileIcon, XIcon } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
 import type { ImageAttachment, ReplyPreview } from "~/lib/messenger/types"
+
+const MESSAGE_TEXTAREA_MAX_HEIGHT = 96
+
+function resizeTextarea(element: HTMLTextAreaElement) {
+  element.style.height = "0px"
+
+  const nextHeight = Math.min(element.scrollHeight, MESSAGE_TEXTAREA_MAX_HEIGHT)
+  element.style.height = `${nextHeight}px`
+  element.style.overflowY = element.scrollHeight > MESSAGE_TEXTAREA_MAX_HEIGHT ? "auto" : "hidden"
+}
 
 export function MessageComposer({
   attachedImage,
@@ -22,16 +32,20 @@ export function MessageComposer({
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const canSend = draft.trim().length > 0 || attachedImage
 
   const sendDraft = () => {
     if (onSend(draft)) {
       setDraft("")
+      if (textareaRef.current) {
+        resizeTextarea(textareaRef.current)
+      }
     }
   }
 
   return (
-    <footer className="bg-card/95 shrink-0 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))] md:px-3 md:py-2">
+    <footer className="bg-card/95 shrink-0 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))]">
       {replyTo ? (
         <div className="mb-2 flex items-start justify-between gap-3 border-t-1 px-3 py-2">
           <div className="min-w-0 text-xs">
@@ -105,12 +119,16 @@ export function MessageComposer({
 
         <div className="flex min-w-0 flex-1 items-center self-stretch transition-[flex-basis] duration-200 ease-out motion-reduce:transition-none">
           <textarea
+            ref={textareaRef}
             value={draft}
             rows={1}
             aria-label="Message input"
             placeholder="Aa"
-            className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none rounded-[1.5rem] border-0 px-4 py-2 text-sm leading-5 shadow-none outline-none"
-            onChange={(event) => setDraft(event.target.value)}
+            className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden rounded-[1.5rem] border-0 px-4 py-2 text-sm leading-5 shadow-none outline-none"
+            onChange={(event) => {
+              setDraft(event.target.value)
+              resizeTextarea(event.currentTarget)
+            }}
             onFocus={() => setIsComposerFocused(true)}
             onBlur={() => setIsComposerFocused(false)}
             onKeyDown={(event) => {
@@ -127,7 +145,7 @@ export function MessageComposer({
           size="icon-sm"
           aria-label={isComposerFocused ? "Send message" : "Choose emoji"}
           disabled={isComposerFocused ? !canSend : false}
-          className="text-primary relative shrink-0 overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
+          className="text-primary relative shrink-0 self-end overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
           onMouseDown={(event) => event.preventDefault()}
           onClick={isComposerFocused ? sendDraft : undefined}
         >
@@ -162,7 +180,7 @@ export function MessageComposer({
           size="icon-sm"
           aria-label="Send message"
           disabled={!canSend}
-          className="text-primary hidden sm:inline-flex [&_svg]:size-5"
+          className="text-primary hidden self-end sm:inline-flex [&_svg]:size-5"
           onMouseDown={(event) => event.preventDefault()}
           onClick={sendDraft}
         >

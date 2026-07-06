@@ -42,13 +42,15 @@ export default function MessengerPage() {
 
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
 
+  const getRoomHref = (roomId: string) =>
+    isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
+
   const selectRoom = (roomId: string) => {
     setReplyTo(null)
     setAttachedImage(null)
     setRooms((previousRooms) =>
       previousRooms.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room))
     )
-    navigate(isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`)
   }
 
   const openReply = (message: Message) => {
@@ -75,7 +77,23 @@ export default function MessengerPage() {
           ? {
               ...room,
               messages: room.messages.map((candidate) =>
-                candidate.id === message.id ? { ...candidate, reaction } : candidate
+                candidate.id === message.id
+                  ? {
+                      ...candidate,
+                      reactions: candidate.reactions?.some(
+                        (candidateReaction) => candidateReaction.userId === CURRENT_USER.id
+                      )
+                        ? candidate.reactions.map((candidateReaction) =>
+                            candidateReaction.userId === CURRENT_USER.id
+                              ? { ...candidateReaction, value: reaction }
+                              : candidateReaction
+                          )
+                        : [
+                            ...(candidate.reactions ?? []),
+                            { userId: CURRENT_USER.id, value: reaction },
+                          ],
+                    }
+                  : candidate
               ),
             }
           : room
@@ -190,6 +208,7 @@ export default function MessengerPage() {
             rooms={filteredRooms}
             selectedRoomId={selectedRoomId}
             searchValue={searchValue}
+            getRoomHref={getRoomHref}
             onSearchChange={setSearchValue}
             onSelectRoom={selectRoom}
           />
@@ -233,6 +252,7 @@ export default function MessengerPage() {
           rooms={filteredRooms}
           selectedRoomId={selectedRoomId}
           searchValue={searchValue}
+          getRoomHref={getRoomHref}
           onSearchChange={setSearchValue}
           onSelectRoom={selectRoom}
         />
