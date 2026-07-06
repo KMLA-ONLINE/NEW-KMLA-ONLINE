@@ -2,9 +2,9 @@ import { ArrowLeftIcon, ImageIcon, PanelRightCloseIcon, UsersIcon } from "lucide
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
-import { getRoomSubtitle } from "~/lib/messenger/utils"
+import { getRoomSubtitle, isImageAttachment } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { ImageAttachment, Room } from "~/lib/messenger/types"
+import type { Room } from "~/lib/messenger/types"
 
 export function DetailPane({
   room,
@@ -17,9 +17,9 @@ export function DetailPane({
   onBack?: () => void
   onClose?: () => void
 }) {
-  const media = room.messages
-    .filter((message) => message.image)
-    .map((message) => message.image as ImageAttachment)
+  const media = room.messages.flatMap((message) =>
+    (message.attachments ?? []).filter((attachment) => isImageAttachment(attachment))
+  )
 
   return (
     <aside
@@ -65,7 +65,7 @@ export function DetailPane({
             <UsersIcon className="text-muted-foreground size-4" aria-hidden="true" />
             <span>Members</span>
           </div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             {room.participants.map((participant) => (
               <div
                 key={participant.id}
@@ -89,19 +89,19 @@ export function DetailPane({
           </div>
           {media.length > 0 ? (
             <div className="grid grid-cols-3 gap-2">
-              {media.map((image, index) =>
-                image.src ? (
+              {media.map((attachment, index) =>
+                attachment.src ? (
                   <img
-                    key={`${image.title}-${index}`}
-                    src={image.src}
-                    alt={image.title}
+                    key={attachment.id ?? `${attachment.name}-${index}`}
+                    src={attachment.src}
+                    alt={attachment.name}
                     className="aspect-square rounded-2xl object-cover"
                   />
                 ) : (
                   <div
-                    key={`${image.title}-${index}`}
+                    key={attachment.id ?? `${attachment.name}-${index}`}
                     className="bg-muted flex aspect-square items-center justify-center rounded-2xl border"
-                    aria-label={image.title}
+                    aria-label={attachment.name}
                     role="img"
                   >
                     <ImageIcon className="text-primary" />

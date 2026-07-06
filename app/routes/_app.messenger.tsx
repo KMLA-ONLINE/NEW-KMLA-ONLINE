@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent } from "react"
+import { useRef, useState, type ChangeEvent } from "react"
 import { useLocation, useNavigate, useParams } from "react-router"
 
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
@@ -6,23 +6,57 @@ import { DetailPane } from "~/components/messenger/detail-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
 import { CURRENT_USER } from "~/lib/messenger/constants"
 import {
-  getDesktopGridClass,
+  getLastMessage,
   getMessageAuthor,
   getReplyText,
   isDeletedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import { seedRooms } from "../../docs/messenger-mock-data"
-import type { ImageAttachment, Message, ReplyPreview } from "~/lib/messenger/types"
+import type {
+  Message,
+  MessageAttachment,
+  ReplyPreview,
+  Room,
+  RoomSummary,
+} from "~/lib/messenger/types"
 
 export const handle = {
   mobileContentPadding: "none",
 }
 
+function getRoomSummary(room: Room): RoomSummary {
+  const lastMessage = getLastMessage(room)
+
+  return {
+    id: room.id,
+    type: room.type,
+    name: room.name,
+    initials: room.initials,
+    participants: room.participants,
+    unreadCount: room.unreadCount,
+    muted: room.muted,
+    lastMessage,
+    lastMessageAt: lastMessage?.createdAt,
+  }
+}
+
+function getInitialMessagesByRoomId() {
+  return Object.fromEntries(seedRooms.map((room) => [room.id, room.messages]))
+}
+
+function updateRoomSummaryMessages(room: RoomSummary, messages: Message[]): RoomSummary {
+  return getRoomSummary({ ...room, messages })
+}
+
 export default function MessengerPage() {
-  const [rooms, setRooms] = useState(seedRooms)
+  const [roomSummaries, setRoomSummaries] = useState<RoomSummary[]>(() =>
+    seedRooms.map((room) => getRoomSummary(room))
+  )
+  const [messagesByRoomId, setMessagesByRoomId] = useState<Record<string, Message[]>>(
+    getInitialMessagesByRoomId
+  )
   const [searchValue, setSearchValue] = useState("")
-  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
@@ -31,25 +65,35 @@ export default function MessengerPage() {
   const isDetailOpen = location.pathname.endsWith("/details")
   const selectedRoomId = roomId ?? null
 
-  const filteredRooms = useMemo(() => {
-    const normalizedSearchValue = searchValue.trim().toLowerCase()
-    if (!normalizedSearchValue) {
-      return rooms
-    }
+  const normalizedSearchValue = searchValue.trim().toLowerCase()
+  const filteredRooms = normalizedSearchValue
+    ? roomSummaries.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
+    : roomSummaries
 
-    return rooms.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
-  }, [rooms, searchValue])
-
-  const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null
+  const selectedRoomSummary = roomSummaries.find((room) => room.id === selectedRoomId) ?? null
+  const selectedRoom = selectedRoomSummary
+    ? { ...selectedRoomSummary, messages: messagesByRoomId[selectedRoomSummary.id] ?? [] }
+    : null
 
   const getRoomHref = (roomId: string) =>
     isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
 
   const selectRoom = (roomId: string) => {
     setReplyTo(null)
-    setAttachedImage(null)
-    setRooms((previousRooms) =>
+    setRoomSummaries((previousRooms) =>
       previousRooms.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room))
+    )
+  }
+
+  const setSelectedRoomMessages = (roomId: string, messages: Message[]) => {
+    setMessagesByRoomId((previousMessagesByRoomId) => ({
+      ...previousMessagesByRoomId,
+      [roomId]: messages,
+    }))
+    setRoomSummaries((previousRooms) =>
+      previousRooms.map((room) =>
+        room.id === roomId ? updateRoomSummaryMessages({ ...room, unreadCount: 0 }, messages) : room
+      )
     )
   }
 
@@ -71,34 +115,24 @@ export default function MessengerPage() {
       return
     }
 
-    setRooms((previousRooms) =>
-      previousRooms.map((room) =>
-        room.id === selectedRoom.id
-          ? {
-              ...room,
-              messages: room.messages.map((candidate) =>
-                candidate.id === message.id
-                  ? {
-                      ...candidate,
-                      reactions: candidate.reactions?.some(
-                        (candidateReaction) => candidateReaction.userId === CURRENT_USER.id
-                      )
-                        ? candidate.reactions.map((candidateReaction) =>
-                            candidateReaction.userId === CURRENT_USER.id
-                              ? { ...candidateReaction, value: reaction }
-                              : candidateReaction
-                          )
-                        : [
-                            ...(candidate.reactions ?? []),
-                            { userId: CURRENT_USER.id, value: reaction },
-                          ],
-                    }
-                  : candidate
-              ),
-            }
-          : room
-      )
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            reactions: candidate.reactions?.some(
+              (candidateReaction) => candidateReaction.userId === CURRENT_USER.id
+            )
+              ? candidate.reactions.map((candidateReaction) =>
+                  candidateReaction.userId === CURRENT_USER.id
+                    ? { ...candidateReaction, value: reaction }
+                    : candidateReaction
+                )
+              : [...(candidate.reactions ?? []), { userId: CURRENT_USER.id, value: reaction }],
+          }
+        : candidate
     )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
   }
 
   const deleteMessage = (message: Message) => {
@@ -106,24 +140,17 @@ export default function MessengerPage() {
       return
     }
 
-    setRooms((previousRooms) =>
-      previousRooms.map((room) =>
-        room.id === selectedRoom.id
-          ? {
-              ...room,
-              messages: room.messages.map((candidate) =>
-                candidate.id === message.id
-                  ? {
-                      ...candidate,
-                      deletedAt: new Date().toISOString(),
-                      deletedBy: CURRENT_USER.id,
-                    }
-                  : candidate
-              ),
-            }
-          : room
-      )
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            deletedAt: new Date().toISOString(),
+            deletedBy: CURRENT_USER.id,
+          }
+        : candidate
     )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
 
     if (replyTo?.messageId === message.id) {
       setReplyTo(null)
@@ -133,28 +160,20 @@ export default function MessengerPage() {
   const sendMessage = (draft: string) => {
     const nextContent = draft.trim()
 
-    if (!selectedRoom || (!nextContent && !attachedImage)) {
+    if (!selectedRoom || !nextContent) {
       return false
     }
 
     const nextMessage: Message = {
       id: `local-${Date.now()}`,
       senderId: CURRENT_USER.id,
-      content: nextContent || undefined,
-      image: attachedImage ?? undefined,
+      content: nextContent,
       replyTo: replyTo ?? undefined,
       createdAt: new Date().toISOString(),
       read: true,
     }
 
-    setRooms((previousRooms) =>
-      previousRooms.map((room) =>
-        room.id === selectedRoom.id
-          ? { ...room, messages: [...room.messages, nextMessage], unreadCount: 0 }
-          : room
-      )
-    )
-    setAttachedImage(null)
+    setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
     setReplyTo(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -165,26 +184,46 @@ export default function MessengerPage() {
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (!file) {
+    event.currentTarget.value = ""
+
+    if (!selectedRoom || replyTo || !file) {
+      return
+    }
+
+    const sendAttachmentMessage = (src?: string) => {
+      const attachment: MessageAttachment = {
+        id: `local-file-${Date.now()}`,
+        src,
+        name: file.name,
+        contentType: file.type || undefined,
+        sizeBytes: file.size,
+      }
+      const nextMessage: Message = {
+        id: `local-${Date.now()}`,
+        senderId: CURRENT_USER.id,
+        attachments: [attachment],
+        createdAt: new Date().toISOString(),
+        read: true,
+      }
+
+      setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
+    }
+
+    if (!file.type.startsWith("image/")) {
+      sendAttachmentMessage()
       return
     }
 
     const reader = new FileReader()
     reader.addEventListener("load", () => {
-      if (typeof reader.result !== "string") {
-        return
+      if (typeof reader.result === "string") {
+        sendAttachmentMessage(reader.result)
       }
-
-      setAttachedImage({
-        src: reader.result,
-        title: file.name,
-        subtitle: `${Math.max(1, Math.round(file.size / 1024))} KB`,
-      })
     })
     reader.readAsDataURL(file)
   }
 
-  if (rooms.length === 0) {
+  if (roomSummaries.length === 0) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center border border-dashed md:rounded-[1.75rem]">
         <p className="text-muted-foreground text-sm">No conversations available.</p>
@@ -194,13 +233,7 @@ export default function MessengerPage() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        onChange={handleFileChange}
-      />
+      <input ref={fileInputRef} type="file" className="sr-only" onChange={handleFileChange} />
 
       <main className="h-full min-h-0 md:hidden">
         {!selectedRoom ? (
@@ -218,13 +251,11 @@ export default function MessengerPage() {
           <RoomPane
             key={selectedRoom.id}
             room={selectedRoom}
-            attachedImage={attachedImage}
             replyTo={replyTo}
             showBackButton={true}
             onBack={() => navigate("/messenger")}
             onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
-            onAttachImage={() => fileInputRef.current?.click()}
-            onRemoveImage={() => setAttachedImage(null)}
+            onAttachFile={() => fileInputRef.current?.click()}
             onClearReply={() => setReplyTo(null)}
             onReply={openReply}
             onReact={reactToMessage}
@@ -245,7 +276,9 @@ export default function MessengerPage() {
       <main
         className={cn(
           "hidden h-full min-h-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out md:grid",
-          getDesktopGridClass(isDetailOpen)
+          isDetailOpen
+            ? "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)_19rem]"
+            : "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)]"
         )}
       >
         <ChatListPane
@@ -263,7 +296,6 @@ export default function MessengerPage() {
               <RoomPane
                 key={selectedRoom.id}
                 room={selectedRoom}
-                attachedImage={attachedImage}
                 replyTo={replyTo}
                 onOpenDetail={() =>
                   navigate(
@@ -272,8 +304,7 @@ export default function MessengerPage() {
                       : `/messenger/${selectedRoom.id}/details`
                   )
                 }
-                onAttachImage={() => fileInputRef.current?.click()}
-                onRemoveImage={() => setAttachedImage(null)}
+                onAttachFile={() => fileInputRef.current?.click()}
                 onClearReply={() => setReplyTo(null)}
                 onReply={openReply}
                 onReact={reactToMessage}

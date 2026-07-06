@@ -1,9 +1,9 @@
 import { useRef, useState } from "react"
-import { CameraIcon, ImageIcon, PlusIcon, SendIcon, SmileIcon, XIcon } from "lucide-react"
+import { PaperclipIcon, SendIcon, SmileIcon, XIcon } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
-import type { ImageAttachment, ReplyPreview } from "~/lib/messenger/types"
+import type { ReplyPreview } from "~/lib/messenger/types"
 
 const MESSAGE_TEXTAREA_MAX_HEIGHT = 96
 
@@ -16,24 +16,21 @@ function resizeTextarea(element: HTMLTextAreaElement) {
 }
 
 export function MessageComposer({
-  attachedImage,
   replyTo,
-  onAttachImage,
-  onRemoveImage,
+  onAttachFile,
   onClearReply,
   onSend,
 }: {
-  attachedImage: ImageAttachment | null
   replyTo: ReplyPreview | null
-  onAttachImage: () => void
-  onRemoveImage: () => void
+  onAttachFile: () => void
   onClearReply: () => void
   onSend: (draft: string) => boolean
 }) {
   const [draft, setDraft] = useState("")
   const [isComposerFocused, setIsComposerFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const canSend = draft.trim().length > 0 || attachedImage
+  const canSend = draft.trim().length > 0
+  const canAttach = !replyTo
 
   const sendDraft = () => {
     if (onSend(draft)) {
@@ -57,35 +54,6 @@ export function MessageComposer({
           </Button>
         </div>
       ) : null}
-      {attachedImage ? (
-        <div className="bg-muted mb-2 flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
-          <div className="flex min-w-0 items-center gap-3">
-            {attachedImage.src ? (
-              <img
-                src={attachedImage.src}
-                alt="Selected attachment"
-                className="size-10 rounded-xl object-cover"
-              />
-            ) : (
-              <div className="bg-background flex size-10 items-center justify-center rounded-xl">
-                <ImageIcon className="text-muted-foreground" />
-              </div>
-            )}
-            <div className="min-w-0 text-xs">
-              <p className="truncate font-medium">{attachedImage.title}</p>
-              <p className="text-muted-foreground truncate">Ready to send</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Remove attachment"
-            onClick={onRemoveImage}
-          >
-            <XIcon />
-          </Button>
-        </div>
-      ) : null}
       <div className="flex items-center gap-1 p-1.5">
         <div
           className={cn(
@@ -99,21 +67,10 @@ export function MessageComposer({
             variant="ghost"
             size="icon-sm"
             aria-label="Add attachment"
-            onClick={onAttachImage}
+            disabled={!canAttach}
+            onClick={onAttachFile}
           >
-            <PlusIcon />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open camera"
-            className="sm:hidden"
-            onClick={onAttachImage}
-          >
-            <CameraIcon />
-          </Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Attach image" onClick={onAttachImage}>
-            <ImageIcon />
+            <PaperclipIcon />
           </Button>
         </div>
 

@@ -39,10 +39,13 @@ export const seedRooms: Room[] = [
       {
         id: "minji-4",
         senderId: "me",
-        image: {
-          title: "Whiteboard snapshot",
-          subtitle: "Organic chemistry reaction map",
-        },
+        attachments: [
+          {
+            id: "minji-4-file-1",
+            name: "Whiteboard snapshot",
+            contentType: "image/jpeg",
+          },
+        ],
         createdAt: "2026-07-03T20:44:00.000Z",
         read: true,
         readBy: ["minji"],
@@ -82,6 +85,14 @@ export const seedRooms: Room[] = [
         id: "council-1",
         senderId: "daniel",
         content: "I moved the checklist into the drive folder.",
+        attachments: [
+          {
+            id: "council-1-file-1",
+            name: "Volunteer checklist.pdf",
+            contentType: "application/pdf",
+            sizeBytes: 348_160,
+          },
+        ],
         createdAt: "2026-07-03T19:11:00.000Z",
       },
       {
@@ -142,10 +153,13 @@ export const seedRooms: Room[] = [
       {
         id: "debate-1",
         senderId: "arin",
-        image: {
-          title: "Case map draft",
-          subtitle: "Tournament prep board",
-        },
+        attachments: [
+          {
+            id: "debate-1-file-1",
+            name: "Case map draft",
+            contentType: "image/png",
+          },
+        ],
         createdAt: "2026-07-03T17:12:00.000Z",
       },
       {

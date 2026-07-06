@@ -4,9 +4,9 @@ import { Link } from "react-router"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
-import { getLastMessage, getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
+import { getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Room } from "~/lib/messenger/types"
+import type { RoomSummary } from "~/lib/messenger/types"
 
 export function ChatListPane({
   rooms,
@@ -16,7 +16,7 @@ export function ChatListPane({
   onSearchChange,
   onSelectRoom,
 }: {
-  rooms: Room[]
+  rooms: RoomSummary[]
   selectedRoomId: string | null
   searchValue: string
   getRoomHref: (roomId: string) => string
@@ -44,7 +44,6 @@ export function ChatListPane({
         {rooms.length > 0 ? (
           <div className="flex flex-col gap-1" aria-label="Conversation list">
             {rooms.map((room) => {
-              const lastMessage = getLastMessage(room)
               const isSelected = room.id === selectedRoomId
 
               return (
@@ -70,12 +69,12 @@ export function ChatListPane({
                       ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                      {getMessagePreview(lastMessage)}
+                      {getMessagePreview(room.lastMessage)}
                     </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-2">
                     <span className="text-muted-foreground text-xs">
-                      {formatRoomTime(lastMessage?.createdAt)}
+                      {formatRoomTime(room.lastMessageAt)}
                     </span>
                     <span className="flex h-5 items-center">
                       {room.unreadCount ? <Badge>{room.unreadCount}</Badge> : null}

@@ -1,27 +1,26 @@
-import {
-  CURRENT_USER,
-  DELETED_MESSAGE_LABEL,
-  MESSAGE_CLUSTER_WINDOW_MINUTES,
-  QUICK_REACTIONS,
-} from "~/lib/messenger/constants"
+import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
 import type {
   Message,
+  MessageAttachment,
   MessageGroupPosition,
-  PersistedMessengerState,
   ReplyPreview,
   Room,
 } from "~/lib/messenger/types"
-
-export function isQuickReaction(reaction: string) {
-  return QUICK_REACTIONS.includes(reaction as (typeof QUICK_REACTIONS)[number])
-}
 
 export function isDeletedMessage(message: Message) {
   return Boolean(message.deletedAt)
 }
 
 export function getLastMessage(room: Room) {
-  return [...room.messages].reverse().find((message) => message.senderId !== "system")
+  for (let index = room.messages.length - 1; index >= 0; index -= 1) {
+    const message = room.messages[index]
+
+    if (message?.senderId !== "system") {
+      return message
+    }
+  }
+
+  return undefined
 }
 
 export function getMessagePreview(message: Message | undefined) {
@@ -37,11 +36,36 @@ export function getMessagePreview(message: Message | undefined) {
     return message.content
   }
 
-  if (message.image) {
-    return "Photo attached"
+  const attachmentPreview = getAttachmentPreview(message.attachments)
+  if (attachmentPreview) {
+    return attachmentPreview
   }
 
   return "Attachment"
+}
+
+export function isImageAttachment(attachment: MessageAttachment) {
+  return (
+    attachment.contentType?.startsWith("image/") ||
+    attachment.src?.startsWith("data:image/") ||
+    false
+  )
+}
+
+export function getAttachmentPreview(attachments: MessageAttachment[] | undefined) {
+  const firstAttachment = attachments?.[0]
+  if (!firstAttachment) {
+    return null
+  }
+
+  if (attachments.length > 1) {
+    return `${firstAttachment.name} 외 ${attachments.length - 1}개`
+  }
+
+  return (
+    firstAttachment.name ||
+    (isImageAttachment(firstAttachment) ? "Image attached" : "File attached")
+  )
 }
 
 export function findParticipant(room: Room, participantId: string) {
@@ -79,6 +103,19 @@ export function isSameMessageDate(firstMessage: Message, secondMessage: Message)
   )
 }
 
+export function isSameMessageMinute(firstMessage: Message, secondMessage: Message) {
+  const firstDate = new Date(firstMessage.createdAt)
+  const secondDate = new Date(secondMessage.createdAt)
+
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate() &&
+    firstDate.getHours() === secondDate.getHours() &&
+    firstDate.getMinutes() === secondDate.getMinutes()
+  )
+}
+
 export function formatMessageDateLabel(value: string) {
   return new Intl.DateTimeFormat("ko", {
     year: "numeric",
@@ -95,19 +132,21 @@ export function formatRoomTime(value: string | undefined) {
 
   const date = new Date(value)
   const now = new Date()
-  const today = now.toDateString() === date.toDateString()
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
+  const diffMs = Math.max(0, now.getTime() - date.getTime())
 
-  if (today) {
-    return formatMessageTime(value)
+  if (diffMs < 60_000) {
+    return "방금"
   }
 
-  if (yesterday.toDateString() === date.toDateString()) {
-    return "Yesterday"
+  if (diffMs < 60 * 60_000) {
+    return `${Math.floor(diffMs / 60_000)}분전`
   }
 
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date)
+  if (diffMs < 24 * 60 * 60_000) {
+    return `${Math.floor(diffMs / (60 * 60_000))}시간전`
+  }
+
+  return `${Math.floor(diffMs / (24 * 60 * 60_000))}일전`
 }
 
 export function getReplyText(message: Message) {
@@ -119,8 +158,9 @@ export function getReplyText(message: Message) {
     return message.content
   }
 
-  if (message.image) {
-    return message.image.title
+  const attachmentPreview = getAttachmentPreview(message.attachments)
+  if (attachmentPreview) {
+    return attachmentPreview
   }
 
   return "Attachment"
@@ -162,20 +202,6 @@ export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroup
   }
 }
 
-export function isSameMessageCluster(firstMessage: Message, secondMessage: Message) {
-  const firstDate = new Date(firstMessage.createdAt)
-  const secondDate = new Date(secondMessage.createdAt)
-
-  return (
-    firstDate.getFullYear() === secondDate.getFullYear() &&
-    firstDate.getMonth() === secondDate.getMonth() &&
-    firstDate.getDate() === secondDate.getDate() &&
-    firstDate.getHours() === secondDate.getHours() &&
-    Math.floor(firstDate.getMinutes() / MESSAGE_CLUSTER_WINDOW_MINUTES) ===
-      Math.floor(secondDate.getMinutes() / MESSAGE_CLUSTER_WINDOW_MINUTES)
-  )
-}
-
 export function getMessageGroupPosition(messages: Message[], index: number): MessageGroupPosition {
   const message = messages[index]
 
@@ -189,12 +215,12 @@ export function getMessageGroupPosition(messages: Message[], index: number): Mes
     previousMessage?.senderId === message.senderId &&
     !message.replyTo &&
     previousMessage.senderId !== "system" &&
-    isSameMessageCluster(previousMessage, message)
+    isSameMessageDate(previousMessage, message)
   const hasNextFromSameSender =
     nextMessage?.senderId === message.senderId &&
     !nextMessage.replyTo &&
     nextMessage.senderId !== "system" &&
-    isSameMessageCluster(message, nextMessage)
+    isSameMessageDate(message, nextMessage)
 
   if (hasPreviousFromSameSender && hasNextFromSameSender) {
     return "middle"
@@ -231,7 +257,31 @@ export function shouldSeparateMessages(
     return true
   }
 
-  return !isSameMessageCluster(previousMessage, currentMessage)
+  return !isSameMessageDate(previousMessage, currentMessage)
+}
+
+export function shouldShowMessageTime(messages: Message[], index: number) {
+  const message = messages[index]
+
+  if (!message || message.senderId === "system") {
+    return false
+  }
+
+  const nextMessage = messages[index + 1]
+
+  if (!nextMessage || nextMessage.senderId === "system") {
+    return true
+  }
+
+  if (nextMessage.senderId !== message.senderId) {
+    return true
+  }
+
+  if (nextMessage.replyTo) {
+    return true
+  }
+
+  return !isSameMessageMinute(message, nextMessage)
 }
 
 export function shouldShowDateSeparator(
@@ -247,19 +297,4 @@ export function shouldShowDateSeparator(
 
 export function getRoomSubtitle(room: Room) {
   return room.type === "group" ? `${room.participants.length} members` : ""
-}
-
-export function getDesktopGridClass(isDetailOpen: boolean) {
-  return isDetailOpen
-    ? "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)_19rem]"
-    : "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)]"
-}
-
-export function isPersistedState(value: unknown): value is PersistedMessengerState {
-  if (!value || typeof value !== "object") {
-    return false
-  }
-
-  const candidate = value as Partial<PersistedMessengerState>
-  return Array.isArray(candidate.rooms)
 }

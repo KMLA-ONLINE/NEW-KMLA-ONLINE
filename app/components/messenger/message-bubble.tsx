@@ -1,34 +1,28 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { useEffect, useRef, useState } from "react"
 import { EllipsisIcon, ReplyIcon, SmileIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
+import { MessageAttachmentPreview } from "~/components/messenger/message-attachment-preview"
 import { BubbleOverflowMenu, QuickReactionList } from "~/components/messenger/message-actions"
-import { MessageImage } from "~/components/messenger/message-image"
+import { useMessageBubbleGestures } from "~/components/messenger/use-message-bubble-gestures"
 import { CURRENT_USER, DELETED_MESSAGE_LABEL, QUICK_REACTIONS } from "~/lib/messenger/constants"
-import {
-  formatMessageTime,
-  getBubbleShapeClass,
-  getMessageAuthor,
-  getReplyPreviewText,
-  isDeletedMessage,
-} from "~/lib/messenger/utils"
+import { formatMessageTime, getBubbleShapeClass, isDeletedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, MessageGroupPosition, Participant, Room } from "~/lib/messenger/types"
-
-const SWIPE_REPLY_START_DISTANCE = 8
-const SWIPE_REPLY_TRIGGER_DISTANCE = 48
-const SWIPE_REPLY_MAX_DISTANCE = 72
+import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
 
 export function MessageBubble({
-  room,
   message,
+  author,
+  replyPreviewText,
   readReceipts,
   groupPosition,
   showAvatar,
   showName,
   showTime,
+  isHighlighted,
+  onOpenReplyTarget,
   onReply,
   onReact,
   onDelete,
@@ -36,13 +30,16 @@ export function MessageBubble({
   isMobileActionActive,
   onCloseActions,
 }: {
-  room: Room
   message: Message
+  author: Participant
+  replyPreviewText?: string
   readReceipts: Participant[]
   groupPosition: MessageGroupPosition
   showAvatar: boolean
   showName: boolean
   showTime: boolean
+  isHighlighted: boolean
+  onOpenReplyTarget: (messageId: string) => void
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
@@ -51,7 +48,6 @@ export function MessageBubble({
   onCloseActions: () => void
 }) {
   const isMine = message.senderId === CURRENT_USER.id
-  const author = getMessageAuthor(room, message)
   const isDeleted = isDeletedMessage(message)
   const bubbleShapeClass = getBubbleShapeClass(isMine, groupPosition)
   const groupedStackOffsetClass =
@@ -63,16 +59,19 @@ export function MessageBubble({
       : "bg-muted text-foreground"
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false)
   const [isOverflowOpen, setIsOverflowOpen] = useState(false)
-  const [swipeOffset, setSwipeOffset] = useState(0)
-  const [isSwiping, setIsSwiping] = useState(false)
   const interactionRef = useRef<HTMLDivElement>(null)
-  const longPressTimerRef = useRef<number | null>(null)
-  const longPressStartPointRef = useRef<{ x: number; y: number } | null>(null)
-  const swipeStartPointRef = useRef<{ x: number; y: number } | null>(null)
-  const swipeOffsetRef = useRef(0)
-  const hasSwipeGestureRef = useRef(false)
   const isDesktopActionOpen = isReactionPickerOpen || isOverflowOpen
   const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
+  const attachments = message.attachments ?? []
+  const hasAttachments = attachments.length > 0
+  const { isSwipeActive, swipeElementRef, replyIconRef, pointerHandlers } =
+    useMessageBubbleGestures({
+      isMine,
+      disabled: isDeleted || isMobileActionActive,
+      message,
+      onOpenActions,
+      onReply,
+    })
   const reactionValues = message.reactions?.map((reaction) => reaction.value) ?? []
   const uniqueReactionValues = [...new Set(reactionValues)].sort(
     (firstReaction, secondReaction) => {
@@ -88,96 +87,6 @@ export function MessageBubble({
     }
   )
   const reactionCount = reactionValues.length
-
-  const clearLongPress = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-
-    longPressStartPointRef.current = null
-  }
-
-  const setSwipeDistance = (value: number) => {
-    swipeOffsetRef.current = value
-    setSwipeOffset(value)
-  }
-
-  const resetSwipe = () => {
-    swipeStartPointRef.current = null
-    swipeOffsetRef.current = 0
-    hasSwipeGestureRef.current = false
-    setIsSwiping(false)
-    setSwipeOffset(0)
-  }
-
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" || isDeleted || isMobileActionActive) {
-      return
-    }
-
-    clearLongPress()
-    const startPoint = { x: event.clientX, y: event.clientY }
-    longPressStartPointRef.current = startPoint
-    swipeStartPointRef.current = startPoint
-    hasSwipeGestureRef.current = false
-    setSwipeDistance(0)
-    setIsSwiping(false)
-    longPressTimerRef.current = window.setTimeout(() => {
-      onOpenActions(message)
-      clearLongPress()
-    }, 450)
-  }
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const startPoint = swipeStartPointRef.current
-    if (!startPoint) {
-      return
-    }
-
-    const deltaX = event.clientX - startPoint.x
-    const deltaY = event.clientY - startPoint.y
-    const movedX = Math.abs(deltaX)
-    const movedY = Math.abs(deltaY)
-
-    if (movedX > 8 || movedY > 8) {
-      clearLongPress()
-    }
-
-    if (movedY > movedX && movedY > SWIPE_REPLY_START_DISTANCE) {
-      resetSwipe()
-      return
-    }
-
-    const inwardDistance = isMine ? -deltaX : deltaX
-
-    if (inwardDistance <= 0) {
-      if (hasSwipeGestureRef.current) {
-        setSwipeDistance(0)
-      }
-      return
-    }
-
-    if (inwardDistance < SWIPE_REPLY_START_DISTANCE || movedX <= movedY) {
-      return
-    }
-
-    hasSwipeGestureRef.current = true
-    setIsSwiping(true)
-    setSwipeDistance(Math.min(inwardDistance, SWIPE_REPLY_MAX_DISTANCE))
-  }
-
-  const finishPointerInteraction = () => {
-    const shouldReply =
-      hasSwipeGestureRef.current && swipeOffsetRef.current >= SWIPE_REPLY_TRIGGER_DISTANCE
-
-    clearLongPress()
-    resetSwipe()
-
-    if (shouldReply) {
-      onReply(message)
-    }
-  }
 
   useEffect(() => {
     if (!isDesktopActionOpen) {
@@ -211,8 +120,6 @@ export function MessageBubble({
       document.removeEventListener("keydown", handleEscape)
     }
   }, [isDesktopActionOpen])
-
-  useEffect(() => clearLongPress, [])
 
   if (message.senderId === "system") {
     return (
@@ -306,7 +213,7 @@ export function MessageBubble({
       <Badge
         variant="secondary"
         className={cn(
-          "text-foreground dark:text-foreground absolute right-1 -bottom-2 z-10 h-5 rounded-full border-0 bg-white px-1.5 py-0 shadow-md dark:bg-white",
+          "bg-background text-foreground absolute right-1 -bottom-2 z-10 h-5 rounded-full border-0 px-1.5 py-0 shadow-md",
           reactionCount === 1 ? "size-5 px-0" : "gap-0.5"
         )}
       >
@@ -330,29 +237,26 @@ export function MessageBubble({
         </div>
       ) : null}
       <div className="relative">
-        {swipeOffset > 0 ? (
+        {isSwipeActive ? (
           <div
+            ref={replyIconRef}
             className={cn(
               "bg-primary text-primary-foreground pointer-events-none absolute top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full shadow-sm",
               isMine ? "right-0" : "left-0"
             )}
-            style={{ opacity: Math.min(1, swipeOffset / SWIPE_REPLY_TRIGGER_DISTANCE) }}
+            style={{ opacity: 0 }}
             aria-hidden="true"
           >
             <ReplyIcon className="size-4" />
           </div>
         ) : null}
         <div
-          ref={interactionRef}
-          className={cn("group/message flex items-end gap-2", isMine && "justify-end")}
-          style={{
-            transform: swipeOffset
-              ? `translateX(${isMine ? -swipeOffset : swipeOffset}px)`
-              : undefined,
-            transition: isSwiping ? "none" : "transform 160ms ease-out",
+          ref={(element) => {
+            interactionRef.current = element
+            swipeElementRef.current = element
           }}
+          className={cn("group/message flex items-end gap-2", isMine && "justify-end")}
         >
-          {isMine ? messageActionSlot : null}
           {!isMine ? (
             <div className="flex w-8 shrink-0 items-end">
               {showAvatar ? (
@@ -367,11 +271,7 @@ export function MessageBubble({
               "relative flex max-w-[min(20rem,70%)] [touch-action:pan-y] flex-col gap-1 sm:max-w-[70%]",
               isMine ? "items-end" : "items-start"
             )}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={finishPointerInteraction}
-            onPointerCancel={finishPointerInteraction}
-            onPointerLeave={finishPointerInteraction}
+            {...pointerHandlers}
           >
             {isReactionPickerVisible ? (
               <div
@@ -392,11 +292,23 @@ export function MessageBubble({
               </div>
             ) : null}
             {message.replyTo ? (
-              <div
+              <button
+                type="button"
+                aria-label="원본 메시지로 이동" //db 연동 후에는 원본 메시지가 현재 리스트에 없을 수 있어서 주변 fetch 필요.
                 className={cn(
-                  "flex max-w-full flex-col gap-1",
+                  "flex max-w-full flex-col gap-1 text-left transition-opacity hover:opacity-80",
                   isMine ? "mr-2 items-end" : "ml-2 items-start"
                 )}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const targetMessageId = message.replyTo?.messageId
+                  if (targetMessageId) {
+                    onOpenReplyTarget(targetMessageId)
+                  }
+                }}
               >
                 <div className="text-muted-foreground inline-flex items-center gap-1 text-xs">
                   <ReplyIcon className="size-3.5" />
@@ -404,59 +316,78 @@ export function MessageBubble({
                 </div>
                 <div
                   className={cn(
-                    "bg-muted text-muted-foreground max-w-[calc(100%-1.25rem)] rounded-2xl px-2.5 pt-1.5 pb-4 text-sm",
+                    "bg-muted/30 text-muted-foreground max-w-[calc(100%-1.25rem)] rounded-2xl px-2.5 pt-1.5 pb-4 text-sm",
                     isMine ? "rounded-br-md" : "rounded-bl-md"
                   )}
                 >
                   <div className="line-clamp-2 whitespace-pre-wrap">
-                    {getReplyPreviewText(room, message.replyTo)}
+                    {replyPreviewText ?? message.replyTo.text}
                   </div>
                 </div>
-              </div>
+              </button>
             ) : null}
-            {message.content || message.image || isDeleted ? (
-              <div
-                className={cn(
-                  "flex flex-col gap-1",
-                  message.replyTo ? "-mt-4" : "",
-                  reactionBadge && "mb-2"
-                )}
-              >
-                <div className={cn("relative px-3 py-2", bubbleShapeClass, bubbleToneClass)}>
-                  {isDeleted ? (
-                    <p className="text-sm leading-5 whitespace-pre-wrap">{DELETED_MESSAGE_LABEL}</p>
-                  ) : message.content ? (
-                    <p className="text-sm leading-5 whitespace-pre-wrap">{message.content}</p>
-                  ) : null}
-                  {!isDeleted && message.image ? (
-                    <MessageImage
-                      image={message.image}
+            {message.content || hasAttachments || isDeleted ? (
+              <div className={cn("flex max-w-full items-end gap-2", isMine && "justify-end")}>
+                {isMine ? messageActionSlot : null}
+                <div
+                  className={cn(
+                    "flex min-w-0 flex-col gap-1",
+                    message.replyTo ? "-mt-4" : "",
+                    reactionBadge && "mb-2"
+                  )}
+                >
+                  {message.content || isDeleted ? (
+                    <div
                       className={cn(
-                        message.content ? "mt-2" : "",
-                        "max-w-[14rem] sm:max-w-[16rem]"
+                        "relative px-3 py-2 transition-shadow duration-300",
+                        bubbleShapeClass,
+                        bubbleToneClass,
+                        isHighlighted &&
+                          "ring-primary/25 ring-offset-background ring-2 ring-offset-2"
                       )}
-                    />
+                    >
+                      {isDeleted ? (
+                        <p className="text-sm leading-5 whitespace-pre-wrap">
+                          {DELETED_MESSAGE_LABEL}
+                        </p>
+                      ) : message.content ? (
+                        <p className="text-sm leading-5 whitespace-pre-wrap">{message.content}</p>
+                      ) : null}
+                      {!hasAttachments ? reactionBadge : null}
+                    </div>
                   ) : null}
-                  {reactionBadge}
+                  {!isDeleted && hasAttachments ? (
+                    <div
+                      className={cn(
+                        "relative flex max-w-full flex-col gap-1 transition-shadow duration-300",
+                        isHighlighted &&
+                          "ring-primary/25 ring-offset-background ring-2 ring-offset-2"
+                      )}
+                    >
+                      {attachments.map((attachment, index) => (
+                        <MessageAttachmentPreview
+                          key={attachment.id ?? `${attachment.name}-${index}`}
+                          attachment={attachment}
+                          className="max-w-[14rem] sm:max-w-[12rem]"
+                        />
+                      ))}
+                      {reactionBadge}
+                    </div>
+                  ) : null}
                 </div>
+                {!isMine ? messageActionSlot : null}
               </div>
             ) : null}
           </div>
-          {!isMine ? messageActionSlot : null}
         </div>
       </div>
-      <div className={cn("flex", isMine ? "justify-end" : "pl-10")}>
-        <div
-          className={cn(
-            "-mt-0.5 flex max-w-[min(20rem,70%)] items-center gap-1.5 px-1 sm:max-w-[70%]",
-            isMine ? "justify-end" : "justify-start"
-          )}
-        >
+      <div className="flex justify-end">
+        <div className="-mt-0.5 flex max-w-[min(20rem,70%)] items-center justify-end px-1 sm:max-w-[70%]">
           {!isDeleted && readReceipts.length > 0 ? (
             <div className="flex -space-x-1" aria-label="Read by">
               {readReceipts.map((participant) => (
-                <Avatar key={participant.id} size="sm" className="ring-background size-4 ring-1">
-                  <AvatarFallback className="text-[8px]">{participant.initials}</AvatarFallback>
+                <Avatar key={participant.id} className="ring-background !size-3.5 ring-1">
+                  <AvatarFallback className="!text-[7px]">{participant.initials}</AvatarFallback>
                 </Avatar>
               ))}
             </div>

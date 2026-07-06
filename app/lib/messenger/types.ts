@@ -8,10 +8,14 @@ export type Participant = {
   initials: string
 }
 
-export type ImageAttachment = {
+export type MessageAttachment = {
+  id?: string
   src?: string
-  title: string
-  subtitle?: string
+  name: string
+  contentType?: string
+  sizeBytes?: number
+  width?: number
+  height?: number
 }
 
 export type ReplyPreview = {
@@ -32,7 +36,7 @@ export type Message = {
   createdAt: string
   deletedAt?: string
   deletedBy?: string
-  image?: ImageAttachment
+  attachments?: MessageAttachment[]
   replyTo?: ReplyPreview
   reactions?: MessageReaction[]
   read?: boolean
@@ -50,6 +54,7 @@ export type Room = {
   muted?: boolean
 }
 
-export type PersistedMessengerState = {
-  rooms: Room[]
+export type RoomSummary = Omit<Room, "messages"> & {
+  lastMessage?: Message
+  lastMessageAt?: string
 }

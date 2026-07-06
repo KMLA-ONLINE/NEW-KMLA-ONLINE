@@ -7,17 +7,15 @@ import { MessageList } from "~/components/messenger/message-list"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import { getRoomSubtitle, isDeletedMessage } from "~/lib/messenger/utils"
-import type { ImageAttachment, Message, ReplyPreview, Room } from "~/lib/messenger/types"
+import type { Message, ReplyPreview, Room } from "~/lib/messenger/types"
 
 export function RoomPane({
   room,
-  attachedImage,
   replyTo,
   showBackButton = false,
   onBack,
   onOpenDetail,
-  onAttachImage,
-  onRemoveImage,
+  onAttachFile,
   onClearReply,
   onReply,
   onReact,
@@ -25,13 +23,11 @@ export function RoomPane({
   onSend,
 }: {
   room: Room
-  attachedImage: ImageAttachment | null
   replyTo: ReplyPreview | null
   showBackButton?: boolean
   onBack?: () => void
   onOpenDetail: () => void
-  onAttachImage: () => void
-  onRemoveImage: () => void
+  onAttachFile: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
@@ -165,10 +161,8 @@ export function RoomPane({
         />
 
         <MessageComposer
-          attachedImage={attachedImage}
           replyTo={replyTo}
-          onAttachImage={onAttachImage}
-          onRemoveImage={onRemoveImage}
+          onAttachFile={onAttachFile}
           onClearReply={onClearReply}
           onSend={onSend}
         />
