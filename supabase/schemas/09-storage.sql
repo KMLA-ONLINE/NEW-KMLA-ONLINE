@@ -28,11 +28,21 @@ create policy message_files_select on storage.objects for select to authenticate
   bucket_id='message-files' and (
     exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
     or (
-      split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
-        select 1 from public.chat_room_members crm
-        where crm.room_id::text=split_part(storage.objects.name,'/',1)
-          and private.is_room_member(crm.room_id)
-          and storage.objects.name ~ ('^'||crm.room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      split_part(storage.objects.name,'/',3)=(select auth.uid())::text and (
+        exists(
+          select 1 from public.direct_chats dc
+          where split_part(storage.objects.name,'/',1)='direct'
+            and dc.id::text=split_part(storage.objects.name,'/',2)
+            and private.is_direct_chat_member(dc.id)
+            and storage.objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        )
+        or exists(
+          select 1 from public.chat_room_members crm
+          where split_part(storage.objects.name,'/',1)='room'
+            and crm.chat_room_id::text=split_part(storage.objects.name,'/',2)
+            and private.is_room_member(crm.chat_room_id)
+            and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        )
       )
     )
   )
@@ -65,11 +75,23 @@ create policy post_files_insert on storage.objects for insert to authenticated w
   )
 );
 create policy message_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='message-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
-    select 1 from public.chat_room_members crm
-    where crm.room_id::text=split_part(storage.objects.name,'/',1)
-      and private.is_room_member(crm.room_id)
-      and storage.objects.name ~ ('^'||crm.room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  bucket_id='message-files'
+  and split_part(storage.objects.name,'/',3)=(select auth.uid())::text
+  and (
+    exists(
+      select 1 from public.direct_chats dc
+      where split_part(storage.objects.name,'/',1)='direct'
+        and dc.id::text=split_part(storage.objects.name,'/',2)
+        and private.is_direct_chat_member(dc.id)
+        and storage.objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    )
+    or exists(
+      select 1 from public.chat_room_members crm
+      where split_part(storage.objects.name,'/',1)='room'
+        and crm.chat_room_id::text=split_part(storage.objects.name,'/',2)
+        and private.is_room_member(crm.chat_room_id)
+        and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    )
   )
 );
 
@@ -80,7 +102,7 @@ begin
   if p_attachment_kind='post' then
     select a.storage_bucket,a.storage_path into bucket,path from public.post_attachments a join public.posts p on p.id=a.post_id where a.id=p_attachment_id and p.author_id=caller_id and p.deleted_at is null;
   elsif p_attachment_kind='message' then
-    select a.storage_bucket,a.storage_path,a.message_id into bucket,path,target_message_id from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
+    select a.storage_bucket,a.storage_path,a.message_id into bucket,path,target_message_id from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.can_access_message(m.id);
   else raise exception 'invalid attachment kind'; end if;
   if path is null then raise exception 'attachment not found or not owned'; end if;
 
