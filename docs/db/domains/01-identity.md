@@ -44,6 +44,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 | `private.has_permission(key)`               | accepted + 해당 permission 보유 여부            |
 | `private.require_current_profile(accepted)` | active profile 강제, 없으면 예외. RPC 공통 가드 |
 | `private.require_app_admin()`               | accepted admin 강제, 아니면 예외                |
+| `private.anonymize_profile(profile_id)`     | profile 필드를 탈퇴 상태로 일괄 스크럽(`withdrawn`). `withdraw_profile`과 auth 삭제 트리거가 공유. `auth_user_id`는 건드리지 않음(자기 탈퇴는 유지, auth 삭제는 FK가 null 처리) |
 
 ## Trigger
 

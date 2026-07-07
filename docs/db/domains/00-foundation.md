@@ -19,6 +19,7 @@ Source: [`supabase/schemas/00-foundation.sql`](../../../supabase/schemas/00-foun
 | 함수 | 용도 |
 | --- | --- |
 | `private.require_service_role()` | 호출 컨텍스트가 service_role(또는 postgres 세션)이 아니면 예외. service 전용 RPC의 공통 가드 |
+| `private.has_uuid_object_suffix(name, prefix)` | storage object 이름이 `prefix + v4 uuid` 형태와 정확히 일치하는지 검사. identity/storage/chat 경로 검증에서 공통 사용 (uuid 정규식 단일 정의) |
 
 ## Trigger
 

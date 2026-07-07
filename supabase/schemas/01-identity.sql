@@ -155,6 +155,37 @@ revoke execute on function private.is_app_admin() from public, anon, service_rol
 revoke execute on function private.has_permission(text) from public, anon, service_role;
 grant execute on function private.is_app_admin(), private.has_permission(text) to authenticated;
 
+-- Scrubs identity/profile fields for a withdrawal. Leaves auth_user_id untouched:
+-- self-withdrawal keeps the auth link, and auth-user deletion nulls it via the FK's ON DELETE SET NULL.
+create function private.anonymize_profile(p_profile_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  update public.profiles
+  set name = '탈퇴한 사용자',
+      role = 'user',
+      student_number = null,
+      class_no = null,
+      cohort = null,
+      gender = null,
+      track = null,
+      department = null,
+      phone_number = null,
+      avatar_url = null,
+      cover_image_url = null,
+      birthday = null,
+      description = null,
+      status = 'withdrawn',
+      dorm_room = null,
+      is_reenrolled = false,
+      status_updated_at = now(),
+      status_updated_by = null,
+      deleted_at = now()
+  where id = p_profile_id;
+end;
+$$;
+
+revoke execute on function private.anonymize_profile(bigint) from public, anon, authenticated, service_role;
+
 create function private.handle_auth_user_deleted()
 returns trigger
 language plpgsql
@@ -182,28 +213,7 @@ begin
     raise exception 'transfer owner/admin responsibilities before deleting auth user';
   end if;
 
-  update public.profiles
-  set auth_user_id = null,
-      name = '탈퇴한 사용자',
-      role = 'user',
-      student_number = null,
-      class_no = null,
-      cohort = null,
-      gender = null,
-      track = null,
-      department = null,
-      phone_number = null,
-      avatar_url = null,
-      cover_image_url = null,
-      birthday = null,
-      description = null,
-      status = 'withdrawn',
-      dorm_room = null,
-      is_reenrolled = false,
-      status_updated_at = now(),
-      status_updated_by = null,
-      deleted_at = now()
-  where id = profile_id;
+  perform private.anonymize_profile(profile_id);
 
   return old;
 end;
@@ -344,7 +354,7 @@ begin
   perform 1 from public.profiles where id=caller_id for update;
   if exists(select 1 from public.profiles where id=caller_id and role='admin') or exists(select 1 from public.space_members sm join public.spaces s on s.id=sm.space_id where sm.user_id=caller_id and sm.role='owner' and s.deleted_at is null)
     then raise exception 'transfer owner/admin responsibilities first'; end if;
-  update public.profiles set name='탈퇴한 사용자',role='user',student_number=null,class_no=null,cohort=null,gender=null,track=null,department=null,phone_number=null,avatar_url=null,cover_image_url=null,birthday=null,description=null,status='withdrawn',dorm_room=null,is_reenrolled=false,status_updated_at=now(),status_updated_by=null,deleted_at=now() where id=caller_id;
+  perform private.anonymize_profile(caller_id);
 end;
 $$;
 
@@ -352,7 +362,7 @@ create function public.finalize_avatar(p_storage_path text)
 returns void language plpgsql security definer set search_path='' as $$
 declare caller_id bigint:=private.require_current_profile(false); expected_prefix text:=(select auth.uid())::text||'/';
 begin
-  if p_storage_path not like expected_prefix||'%' or p_storage_path !~ '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  if not private.has_uuid_object_suffix(p_storage_path,expected_prefix)
     or not exists(select 1 from storage.objects where bucket_id='avatars' and name=p_storage_path and created_at>=now()-interval '24 hours' and coalesce(metadata->>'mimetype','') in ('image/jpeg','image/png','image/webp'))
     then raise exception 'invalid avatar object'; end if;
   update public.profiles set avatar_url=p_storage_path where id=caller_id;
@@ -362,7 +372,7 @@ create function public.finalize_cover_image(p_storage_path text)
 returns void language plpgsql security definer set search_path='' as $$
 declare caller_id bigint:=private.require_current_profile(false); expected_prefix text:=(select auth.uid())::text||'/';
 begin
-  if p_storage_path not like expected_prefix||'%' or p_storage_path !~ '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  if not private.has_uuid_object_suffix(p_storage_path,expected_prefix)
     or not exists(select 1 from storage.objects where bucket_id='profile-covers' and name=p_storage_path and created_at>=now()-interval '24 hours' and coalesce(metadata->>'mimetype','') in ('image/jpeg','image/png','image/webp'))
     then raise exception 'invalid cover image object'; end if;
   update public.profiles set cover_image_url=p_storage_path where id=caller_id;

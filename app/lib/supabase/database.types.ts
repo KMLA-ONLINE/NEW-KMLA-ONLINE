@@ -36,45 +36,29 @@ export type Database = {
     Tables: {
       chat_read_states: {
         Row: {
-          chat_room_id: number | null
-          created_at: string
-          direct_chat_id: number | null
-          id: number
+          conversation_id: number
           last_read_at: string
           last_read_message_id: number | null
           user_id: number
         }
         Insert: {
-          chat_room_id?: number | null
-          created_at?: string
-          direct_chat_id?: number | null
-          id?: number
+          conversation_id: number
           last_read_at?: string
           last_read_message_id?: number | null
           user_id: number
         }
         Update: {
-          chat_room_id?: number | null
-          created_at?: string
-          direct_chat_id?: number | null
-          id?: number
+          conversation_id?: number
           last_read_at?: string
           last_read_message_id?: number | null
           user_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "chat_read_states_chat_room_id_fkey"
-            columns: ["chat_room_id"]
+            foreignKeyName: "chat_read_states_conversation_id_fkey"
+            columns: ["conversation_id"]
             isOneToOne: false
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_read_states_direct_chat_id_fkey"
-            columns: ["direct_chat_id"]
-            isOneToOne: false
-            referencedRelation: "direct_chats"
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
           {
@@ -87,68 +71,6 @@ export type Database = {
           {
             foreignKeyName: "chat_read_states_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chat_room_members: {
-        Row: {
-          chat_room_id: number
-          joined_at: string
-          user_id: number
-        }
-        Insert: {
-          chat_room_id: number
-          joined_at?: string
-          user_id: number
-        }
-        Update: {
-          chat_room_id?: number
-          joined_at?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_room_members_chat_room_id_fkey"
-            columns: ["chat_room_id"]
-            isOneToOne: false
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_room_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chat_rooms: {
-        Row: {
-          created_at: string
-          created_by: number | null
-          id: number
-          name: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: number | null
-          id?: number
-          name: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: number | null
-          id?: number
-          name?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_rooms_created_by_fkey"
-            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -267,7 +189,6 @@ export type Database = {
         Row: {
           comment_id: number
           created_at: string
-          id: number
           reaction_type_id: number
           updated_at: string | null
           user_id: number
@@ -275,7 +196,6 @@ export type Database = {
         Insert: {
           comment_id: number
           created_at?: string
-          id?: number
           reaction_type_id: number
           updated_at?: string | null
           user_id: number
@@ -283,7 +203,6 @@ export type Database = {
         Update: {
           comment_id?: number
           created_at?: string
-          id?: number
           reaction_type_id?: number
           updated_at?: string | null
           user_id?: number
@@ -380,35 +299,104 @@ export type Database = {
           },
         ]
       }
-      direct_chats: {
+      conversation_members: {
+        Row: {
+          conversation_id: number
+          joined_at: string
+          user_id: number
+        }
+        Insert: {
+          conversation_id: number
+          joined_at?: string
+          user_id: number
+        }
+        Update: {
+          conversation_id?: number
+          joined_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_members_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
         Row: {
           created_at: string
+          created_by: number | null
           id: number
+          name: string | null
+          type: Database["public"]["Enums"]["conversation_type"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          name?: string | null
+          type: Database["public"]["Enums"]["conversation_type"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          name?: string | null
+          type?: Database["public"]["Enums"]["conversation_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      direct_conversations: {
+        Row: {
+          conversation_id: number
           user1_id: number
           user2_id: number
         }
         Insert: {
-          created_at?: string
-          id?: number
+          conversation_id: number
           user1_id: number
           user2_id: number
         }
         Update: {
-          created_at?: string
-          id?: number
+          conversation_id?: number
           user1_id?: number
           user2_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "direct_chats_user1_id_fkey"
+            foreignKeyName: "direct_conversations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_conversations_user1_id_fkey"
             columns: ["user1_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "direct_chats_user2_id_fkey"
+            foreignKeyName: "direct_conversations_user2_id_fkey"
             columns: ["user2_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -519,7 +507,6 @@ export type Database = {
       message_reactions: {
         Row: {
           created_at: string
-          id: number
           message_id: number
           reaction_type_id: number
           updated_at: string | null
@@ -527,7 +514,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: number
           message_id: number
           reaction_type_id: number
           updated_at?: string | null
@@ -535,7 +521,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: number
           message_id?: number
           reaction_type_id?: number
           updated_at?: string | null
@@ -567,50 +552,44 @@ export type Database = {
       }
       messages: {
         Row: {
-          chat_room_id: number | null
           content: string | null
+          conversation_id: number
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
-          direct_chat_id: number | null
           edited_at: string | null
           id: number
-          is_edited: boolean
           parent_id: number | null
           sender_id: number
         }
         Insert: {
-          chat_room_id?: number | null
           content?: string | null
+          conversation_id: number
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
-          direct_chat_id?: number | null
           edited_at?: string | null
           id?: number
-          is_edited?: boolean
           parent_id?: number | null
           sender_id: number
         }
         Update: {
-          chat_room_id?: number | null
           content?: string | null
+          conversation_id?: number
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
-          direct_chat_id?: number | null
           edited_at?: string | null
           id?: number
-          is_edited?: boolean
           parent_id?: number | null
           sender_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "messages_chat_room_id_fkey"
-            columns: ["chat_room_id"]
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
             isOneToOne: false
-            referencedRelation: "chat_rooms"
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
           {
@@ -618,13 +597,6 @@ export type Database = {
             columns: ["deleted_by"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "messages_direct_chat_id_fkey"
-            columns: ["direct_chat_id"]
-            isOneToOne: false
-            referencedRelation: "direct_chats"
             referencedColumns: ["id"]
           },
           {
@@ -805,7 +777,6 @@ export type Database = {
       post_reactions: {
         Row: {
           created_at: string
-          id: number
           post_id: number
           reaction_type_id: number
           updated_at: string | null
@@ -813,7 +784,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: number
           post_id: number
           reaction_type_id: number
           updated_at?: string | null
@@ -821,7 +791,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: number
           post_id?: number
           reaction_type_id?: number
           updated_at?: string | null
@@ -861,7 +830,6 @@ export type Database = {
           deleted_by: number | null
           id: number
           is_anonymous: boolean
-          is_pinned: boolean
           pinned_at: string | null
           pinned_by: number | null
           pub_id: string
@@ -879,7 +847,6 @@ export type Database = {
           deleted_by?: number | null
           id?: number
           is_anonymous?: boolean
-          is_pinned?: boolean
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
@@ -897,7 +864,6 @@ export type Database = {
           deleted_by?: number | null
           id?: number
           is_anonymous?: boolean
-          is_pinned?: boolean
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
@@ -1282,11 +1248,15 @@ export type Database = {
           storage_path: string
         }[]
       }
-      cleanup_direct_chat: {
-        Args: { p_direct_chat_id: number }
+      cleanup_conversation: {
+        Args: { p_conversation_id: number }
         Returns: undefined
       }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
+      create_direct_conversation: {
+        Args: { p_peer_id: number }
+        Returns: number
+      }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
         Args: { p_error: string; p_id: number }
@@ -1300,17 +1270,15 @@ export type Database = {
       get_chat_messages: {
         Args: {
           p_before_id?: number
-          p_chat_room_id?: number
-          p_direct_chat_id?: number
+          p_conversation_id: number
           p_limit?: number
         }
         Returns: {
           attachments: Json
-          chat_room_id: number
           content: string
+          conversation_id: number
           created_at: string
           deleted_at: string
-          direct_chat_id: number
           edited_at: string
           is_edited: boolean
           message_id: number
@@ -1321,13 +1289,12 @@ export type Database = {
           sender_id: number
         }[]
       }
-      list_chat_rooms: {
+      list_conversations: {
         Args: never
         Returns: {
           avatar_url: string
-          chat_room_id: number
+          conversation_id: number
           created_at: string
-          direct_chat_id: number
           display_initials: string
           display_name: string
           last_message_content: string
@@ -1338,11 +1305,12 @@ export type Database = {
           last_message_sender_name: string
           member_count: number
           name: string
+          type: Database["public"]["Enums"]["conversation_type"]
           unread_count: number
         }[]
       }
       remove_group_member: {
-        Args: { p_chat_room_id: number; p_user_id: number }
+        Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined
       }
       request_attachment_removal: {
@@ -1357,11 +1325,7 @@ export type Database = {
         Returns: undefined
       }
       search_messages: {
-        Args: {
-          p_chat_room_id?: number
-          p_direct_chat_id?: number
-          p_query: string
-        }
+        Args: { p_conversation_id: number; p_query: string }
         Returns: {
           content_snippet: string
           created_at: string
@@ -1369,25 +1333,11 @@ export type Database = {
           sender_name: string
         }[]
       }
-      send_direct_message_with_attachment: {
+      send_message_with_attachment: {
         Args: {
           p_content?: string
           p_content_type: string
-          p_direct_chat_id: number
-          p_file_name: string
-          p_height?: number
-          p_parent_id?: number
-          p_size_bytes: number
-          p_storage_path: string
-          p_width?: number
-        }
-        Returns: number
-      }
-      send_room_message_with_attachment: {
-        Args: {
-          p_chat_room_id: number
-          p_content?: string
-          p_content_type: string
+          p_conversation_id: number
           p_file_name: string
           p_height?: number
           p_parent_id?: number
@@ -1421,6 +1371,7 @@ export type Database = {
     Enums: {
       app_role: "user" | "admin"
       club_type: "major" | "general"
+      conversation_type: "direct" | "group"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
       member_role: "owner" | "admin" | "manager" | "member"
       notification_level: "mention" | "all"
@@ -1563,6 +1514,7 @@ export const Constants = {
     Enums: {
       app_role: ["user", "admin"],
       club_type: ["major", "general"],
+      conversation_type: ["direct", "group"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],
       member_role: ["owner", "admin", "manager", "member"],
       notification_level: ["mention", "all"],

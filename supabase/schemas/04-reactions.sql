@@ -8,21 +8,21 @@ create table public.reaction_types (
 );
 
 create table public.post_reactions (
-  id bigserial primary key,
   post_id bigint not null references public.posts (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,
   reaction_type_id bigint not null references public.reaction_types (id) on delete restrict,
   created_at timestamptz not null default now(),
-  updated_at timestamptz null
+  updated_at timestamptz null,
+  primary key (post_id, user_id)
 );
 
 create table public.comment_reactions (
-  id bigserial primary key,
   comment_id bigint not null references public.comments (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,
   reaction_type_id bigint not null references public.reaction_types (id) on delete restrict,
   created_at timestamptz not null default now(),
-  updated_at timestamptz null
+  updated_at timestamptz null,
+  primary key (comment_id, user_id)
 );
 
 create index idx_post_reactions_type_count on public.post_reactions (post_id, reaction_type_id);
@@ -34,11 +34,6 @@ alter table public.reaction_types
   add constraint reaction_types_key_key unique (key),
   add constraint reaction_types_key_check check (char_length(btrim(key)) between 1 and 100),
   add constraint reaction_types_name_check check (char_length(btrim(name)) between 1 and 100);
-
-alter table public.post_reactions
-  add constraint post_reactions_post_user_key unique (post_id, user_id);
-alter table public.comment_reactions
-  add constraint comment_reactions_comment_user_key unique (comment_id, user_id);
 
 alter table public.reaction_types enable row level security;
 alter table public.post_reactions enable row level security;
@@ -58,6 +53,5 @@ grant insert (post_id,user_id,reaction_type_id) on public.post_reactions to auth
 grant insert (comment_id,user_id,reaction_type_id) on public.comment_reactions to authenticated;
 grant update (reaction_type_id) on public.post_reactions,public.comment_reactions to authenticated;
 grant delete on public.post_reactions,public.comment_reactions to authenticated;
-grant usage, select on sequence public.post_reactions_id_seq, public.comment_reactions_id_seq to authenticated;
 grant select, insert, update, delete on public.reaction_types, public.post_reactions, public.comment_reactions to service_role;
-grant usage, select on sequence public.reaction_types_id_seq, public.post_reactions_id_seq, public.comment_reactions_id_seq to service_role;
+grant usage, select on sequence public.reaction_types_id_seq to service_role;

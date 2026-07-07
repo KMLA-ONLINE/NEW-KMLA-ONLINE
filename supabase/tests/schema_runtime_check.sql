@@ -38,28 +38,21 @@ begin
     raise exception 'auth context lookup failed';
   end if;
 
-  insert into public.direct_chats (user1_id, user2_id)
-  values (least(profile1, profile2), greatest(profile1, profile2))
-  on conflict (user1_id, user2_id) do update set user1_id = excluded.user1_id
-  returning id into room1;
-
-  insert into public.direct_chats (user1_id, user2_id)
-  values (least(profile1, profile2), greatest(profile1, profile2))
-  on conflict (user1_id, user2_id) do update set user1_id = excluded.user1_id
-  returning id into room2;
+  room1 := public.create_direct_conversation(profile2);
+  room2 := public.create_direct_conversation(profile2);
 
   if room1 <> room2
-    or (select count(*) from public.direct_chats where user1_id = least(profile1, profile2) and user2_id = greatest(profile1, profile2)) <> 1
+    or (select count(*) from public.direct_conversations where user1_id = least(profile1, profile2) and user2_id = greatest(profile1, profile2)) <> 1
   then
-    raise exception 'direct chat uniqueness contract failed';
+    raise exception 'direct conversation uniqueness contract failed';
   end if;
-  insert into public.messages (direct_chat_id, sender_id, content)
+  insert into public.messages (conversation_id, sender_id, content)
   values (room1, profile1, '검색 테스트 메시지')
   returning id into message1;
-  if not exists (select 1 from public.chat_read_states where direct_chat_id = room1 and user_id = profile1 and last_read_message_id = message1) then
+  if not exists (select 1 from public.chat_read_states where conversation_id = room1 and user_id = profile1 and last_read_message_id = message1) then
     raise exception 'sender read state trigger failed';
   end if;
-  if not exists (select 1 from public.search_messages('검색테스트', room1, null) where message_id = message1) then
+  if not exists (select 1 from public.search_messages('검색테스트', room1) where message_id = message1) then
     raise exception 'space-insensitive message search failed';
   end if;
 
@@ -96,11 +89,10 @@ begin
   if not has_column_privilege('authenticated', 'public.messages', 'content', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.message_reactions', 'reaction_type_id', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.chat_read_states', 'last_read_message_id', 'UPDATE')
-    or not has_sequence_privilege('authenticated', 'public.message_reactions_id_seq', 'USAGE')
-    or not has_sequence_privilege('authenticated', 'public.direct_chats_id_seq', 'USAGE')
-    or not has_sequence_privilege('authenticated', 'public.chat_read_states_id_seq', 'USAGE')
+    or not has_sequence_privilege('authenticated', 'public.conversations_id_seq', 'USAGE')
+    or not has_sequence_privilege('authenticated', 'public.messages_id_seq', 'USAGE')
   then
-    raise exception 'direct chat write grants missing';
+    raise exception 'chat write grants missing';
   end if;
 
   if exists (

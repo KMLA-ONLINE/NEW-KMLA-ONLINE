@@ -55,3 +55,13 @@ begin
 end $$;
 
 revoke execute on function private.require_service_role() from public,anon,authenticated,service_role;
+
+-- Shared storage-path validator: object name must be exactly p_prefix followed by a v4-style uuid.
+-- Centralizes the uuid-suffix regex reused across identity, storage, and chat objects.
+create function private.has_uuid_object_suffix(p_name text, p_prefix text)
+returns boolean language sql immutable set search_path='' as $$
+  select p_name ~ ('^' || p_prefix || '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+$$;
+
+revoke execute on function private.has_uuid_object_suffix(text,text) from public,anon,service_role;
+grant execute on function private.has_uuid_object_suffix(text,text) to authenticated;

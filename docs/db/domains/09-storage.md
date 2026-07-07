@@ -27,7 +27,7 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 ## Private helper
 
-없음 (identity/content/chat 도메인의 helper를 policy에서 사용).
+- `private.has_uuid_object_suffix(name, prefix)` — object 이름이 `prefix + v4 uuid` 형태와 정확히 일치하는지 검사하는 공통 헬퍼(정의는 foundation). 모든 insert policy와 finalize/ send RPC의 경로 검증에서 재사용한다.
 
 ## Trigger
 
@@ -36,6 +36,6 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 ## 주의
 
 - 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프.
-- profile 이미지는 `{auth_uid}/{uuid}`, 메시지 첨부는 `direct/{direct_chat_id}/{auth_uid}/{uuid}` 또는 `room/{chat_room_id}/{auth_uid}/{uuid}` 경로를 사용한다.
-- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_direct_message_with_attachment()`/`send_room_message_with_attachment()`는 chat 문서에 있다.
+- profile 이미지는 `{auth_uid}/{uuid}`, 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}` 경로를 사용한다(direct/room 구분 없음).
+- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachment()`는 chat 문서에 있다.
 - post 첨부/space 이미지 finalize RPC는 2026-07 정리에서 제거돼 현재 해당 bucket의 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).

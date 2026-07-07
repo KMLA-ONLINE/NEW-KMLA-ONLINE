@@ -28,32 +28,23 @@ create policy message_files_select on storage.objects for select to authenticate
   bucket_id='message-files' and (
     exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
     or (
-      split_part(storage.objects.name,'/',3)=(select auth.uid())::text and (
-        exists(
-          select 1 from public.direct_chats dc
-          where split_part(storage.objects.name,'/',1)='direct'
-            and dc.id::text=split_part(storage.objects.name,'/',2)
-            and private.is_direct_chat_member(dc.id)
-            and storage.objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-        )
-        or exists(
-          select 1 from public.chat_room_members crm
-          where split_part(storage.objects.name,'/',1)='room'
-            and crm.chat_room_id::text=split_part(storage.objects.name,'/',2)
-            and private.is_room_member(crm.chat_room_id)
-            and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-        )
+      split_part(storage.objects.name,'/',2)=(select auth.uid())::text
+      and exists(
+        select 1 from public.conversations c
+        where c.id::text=split_part(storage.objects.name,'/',1)
+          and private.is_conversation_member(c.id)
+          and private.has_uuid_object_suffix(storage.objects.name,c.id::text||'/'||(select auth.uid())::text||'/')
       )
     )
   )
 );
 create policy avatars_insert on storage.objects for insert to authenticated with check (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
-  and storage.objects.name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  and private.has_uuid_object_suffix(storage.objects.name,(select auth.uid())::text||'/')
 );
 create policy profile_covers_insert on storage.objects for insert to authenticated with check (
   bucket_id='profile-covers' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
-  and storage.objects.name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  and private.has_uuid_object_suffix(storage.objects.name,(select auth.uid())::text||'/')
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
   bucket_id='space-images' and exists(
@@ -61,7 +52,7 @@ create policy space_images_insert on storage.objects for insert to authenticated
     where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
       and private.can_manage_space(s.id)
-      and storage.objects.name ~ ('^'||s.pub_id::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
 create policy post_files_insert on storage.objects for insert to authenticated with check (
@@ -71,27 +62,17 @@ create policy post_files_insert on storage.objects for insert to authenticated w
       and p.author_id=private.current_profile_id()
       and p.deleted_at is null
       and private.can_access_post(p.id)
-      and storage.objects.name ~ ('^'||p.pub_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      and private.has_uuid_object_suffix(storage.objects.name,p.pub_id::text||'/'||(select auth.uid())::text||'/')
   )
 );
 create policy message_files_insert on storage.objects for insert to authenticated with check (
   bucket_id='message-files'
-  and split_part(storage.objects.name,'/',3)=(select auth.uid())::text
-  and (
-    exists(
-      select 1 from public.direct_chats dc
-      where split_part(storage.objects.name,'/',1)='direct'
-        and dc.id::text=split_part(storage.objects.name,'/',2)
-        and private.is_direct_chat_member(dc.id)
-        and storage.objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-    )
-    or exists(
-      select 1 from public.chat_room_members crm
-      where split_part(storage.objects.name,'/',1)='room'
-        and crm.chat_room_id::text=split_part(storage.objects.name,'/',2)
-        and private.is_room_member(crm.chat_room_id)
-        and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-    )
+  and split_part(storage.objects.name,'/',2)=(select auth.uid())::text
+  and exists(
+    select 1 from public.conversations c
+    where c.id::text=split_part(storage.objects.name,'/',1)
+      and private.is_conversation_member(c.id)
+      and private.has_uuid_object_suffix(storage.objects.name,c.id::text||'/'||(select auth.uid())::text||'/')
   )
 );
 

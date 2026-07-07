@@ -7,8 +7,8 @@ Source: [`supabase/schemas/04-reactions.sql`](../../../supabase/schemas/04-react
 ## 테이블
 
 - `reaction_types` — key/이름/아이콘 registry (seed: `like`, `love` — baseline migration)
-- `post_reactions` — `(post_id, user_id)` unique, 사용자당 post 하나의 반응
-- `comment_reactions` — `(comment_id, user_id)` unique
+- `post_reactions` — `(post_id, user_id)` 자연 PK, 사용자당 post 하나의 반응 (surrogate id 없음)
+- `comment_reactions` — `(comment_id, user_id)` 자연 PK
 
 ## RPC
 

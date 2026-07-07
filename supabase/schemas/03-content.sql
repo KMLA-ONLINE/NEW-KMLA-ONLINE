@@ -6,7 +6,6 @@ create table public.posts (
   title text not null,
   content text not null,
   is_anonymous boolean not null default false,
-  is_pinned boolean not null default false,
   pinned_at timestamptz null,
   pinned_by bigint null references public.profiles (id) on delete set null,
   comment_count int4 not null default 0,
@@ -49,7 +48,7 @@ create index idx_posts_author_created_at on public.posts (author_id, created_at)
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
 where deleted_at is null;
 create index idx_posts_pinned on public.posts (space_id, pinned_at desc)
-where is_pinned = true and deleted_at is null;
+where pinned_at is not null and deleted_at is null;
 
 create index idx_comments_tree on public.comments (post_id, parent_id, created_at);
 create index idx_posts_title_search_gin on public.posts
@@ -70,8 +69,7 @@ alter table public.posts
   add constraint posts_content_check check (char_length(btrim(content)) between 1 and 50000),
   add constraint posts_deleted_state_check check (deleted_at is not null or deleted_by is null),
   add constraint posts_pin_state_check check (
-    (is_pinned = false and pinned_at is null and pinned_by is null)
-    or (is_pinned = true and pinned_at is not null)
+    pinned_at is not null or pinned_by is null
   );
 
 alter table public.post_attachments
