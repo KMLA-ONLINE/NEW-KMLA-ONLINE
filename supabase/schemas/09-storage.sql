@@ -15,6 +15,9 @@ create index idx_attachment_cleanup_queue_pending on private.attachment_cleanup_
 create policy avatars_select on storage.objects for select to authenticated using (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.avatar_url=storage.objects.name and p.deleted_at is null)
 );
+create policy profile_covers_select on storage.objects for select to authenticated using (
+  bucket_id='profile-covers' and exists(select 1 from public.profiles p where p.cover_image_url=storage.objects.name and p.deleted_at is null)
+);
 create policy space_images_select on storage.objects for select to authenticated using (
   bucket_id='space-images' and exists(select 1 from public.spaces s where s.image_url=storage.objects.name and s.deleted_at is null)
 );
@@ -36,6 +39,10 @@ create policy message_files_select on storage.objects for select to authenticate
 );
 create policy avatars_insert on storage.objects for insert to authenticated with check (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
+  and storage.objects.name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+);
+create policy profile_covers_insert on storage.objects for insert to authenticated with check (
+  bucket_id='profile-covers' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
   and storage.objects.name ~ ('^'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
@@ -120,8 +127,9 @@ begin
   union
   select o.bucket_id,o.name from storage.objects o
   where o.created_at<now()-interval '48 hours'
-    and o.bucket_id in ('avatars','space-images','post-files','message-files')
+    and o.bucket_id in ('avatars','profile-covers','space-images','post-files','message-files')
     and not exists(select 1 from public.profiles p where o.bucket_id='avatars' and p.avatar_url=o.name)
+    and not exists(select 1 from public.profiles p where o.bucket_id='profile-covers' and p.cover_image_url=o.name)
     and not exists(select 1 from public.spaces s where o.bucket_id='space-images' and s.image_url=o.name)
     and not exists(select 1 from public.post_attachments a where o.bucket_id='post-files' and a.storage_path=o.name)
     and not exists(select 1 from public.message_attachments a where o.bucket_id='message-files' and a.storage_path=o.name)
@@ -163,6 +171,7 @@ begin
   if bucket='post-files' then delete from public.post_attachments where storage_path=path;
   elsif bucket='message-files' then delete from public.message_attachments where storage_path=path;
   elsif bucket='avatars' then update public.profiles set avatar_url=null where avatar_url=path;
+  elsif bucket='profile-covers' then update public.profiles set cover_image_url=null where cover_image_url=path;
   elsif bucket='space-images' then update public.spaces set image_url=null where image_url=path and deleted_at is not null;
   else raise exception 'invalid cleanup bucket'; end if;
   update private.attachment_cleanup_queue set processed_at=now(),last_error=null where id=p_id;

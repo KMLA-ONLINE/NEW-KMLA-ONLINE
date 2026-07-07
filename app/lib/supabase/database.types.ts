@@ -559,42 +559,9 @@ export type Database = {
           },
         ]
       }
-      message_reads: {
-        Row: {
-          message_id: number
-          read_at: string
-          user_id: number
-        }
-        Insert: {
-          message_id: number
-          read_at?: string
-          user_id: number
-        }
-        Update: {
-          message_id?: number
-          read_at?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "message_reads_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "message_reads_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       messages: {
         Row: {
-          content: string
+          content: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
@@ -606,7 +573,7 @@ export type Database = {
           sender_id: number
         }
         Insert: {
-          content: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -618,7 +585,7 @@ export type Database = {
           sender_id: number
         }
         Update: {
-          content?: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -954,83 +921,108 @@ export type Database = {
           },
         ]
       }
+      profile_departments: {
+        Row: {
+          name: string
+        }
+        Insert: {
+          name: string
+        }
+        Update: {
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
-          anonymous_username: string | null
           auth_user_id: string | null
           avatar_url: string | null
           birthday: string | null
           class_no: number | null
           cohort: number | null
+          cover_image_url: string | null
           created_at: string
           deleted_at: string | null
+          department: string | null
           description: string | null
           dorm_room: number | null
           gender: Database["public"]["Enums"]["profile_gender"] | null
           id: number
+          is_reenrolled: boolean
           name: string
           onboarding_completed_at: string | null
           phone_number: string | null
-          pub_id: string
           role: Database["public"]["Enums"]["app_role"]
           status: Database["public"]["Enums"]["profile_status"]
           status_updated_at: string | null
           status_updated_by: number | null
           student_number: string | null
+          track: Database["public"]["Enums"]["profile_track"] | null
           type: Database["public"]["Enums"]["profile_type"]
           updated_at: string | null
         }
         Insert: {
-          anonymous_username?: string | null
           auth_user_id?: string | null
           avatar_url?: string | null
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department?: string | null
           description?: string | null
           dorm_room?: number | null
           gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: number
+          is_reenrolled?: boolean
           name: string
           onboarding_completed_at?: string | null
           phone_number?: string | null
-          pub_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["profile_status"]
           status_updated_at?: string | null
           status_updated_by?: number | null
           student_number?: string | null
+          track?: Database["public"]["Enums"]["profile_track"] | null
           type?: Database["public"]["Enums"]["profile_type"]
           updated_at?: string | null
         }
         Update: {
-          anonymous_username?: string | null
           auth_user_id?: string | null
           avatar_url?: string | null
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department?: string | null
           description?: string | null
           dorm_room?: number | null
           gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: number
+          is_reenrolled?: boolean
           name?: string
           onboarding_completed_at?: string | null
           phone_number?: string | null
-          pub_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["profile_status"]
           status_updated_at?: string | null
           status_updated_by?: number | null
           student_number?: string | null
+          track?: Database["public"]["Enums"]["profile_track"] | null
           type?: Database["public"]["Enums"]["profile_type"]
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_department_fkey"
+            columns: ["department"]
+            isOneToOne: false
+            referencedRelation: "profile_departments"
+            referencedColumns: ["name"]
+          },
           {
             foreignKeyName: "profiles_status_updated_by_fkey"
             columns: ["status_updated_by"]
@@ -1285,24 +1277,57 @@ export type Database = {
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
       create_direct_chat: { Args: { p_other_user_id: number }; Returns: number }
       create_group_chat: { Args: { p_name: string }; Returns: number }
+      create_group_chat_with_members: {
+        Args: { p_member_ids?: number[]; p_name: string }
+        Returns: number
+      }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
         Args: { p_error: string; p_id: number }
         Returns: undefined
       }
       finalize_avatar: { Args: { p_storage_path: string }; Returns: undefined }
-      finalize_message_attachment: {
-        Args: {
-          p_content_type: string
-          p_file_name: string
-          p_height: number
-          p_message_id: number
-          p_size_bytes: number
-          p_sort_order: number
-          p_storage_path: string
-          p_width: number
-        }
-        Returns: number
+      finalize_cover_image: {
+        Args: { p_storage_path: string }
+        Returns: undefined
+      }
+      get_chat_messages: {
+        Args: { p_before_id?: number; p_limit?: number; p_room_id: number }
+        Returns: {
+          attachments: Json
+          content: string
+          created_at: string
+          deleted_at: string
+          edited_at: string
+          is_edited: boolean
+          message_id: number
+          parent_message: Json
+          reactions: Json
+          reads: Json
+          room_id: number
+          sender: Json
+          sender_id: number
+        }[]
+      }
+      list_chat_rooms: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          created_at: string
+          display_initials: string
+          display_name: string
+          is_group: boolean
+          last_message_content: string
+          last_message_created_at: string
+          last_message_has_attachment: boolean
+          last_message_id: number
+          last_message_sender_id: number
+          last_message_sender_name: string
+          member_count: number
+          name: string
+          room_id: number
+          unread_count: number
+        }[]
       }
       remove_group_member: {
         Args: { p_room_id: number; p_user_id: number }
@@ -1328,19 +1353,39 @@ export type Database = {
           sender_name: string
         }[]
       }
-      set_anonymous_username: { Args: { p_value: string }; Returns: undefined }
+      send_message: {
+        Args: { p_content?: string; p_parent_id?: number; p_room_id: number }
+        Returns: number
+      }
+      send_message_with_attachment: {
+        Args: {
+          p_content?: string
+          p_content_type: string
+          p_file_name: string
+          p_height?: number
+          p_parent_id?: number
+          p_room_id: number
+          p_size_bytes: number
+          p_storage_path: string
+          p_width?: number
+        }
+        Returns: number
+      }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
       submit_onboarding: {
         Args: {
           p_birthday: string
           p_class_no: number
           p_cohort: number
+          p_department: string
           p_description: string
           p_dorm_room: number
           p_gender: Database["public"]["Enums"]["profile_gender"]
+          p_is_reenrolled: boolean
           p_name: string
           p_phone_number: string
           p_student_number: string
+          p_track: Database["public"]["Enums"]["profile_track"]
           p_type: Database["public"]["Enums"]["profile_type"]
         }
         Returns: undefined
@@ -1356,6 +1401,7 @@ export type Database = {
       notification_setting: "off" | "mentions" | "all"
       profile_gender: "male" | "female"
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
+      profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
       space_join_policy: "auto_join" | "invite_only"
       space_type: "group" | "community"
@@ -1497,9 +1543,11 @@ export const Constants = {
       notification_setting: ["off", "mentions", "all"],
       profile_gender: ["male", "female"],
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
+      profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
       space_join_policy: ["auto_join", "invite_only"],
       space_type: ["group", "community"],
     },
   },
 } as const
+

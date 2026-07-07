@@ -1,26 +1,33 @@
 create type public.app_role as enum ('user', 'admin');
 create type public.profile_gender as enum ('male', 'female');
+create type public.profile_track as enum ('domestic', 'international');
 create type public.profile_type as enum ('student', 'teacher', 'alumni');
 create type public.profile_status as enum ('none', 'pending', 'accepted', 'rejected', 'withdrawn');
+
+create table public.profile_departments (
+  name text primary key
+);
 
 create table public.profiles (
   id bigserial primary key,
   auth_user_id uuid null references auth.users (id) on delete set null,
-  pub_id uuid not null default gen_random_uuid(),
   name text not null,
-  anonymous_username text null,
   role public.app_role not null default 'user',
   type public.profile_type not null default 'student',
   student_number char(6) null,
   class_no int2 null,
   cohort int2 null,
   gender public.profile_gender null,
+  track public.profile_track null,
+  department text null references public.profile_departments (name) on update cascade on delete set null,
   phone_number text null,
   avatar_url text null,
+  cover_image_url text null,
   birthday date null,
   description text null,
   status public.profile_status not null default 'none',
   dorm_room int2 null,
+  is_reenrolled boolean not null default false,
   onboarding_completed_at timestamptz null,
   status_updated_at timestamptz null,
   status_updated_by bigint null references public.profiles (id) on delete set null,
@@ -46,9 +53,11 @@ create table public.user_permissions (
 
 create index idx_profiles_status_deleted_at on public.profiles (status, deleted_at);
 
+alter table public.profile_departments
+  add constraint profile_departments_name_check check (char_length(btrim(name)) between 1 and 50);
+
 alter table public.profiles
   add constraint profiles_auth_user_id_key unique (auth_user_id),
-  add constraint profiles_pub_id_key unique (pub_id),
   add constraint profiles_student_number_key unique (student_number),
   add constraint profiles_cohort_check check (cohort is null or cohort between 1 and 100),
   add constraint profiles_class_no_check check (class_no is null or class_no > 0),
@@ -61,18 +70,15 @@ alter table public.profiles
     or type <> 'student'
     or (student_number is not null and cohort is not null)
   ),
-  add constraint profiles_name_check check (char_length(btrim(name)) between 1 and 50),
-  add constraint profiles_anonymous_username_check check (
-    anonymous_username is null
-    or char_length(btrim(anonymous_username)) between 1 and 50
+  add constraint profiles_track_required_check check (
+    deleted_at is not null
+    or status = 'none'
+    or track is not null
   ),
+  add constraint profiles_name_check check (char_length(btrim(name)) between 1 and 50),
   add constraint profiles_description_check check (
     description is null or char_length(description) <= 2000
   );
-
-create unique index profiles_anonymous_username_normalized_key
-on public.profiles (lower(btrim(anonymous_username)))
-where anonymous_username is not null;
 
 create function private.handle_auth_user_created()
 returns trigger
@@ -179,18 +185,21 @@ begin
   update public.profiles
   set auth_user_id = null,
       name = '탈퇴한 사용자',
-      anonymous_username = null,
       role = 'user',
       student_number = null,
       class_no = null,
       cohort = null,
       gender = null,
+      track = null,
+      department = null,
       phone_number = null,
       avatar_url = null,
+      cover_image_url = null,
       birthday = null,
       description = null,
       status = 'withdrawn',
       dorm_room = null,
+      is_reenrolled = false,
       status_updated_at = now(),
       status_updated_by = null,
       deleted_at = now()
@@ -245,9 +254,16 @@ $$;
 revoke execute on function private.require_current_profile(boolean) from public, anon, authenticated, service_role;
 revoke execute on function private.require_app_admin() from public, anon, authenticated, service_role;
 
+alter table public.profile_departments enable row level security;
 alter table public.profiles enable row level security;
 alter table public.permissions enable row level security;
 alter table public.user_permissions enable row level security;
+
+create policy profile_departments_select
+on public.profile_departments
+for select
+to authenticated
+using (true);
 
 create policy profiles_select
 on public.profiles
@@ -291,21 +307,21 @@ grant usage on schema public, private to authenticated;
 grant execute on function private.current_profile_id() to authenticated;
 grant execute on function private.is_accepted_user() to authenticated;
 
-grant select on table public.profiles, public.permissions, public.user_permissions to authenticated;
+grant select on table public.profile_departments, public.profiles, public.permissions, public.user_permissions to authenticated;
 grant update (name, gender, phone_number, birthday, description) on table public.profiles
 to authenticated;
 
 grant usage on schema public, private to service_role;
 grant select, insert, update, delete
-on table public.profiles, public.permissions, public.user_permissions
+on table public.profile_departments, public.profiles, public.permissions, public.user_permissions
 to service_role;
 grant usage, select on sequence public.profiles_id_seq to service_role;
 
-create function public.submit_onboarding(p_name text,p_type public.profile_type,p_student_number char(6),p_class_no int2,p_cohort int2,p_gender public.profile_gender,p_phone_number text,p_birthday date,p_description text,p_dorm_room int2)
+create function public.submit_onboarding(p_name text,p_type public.profile_type,p_student_number char(6),p_class_no int2,p_cohort int2,p_gender public.profile_gender,p_track public.profile_track,p_department text,p_is_reenrolled boolean,p_phone_number text,p_birthday date,p_description text,p_dorm_room int2)
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(false);
 begin
-  update public.profiles set name=btrim(p_name),type=p_type,student_number=p_student_number,class_no=p_class_no,cohort=p_cohort,gender=p_gender,phone_number=p_phone_number,birthday=p_birthday,description=p_description,dorm_room=p_dorm_room,onboarding_completed_at=now(),status='pending',status_updated_at=now(),status_updated_by=null
+  update public.profiles set name=btrim(p_name),type=p_type,student_number=p_student_number,class_no=p_class_no,cohort=p_cohort,gender=p_gender,track=p_track,department=nullif(btrim(p_department),''),is_reenrolled=coalesce(p_is_reenrolled,false),phone_number=p_phone_number,birthday=p_birthday,description=p_description,dorm_room=p_dorm_room,onboarding_completed_at=now(),status='pending',status_updated_at=now(),status_updated_by=null
   where id=caller_id and status in ('none','rejected');
   if not found then raise exception 'onboarding not allowed'; end if;
 end;
@@ -321,16 +337,6 @@ begin
 end;
 $$;
 
-create function public.set_anonymous_username(p_value text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(false);
-begin
-  update public.profiles set anonymous_username=case when p_value is null then null else btrim(p_value) end
-  where id=caller_id and status<>'withdrawn';
-  if not found then raise exception 'withdrawn profile cannot change anonymous username'; end if;
-end;
-$$;
-
 create function public.withdraw_profile()
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(true);
@@ -338,7 +344,7 @@ begin
   perform 1 from public.profiles where id=caller_id for update;
   if exists(select 1 from public.profiles where id=caller_id and role='admin') or exists(select 1 from public.space_members sm join public.spaces s on s.id=sm.space_id where sm.user_id=caller_id and sm.role='owner' and s.deleted_at is null)
     then raise exception 'transfer owner/admin responsibilities first'; end if;
-  update public.profiles set name='탈퇴한 사용자',anonymous_username=null,role='user',student_number=null,class_no=null,cohort=null,gender=null,phone_number=null,avatar_url=null,birthday=null,description=null,status='withdrawn',dorm_room=null,status_updated_at=now(),status_updated_by=null,deleted_at=now() where id=caller_id;
+  update public.profiles set name='탈퇴한 사용자',role='user',student_number=null,class_no=null,cohort=null,gender=null,track=null,department=null,phone_number=null,avatar_url=null,cover_image_url=null,birthday=null,description=null,status='withdrawn',dorm_room=null,is_reenrolled=false,status_updated_at=now(),status_updated_by=null,deleted_at=now() where id=caller_id;
 end;
 $$;
 
@@ -352,10 +358,20 @@ begin
   update public.profiles set avatar_url=p_storage_path where id=caller_id;
 end $$;
 
-revoke execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.set_anonymous_username(text), public.withdraw_profile() from public, anon, authenticated, service_role;
-grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.set_anonymous_username(text) to authenticated;
-grant execute on function public.withdraw_profile(), public.finalize_avatar(text) to authenticated;
-revoke execute on function public.finalize_avatar(text) from public, anon, service_role;
+create function public.finalize_cover_image(p_storage_path text)
+returns void language plpgsql security definer set search_path='' as $$
+declare caller_id bigint:=private.require_current_profile(false); expected_prefix text:=(select auth.uid())::text||'/';
+begin
+  if p_storage_path not like expected_prefix||'%' or p_storage_path !~ '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    or not exists(select 1 from storage.objects where bucket_id='profile-covers' and name=p_storage_path and created_at>=now()-interval '24 hours' and coalesce(metadata->>'mimetype','') in ('image/jpeg','image/png','image/webp'))
+    then raise exception 'invalid cover image object'; end if;
+  update public.profiles set cover_image_url=p_storage_path where id=caller_id;
+end $$;
+
+revoke execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.withdraw_profile() from public, anon, authenticated, service_role;
+grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status) to authenticated;
+grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
+revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
 
 create function public.bootstrap_first_app_admin(p_profile_id bigint)
 returns void language plpgsql security definer set search_path='' as $$

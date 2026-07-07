@@ -29,6 +29,7 @@ begin
 
   update public.profiles
   set type = 'teacher',
+      track = 'domestic',
       status = case when id = profile3 then 'pending'::public.profile_status else 'accepted'::public.profile_status end
   where id in (profile1, profile2, profile3);
 
@@ -95,6 +96,22 @@ begin
   end if;
 
   perform public.enqueue_due_storage_cleanup();
+
+  if to_regprocedure('public.update_message(bigint,text)') is not null
+    or to_regprocedure('public.mark_chat_read(bigint,bigint)') is not null
+    or to_regprocedure('public.set_message_reaction(bigint,bigint)') is not null
+    or to_regprocedure('public.finalize_message_attachment(bigint,text,text,text,bigint,integer,integer,integer)') is not null
+  then
+    raise exception 'redundant chat RPCs must not exist';
+  end if;
+
+  if not has_column_privilege('authenticated', 'public.messages', 'content', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.message_reactions', 'reaction_type_id', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.chat_room_read_states', 'last_read_message_id', 'UPDATE')
+    or not has_sequence_privilege('authenticated', 'public.message_reactions_id_seq', 'USAGE')
+  then
+    raise exception 'direct chat write grants missing';
+  end if;
 
   if exists (
     select 1

@@ -165,6 +165,9 @@ security definer
 set search_path = ''
 as $$
 begin
+  if new.content is not null then
+    new.content := nullif(btrim(new.content), '');
+  end if;
   if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
     new.is_edited := true;
     new.edited_at := now();
@@ -176,6 +179,22 @@ $$;
 create trigger trg_mark_message_edited
 before update of content on public.messages
 for each row execute function private.mark_message_edited();
+
+create function private.mark_message_reaction_updated()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger trg_mark_message_reaction_updated
+before update of reaction_type_id on public.message_reactions
+for each row execute function private.mark_message_reaction_updated();
 
 create function private.validate_direct_chat()
 returns trigger
@@ -285,6 +304,7 @@ revoke execute on function private.mark_message_edited() from public, anon, auth
 revoke execute on function private.validate_direct_chat() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_direct_chat_room() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_chat_read_state() from public, anon, authenticated, service_role;
+revoke execute on function private.mark_message_reaction_updated() from public, anon, authenticated, service_role;
 
 alter table public.chat_rooms enable row level security;
 alter table public.direct_chat_pairs enable row level security;
@@ -297,11 +317,24 @@ create policy chat_rooms_select on public.chat_rooms for select to authenticated
 create policy direct_chat_pairs_select on public.direct_chat_pairs for select to authenticated using (private.is_room_member(room_id));
 create policy chat_room_members_select on public.chat_room_members for select to authenticated using (private.is_room_member(room_id));
 create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_room_member(room_id));
+create policy messages_update on public.messages for update to authenticated using (deleted_at is null and sender_id=private.current_profile_id() and created_at>=now()-interval '15 minutes' and private.is_room_member(room_id)) with check (deleted_at is null and sender_id=private.current_profile_id() and content is not null and created_at>=now()-interval '15 minutes' and private.is_room_member(room_id));
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_select on public.message_reactions for select to authenticated using (private.can_access_message(message_id));
+create policy message_reactions_insert on public.message_reactions for insert to authenticated with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
+create policy message_reactions_update on public.message_reactions for update to authenticated using (user_id=private.current_profile_id() and private.can_access_message(message_id)) with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
+create policy message_reactions_delete on public.message_reactions for delete to authenticated using (user_id=private.current_profile_id() and private.can_access_message(message_id));
 create policy chat_room_read_states_select on public.chat_room_read_states for select to authenticated using (user_id=private.current_profile_id() and private.is_room_member(room_id));
+create policy chat_room_read_states_insert on public.chat_room_read_states for insert to authenticated with check (user_id=private.current_profile_id() and last_read_message_id is not null and private.is_room_member(room_id));
+create policy chat_room_read_states_update on public.chat_room_read_states for update to authenticated using (user_id=private.current_profile_id() and private.is_room_member(room_id)) with check (user_id=private.current_profile_id() and last_read_message_id is not null and private.is_room_member(room_id));
 
 grant select on public.chat_rooms, public.direct_chat_pairs, public.chat_room_members, public.messages, public.message_attachments, public.message_reactions, public.chat_room_read_states to authenticated;
+grant update (content) on public.messages to authenticated;
+grant insert (message_id,user_id,reaction_type_id) on public.message_reactions to authenticated;
+grant update (reaction_type_id) on public.message_reactions to authenticated;
+grant delete on public.message_reactions to authenticated;
+grant insert (room_id,user_id,last_read_message_id) on public.chat_room_read_states to authenticated;
+grant update (last_read_message_id) on public.chat_room_read_states to authenticated;
+grant usage, select on sequence public.message_reactions_id_seq to authenticated;
 grant select, insert, update, delete on public.chat_rooms, public.direct_chat_pairs, public.chat_room_members, public.messages, public.message_attachments, public.message_reactions, public.chat_room_read_states to service_role;
 grant usage, select on sequence public.chat_rooms_id_seq, public.messages_id_seq, public.message_attachments_id_seq, public.message_reactions_id_seq to service_role;
 
@@ -414,86 +447,6 @@ begin
      or public.chat_room_read_states.last_read_message_id < excluded.last_read_message_id;
 
   return message_id;
-end;
-$$;
-
-create function public.update_message(p_message_id bigint,p_content text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true); normalized_content text;
-begin
-  normalized_content := nullif(btrim(p_content), '');
-  if normalized_content is null then
-    raise exception 'message content required';
-  end if;
-  if char_length(normalized_content) > 10000 then
-    raise exception 'message content must be 1 to 10000 characters';
-  end if;
-
-  update public.messages m
-  set content = normalized_content
-  where m.id = p_message_id
-    and m.deleted_at is null
-    and m.sender_id = caller_id
-    and m.created_at >= now() - interval '15 minutes'
-    and exists (
-      select 1
-      from public.chat_room_members crm
-      where crm.room_id = m.room_id
-        and crm.user_id = caller_id
-    );
-
-  if not found then
-    raise exception 'editable active message not found';
-  end if;
-end;
-$$;
-
-create function public.mark_chat_read(p_room_id bigint,p_last_read_message_id bigint)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true);
-begin
-  if not exists(select 1 from public.chat_room_members where room_id=p_room_id and user_id=caller_id) then
-    raise exception 'room membership required';
-  end if;
-  if not exists(select 1 from public.messages where id=p_last_read_message_id and room_id=p_room_id and deleted_at is null) then
-    raise exception 'active message in room required';
-  end if;
-
-  insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
-  values(p_room_id,caller_id,p_last_read_message_id)
-  on conflict(room_id,user_id) do update
-  set last_read_message_id=excluded.last_read_message_id
-  where public.chat_room_read_states.last_read_message_id is null
-     or public.chat_room_read_states.last_read_message_id < excluded.last_read_message_id;
-end;
-$$;
-
-create function public.set_message_reaction(p_message_id bigint,p_reaction_type_id bigint default null)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true);
-begin
-  if not exists(
-    select 1
-    from public.messages m
-    join public.chat_room_members crm on crm.room_id=m.room_id and crm.user_id=caller_id
-    where m.id=p_message_id
-      and m.deleted_at is null
-      and (
-        m.content is not null
-        or exists(select 1 from public.message_attachments a where a.message_id=m.id)
-      )
-  ) then raise exception 'active message access required'; end if;
-
-  if p_reaction_type_id is null then
-    delete from public.message_reactions where message_id=p_message_id and user_id=caller_id;
-    return;
-  end if;
-
-  if not exists(select 1 from public.reaction_types where id=p_reaction_type_id) then raise exception 'reaction type not found'; end if;
-  insert into public.message_reactions(message_id,user_id,reaction_type_id)
-  values(p_message_id,caller_id,p_reaction_type_id)
-  on conflict(message_id,user_id) do update
-  set reaction_type_id=excluded.reaction_type_id, updated_at=now();
 end;
 $$;
 
@@ -672,20 +625,6 @@ begin
 end;
 $$;
 
-create function public.finalize_message_attachment(p_message_id bigint,p_storage_path text,p_file_name text,p_content_type text,p_size_bytes int8,p_sort_order int4,p_width int4,p_height int4)
-returns bigint language plpgsql security definer set search_path='' as $$
-declare caller_id bigint:=private.require_current_profile(true); attachment_id bigint; expected_prefix text;
-begin
-  select m.room_id::text||'/'||m.id::text||'/'||(select auth.uid())::text||'/' into expected_prefix from public.messages m where m.id=p_message_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
-  if expected_prefix is null or p_storage_path not like expected_prefix||'%' or p_storage_path !~ '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    or p_content_type not in ('image/jpeg','image/png','image/webp','application/pdf','text/plain','text/markdown','text/csv','application/rtf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/x-hwp','application/x-hwpx','application/haansofthwp','application/haansofthwpx','application/vnd.hancom.hwp','application/vnd.hancom.hwpx','application/vnd.oasis.opendocument.text','application/vnd.oasis.opendocument.spreadsheet','application/vnd.oasis.opendocument.presentation') or p_size_bytes>25000000
-    or not exists(select 1 from storage.objects where bucket_id='message-files' and name=p_storage_path and created_at>=now()-interval '24 hours' and metadata->>'mimetype'=p_content_type and (metadata->>'size')::int8=p_size_bytes)
-  then raise exception 'invalid message attachment'; end if;
-  insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
-  values(p_message_id,'message-files',p_storage_path,p_file_name,p_content_type,p_size_bytes,p_sort_order,p_width,p_height) returning id into attachment_id;
-  return attachment_id;
-end $$;
-
 create function public.send_message_with_attachment(p_room_id bigint,p_storage_path text,p_file_name text,p_content_type text,p_size_bytes int8,p_parent_id bigint default null,p_content text default null,p_width int4 default null,p_height int4 default null)
 returns bigint language plpgsql security definer set search_path='' as $$
 declare caller_id bigint:=private.require_current_profile(true); message_id bigint; expected_prefix text:=p_room_id::text||'/'||(select auth.uid())::text||'/'; normalized_content text;
@@ -716,12 +655,12 @@ begin
   return message_id;
 end $$;
 
-revoke execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint), public.create_group_chat_with_members(text,bigint[]), public.send_message(bigint,text,bigint), public.update_message(bigint,text), public.mark_chat_read(bigint,bigint), public.set_message_reaction(bigint,bigint), public.list_chat_rooms(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint), public.create_group_chat_with_members(text,bigint[]), public.send_message(bigint,text,bigint), public.update_message(bigint,text), public.mark_chat_read(bigint,bigint), public.set_message_reaction(bigint,bigint), public.list_chat_rooms(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
+revoke execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint), public.create_group_chat_with_members(text,bigint[]), public.send_message(bigint,text,bigint), public.list_chat_rooms(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.create_direct_chat(bigint), public.create_group_chat(text), public.add_group_member(bigint,bigint), public.remove_group_member(bigint,bigint), public.create_group_chat_with_members(text,bigint[]), public.send_message(bigint,text,bigint), public.list_chat_rooms(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
 grant execute on function public.search_messages(text,bigint) to authenticated;
 grant execute on function public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4) to authenticated;
-revoke execute on function public.finalize_message_attachment(bigint,text,text,text,int8,int4,int4,int4), public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4) from public, anon, service_role;
+revoke execute on function public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4) from public, anon, service_role;
 
 create function public.cleanup_direct_chat_room(p_room_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
