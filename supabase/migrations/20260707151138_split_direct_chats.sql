@@ -134,6 +134,7 @@ alter table "public"."messages" drop column "room_id";
 
 alter table "public"."chat_room_read_states" rename to "chat_read_states";
 alter table "public"."chat_read_states" rename column "room_id" to "chat_room_id";
+alter table "public"."chat_read_states" alter column "chat_room_id" drop not null;
 alter table "public"."chat_read_states" add column "id" bigserial;
 alter table "public"."chat_read_states" add column "direct_chat_id" bigint;
 alter table "public"."chat_read_states" add column "created_at" timestamp with time zone not null default now();
@@ -918,14 +919,14 @@ with check (
       where split_part(objects.name,'/',1)='direct'
         and dc.id::text=split_part(objects.name,'/',2)
         and private.is_direct_chat_member(dc.id)
-        and objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        and objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
     )
     or exists(
       select 1 from public.chat_room_members crm
       where split_part(objects.name,'/',1)='room'
         and crm.chat_room_id::text=split_part(objects.name,'/',2)
         and private.is_room_member(crm.chat_room_id)
-        and objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        and objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
     )
   )
 );
@@ -947,14 +948,14 @@ using (
           where split_part(objects.name,'/',1)='direct'
             and dc.id::text=split_part(objects.name,'/',2)
             and private.is_direct_chat_member(dc.id)
-            and objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+            and objects.name ~ ('^direct/'||dc.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
         )
         or exists(
           select 1 from public.chat_room_members crm
           where split_part(objects.name,'/',1)='room'
             and crm.chat_room_id::text=split_part(objects.name,'/',2)
             and private.is_room_member(crm.chat_room_id)
-            and objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+            and objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
         )
       )
     )

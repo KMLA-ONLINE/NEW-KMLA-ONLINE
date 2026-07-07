@@ -90,7 +90,7 @@ create policy message_files_insert on storage.objects for insert to authenticate
       where split_part(storage.objects.name,'/',1)='room'
         and crm.chat_room_id::text=split_part(storage.objects.name,'/',2)
         and private.is_room_member(crm.chat_room_id)
-        and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+        and storage.objects.name ~ ('^room/'||crm.chat_room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
     )
   )
 );

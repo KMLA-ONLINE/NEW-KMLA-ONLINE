@@ -34,26 +34,85 @@ export type Database = {
   }
   public: {
     Tables: {
-      chat_room_members: {
+      chat_read_states: {
         Row: {
-          joined_at: string
-          room_id: number
+          chat_room_id: number | null
+          created_at: string
+          direct_chat_id: number | null
+          id: number
+          last_read_at: string
+          last_read_message_id: number | null
           user_id: number
         }
         Insert: {
-          joined_at?: string
-          room_id: number
+          chat_room_id?: number | null
+          created_at?: string
+          direct_chat_id?: number | null
+          id?: number
+          last_read_at?: string
+          last_read_message_id?: number | null
           user_id: number
         }
         Update: {
-          joined_at?: string
-          room_id?: number
+          chat_room_id?: number | null
+          created_at?: string
+          direct_chat_id?: number | null
+          id?: number
+          last_read_at?: string
+          last_read_message_id?: number | null
           user_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "chat_room_members_room_id_fkey"
-            columns: ["room_id"]
+            foreignKeyName: "chat_read_states_chat_room_id_fkey"
+            columns: ["chat_room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_read_states_direct_chat_id_fkey"
+            columns: ["direct_chat_id"]
+            isOneToOne: false
+            referencedRelation: "direct_chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_read_states_last_read_message_id_fkey"
+            columns: ["last_read_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_read_states_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_room_members: {
+        Row: {
+          chat_room_id: number
+          joined_at: string
+          user_id: number
+        }
+        Insert: {
+          chat_room_id: number
+          joined_at?: string
+          user_id: number
+        }
+        Update: {
+          chat_room_id?: number
+          joined_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_room_members_chat_room_id_fkey"
+            columns: ["chat_room_id"]
             isOneToOne: false
             referencedRelation: "chat_rooms"
             referencedColumns: ["id"]
@@ -67,70 +126,24 @@ export type Database = {
           },
         ]
       }
-      chat_room_read_states: {
-        Row: {
-          last_read_at: string
-          last_read_message_id: number | null
-          room_id: number
-          user_id: number
-        }
-        Insert: {
-          last_read_at?: string
-          last_read_message_id?: number | null
-          room_id: number
-          user_id: number
-        }
-        Update: {
-          last_read_at?: string
-          last_read_message_id?: number | null
-          room_id?: number
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_room_read_states_last_read_message_id_fkey"
-            columns: ["last_read_message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_room_read_states_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_room_read_states_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       chat_rooms: {
         Row: {
           created_at: string
           created_by: number | null
           id: number
-          is_group: boolean
-          name: string | null
+          name: string
         }
         Insert: {
           created_at?: string
           created_by?: number | null
           id?: number
-          is_group?: boolean
-          name?: string | null
+          name: string
         }
         Update: {
           created_at?: string
           created_by?: number | null
           id?: number
-          is_group?: boolean
-          name?: string | null
+          name?: string
         }
         Relationships: [
           {
@@ -367,42 +380,35 @@ export type Database = {
           },
         ]
       }
-      direct_chat_pairs: {
+      direct_chats: {
         Row: {
           created_at: string
-          room_id: number
+          id: number
           user1_id: number
           user2_id: number
         }
         Insert: {
           created_at?: string
-          room_id: number
+          id?: number
           user1_id: number
           user2_id: number
         }
         Update: {
           created_at?: string
-          room_id?: number
+          id?: number
           user1_id?: number
           user2_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "direct_chat_pairs_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: true
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "direct_chat_pairs_user1_id_fkey"
+            foreignKeyName: "direct_chats_user1_id_fkey"
             columns: ["user1_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "direct_chat_pairs_user2_id_fkey"
+            foreignKeyName: "direct_chats_user2_id_fkey"
             columns: ["user2_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -561,42 +567,52 @@ export type Database = {
       }
       messages: {
         Row: {
+          chat_room_id: number | null
           content: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
+          direct_chat_id: number | null
           edited_at: string | null
           id: number
           is_edited: boolean
           parent_id: number | null
-          room_id: number
           sender_id: number
         }
         Insert: {
+          chat_room_id?: number | null
           content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
+          direct_chat_id?: number | null
           edited_at?: string | null
           id?: number
           is_edited?: boolean
           parent_id?: number | null
-          room_id: number
           sender_id: number
         }
         Update: {
+          chat_room_id?: number | null
           content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
+          direct_chat_id?: number | null
           edited_at?: string | null
           id?: number
           is_edited?: boolean
           parent_id?: number | null
-          room_id?: number
           sender_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_chat_room_id_fkey"
+            columns: ["chat_room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_deleted_by_fkey"
             columns: ["deleted_by"]
@@ -605,17 +621,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "messages_direct_chat_id_fkey"
+            columns: ["direct_chat_id"]
+            isOneToOne: false
+            referencedRelation: "direct_chats"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "messages_parent_id_fkey"
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "messages_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "chat_rooms"
             referencedColumns: ["id"]
           },
           {
@@ -1254,10 +1270,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      add_group_member: {
-        Args: { p_room_id: number; p_user_id: number }
-        Returns: undefined
-      }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
@@ -1270,17 +1282,11 @@ export type Database = {
           storage_path: string
         }[]
       }
-      cleanup_direct_chat_room: {
-        Args: { p_room_id: number }
+      cleanup_direct_chat: {
+        Args: { p_direct_chat_id: number }
         Returns: undefined
       }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
-      create_direct_chat: { Args: { p_other_user_id: number }; Returns: number }
-      create_group_chat: { Args: { p_name: string }; Returns: number }
-      create_group_chat_with_members: {
-        Args: { p_member_ids?: number[]; p_name: string }
-        Returns: number
-      }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
         Args: { p_error: string; p_id: number }
@@ -1292,19 +1298,25 @@ export type Database = {
         Returns: undefined
       }
       get_chat_messages: {
-        Args: { p_before_id?: number; p_limit?: number; p_room_id: number }
+        Args: {
+          p_before_id?: number
+          p_chat_room_id?: number
+          p_direct_chat_id?: number
+          p_limit?: number
+        }
         Returns: {
           attachments: Json
+          chat_room_id: number
           content: string
           created_at: string
           deleted_at: string
+          direct_chat_id: number
           edited_at: string
           is_edited: boolean
           message_id: number
           parent_message: Json
           reactions: Json
           reads: Json
-          room_id: number
           sender: Json
           sender_id: number
         }[]
@@ -1313,10 +1325,11 @@ export type Database = {
         Args: never
         Returns: {
           avatar_url: string
+          chat_room_id: number
           created_at: string
+          direct_chat_id: number
           display_initials: string
           display_name: string
-          is_group: boolean
           last_message_content: string
           last_message_created_at: string
           last_message_has_attachment: boolean
@@ -1325,12 +1338,11 @@ export type Database = {
           last_message_sender_name: string
           member_count: number
           name: string
-          room_id: number
           unread_count: number
         }[]
       }
       remove_group_member: {
-        Args: { p_room_id: number; p_user_id: number }
+        Args: { p_chat_room_id: number; p_user_id: number }
         Returns: undefined
       }
       request_attachment_removal: {
@@ -1345,7 +1357,11 @@ export type Database = {
         Returns: undefined
       }
       search_messages: {
-        Args: { p_query: string; p_room_id: number }
+        Args: {
+          p_chat_room_id?: number
+          p_direct_chat_id?: number
+          p_query: string
+        }
         Returns: {
           content_snippet: string
           created_at: string
@@ -1353,18 +1369,28 @@ export type Database = {
           sender_name: string
         }[]
       }
-      send_message: {
-        Args: { p_content?: string; p_parent_id?: number; p_room_id: number }
+      send_direct_message_with_attachment: {
+        Args: {
+          p_content?: string
+          p_content_type: string
+          p_direct_chat_id: number
+          p_file_name: string
+          p_height?: number
+          p_parent_id?: number
+          p_size_bytes: number
+          p_storage_path: string
+          p_width?: number
+        }
         Returns: number
       }
-      send_message_with_attachment: {
+      send_room_message_with_attachment: {
         Args: {
+          p_chat_room_id: number
           p_content?: string
           p_content_type: string
           p_file_name: string
           p_height?: number
           p_parent_id?: number
-          p_room_id: number
           p_size_bytes: number
           p_storage_path: string
           p_width?: number

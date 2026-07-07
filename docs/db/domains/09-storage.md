@@ -4,7 +4,7 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 파일 업로드 모델과 blob 정리 파이프라인. private bucket 5개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`) + storage RLS + finalize RPC + cleanup queue 조합.
 
-업로드는 2단계다: (1) Storage SDK로 provisional 경로(`{parent}/{auth_uid}/{uuid}`)에 직접 업로드 — bucket별 insert policy가 경로/소유권을 검증, (2) finalize류 RPC가 object 존재/MIME/크기/경로를 재검증하고 DB row를 만든다. bucket 정의 자체는 데이터라서 스키마가 아니라 baseline migration에 있다.
+업로드는 2단계다: (1) Storage SDK로 provisional 경로에 직접 업로드 — bucket별 insert policy가 경로/소유권을 검증, (2) finalize류 RPC가 object 존재/MIME/크기/경로를 재검증하고 DB row를 만든다. bucket 정의 자체는 데이터라서 스키마가 아니라 baseline migration에 있다.
 
 ## 테이블
 
@@ -36,5 +36,6 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 ## 주의
 
 - 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프.
-- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachment()`는 chat 문서에 있다.
+- profile 이미지는 `{auth_uid}/{uuid}`, 메시지 첨부는 `direct/{direct_chat_id}/{auth_uid}/{uuid}` 또는 `room/{chat_room_id}/{auth_uid}/{uuid}` 경로를 사용한다.
+- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_direct_message_with_attachment()`/`send_room_message_with_attachment()`는 chat 문서에 있다.
 - post 첨부/space 이미지 finalize RPC는 2026-07 정리에서 제거돼 현재 해당 bucket의 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).
