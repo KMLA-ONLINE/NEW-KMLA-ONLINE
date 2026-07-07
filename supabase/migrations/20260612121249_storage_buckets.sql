@@ -30,7 +30,17 @@ create policy post_files_select on storage.objects for select to authenticated u
   bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=storage.objects.name and private.can_access_post(a.post_id))
 );
 create policy message_files_select on storage.objects for select to authenticated using (
-  bucket_id='message-files' and exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
+  bucket_id='message-files' and (
+    exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
+    or (
+      split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
+        select 1 from public.chat_room_members crm
+        where crm.room_id::text=split_part(storage.objects.name,'/',1)
+          and private.is_room_member(crm.room_id)
+          and storage.objects.name ~ ('^'||crm.room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+      )
+    )
+  )
 );
 create policy avatars_insert on storage.objects for insert to authenticated with check (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
@@ -56,14 +66,11 @@ create policy post_files_insert on storage.objects for insert to authenticated w
   )
 );
 create policy message_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='message-files' and split_part(storage.objects.name,'/',3)=(select auth.uid())::text and exists(
-    select 1 from public.messages m
-    where m.room_id::text=split_part(storage.objects.name,'/',1)
-      and m.id::text=split_part(storage.objects.name,'/',2)
-      and m.sender_id=private.current_profile_id()
-      and m.deleted_at is null
-      and private.is_room_member(m.room_id)
-      and storage.objects.name ~ ('^'||m.room_id::text||'/'||m.id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  bucket_id='message-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
+    select 1 from public.chat_room_members crm
+    where crm.room_id::text=split_part(storage.objects.name,'/',1)
+      and private.is_room_member(crm.room_id)
+      and storage.objects.name ~ ('^'||crm.room_id::text||'/'||(select auth.uid())::text||'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
   )
 );
 
@@ -95,6 +102,36 @@ begin
   return attachment_id;
 end $$;
 
+create function public.send_message_with_attachment(p_room_id bigint,p_storage_path text,p_file_name text,p_content_type text,p_size_bytes int8,p_parent_id bigint default null,p_content text default null,p_width int4 default null,p_height int4 default null)
+returns bigint language plpgsql security definer set search_path='' as $$
+declare caller_id bigint:=private.require_current_profile(true); message_id bigint; expected_prefix text:=p_room_id::text||'/'||(select auth.uid())::text||'/'; normalized_content text;
+begin
+  if not exists(select 1 from public.chat_room_members where room_id=p_room_id and user_id=caller_id) then raise exception 'room membership required'; end if;
+  if not private.is_valid_message_parent(p_parent_id,p_room_id) then raise exception 'active parent message in room required'; end if;
+  normalized_content:=nullif(btrim(p_content),'');
+  if normalized_content is not null and char_length(normalized_content)>10000 then raise exception 'message content must be 1 to 10000 characters'; end if;
+  if p_storage_path is null or p_storage_path not like expected_prefix||'%' or p_storage_path !~ '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    or p_content_type not in ('image/jpeg','image/png','image/webp','application/pdf','text/plain','text/markdown','text/csv','application/rtf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/x-hwp','application/x-hwpx','application/haansofthwp','application/haansofthwpx','application/vnd.hancom.hwp','application/vnd.hancom.hwpx','application/vnd.oasis.opendocument.text','application/vnd.oasis.opendocument.spreadsheet','application/vnd.oasis.opendocument.presentation') or p_size_bytes>25000000
+    or not exists(select 1 from storage.objects where bucket_id='message-files' and name=p_storage_path and created_at>=now()-interval '24 hours' and metadata->>'mimetype'=p_content_type and (metadata->>'size')::int8=p_size_bytes)
+  then raise exception 'invalid message attachment'; end if;
+
+  insert into public.messages(room_id,sender_id,parent_id,content)
+  values(p_room_id,caller_id,p_parent_id,normalized_content)
+  returning id into message_id;
+
+  insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
+  values(message_id,'message-files',p_storage_path,p_file_name,p_content_type,p_size_bytes,0,p_width,p_height);
+
+  insert into public.chat_room_read_states(room_id,user_id,last_read_message_id)
+  values(p_room_id,caller_id,message_id)
+  on conflict(room_id,user_id) do update
+  set last_read_message_id=excluded.last_read_message_id
+  where public.chat_room_read_states.last_read_message_id is null
+     or public.chat_room_read_states.last_read_message_id<excluded.last_read_message_id;
+
+  return message_id;
+end $$;
+
 create function public.finalize_avatar(p_storage_path text)
 returns void language plpgsql security definer set search_path='' as $$
 declare caller_id bigint:=private.require_current_profile(false); expected_prefix text:=(select auth.uid())::text||'/';
@@ -119,16 +156,34 @@ end $$;
 
 create function public.request_attachment_removal(p_attachment_kind text,p_attachment_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
-declare caller_id bigint:=private.require_current_profile(true); bucket text; path text;
+declare caller_id bigint:=private.require_current_profile(true); bucket text; path text; target_message_id bigint;
 begin
   if p_attachment_kind='post' then
     select a.storage_bucket,a.storage_path into bucket,path from public.post_attachments a join public.posts p on p.id=a.post_id where a.id=p_attachment_id and p.author_id=caller_id and p.deleted_at is null;
   elsif p_attachment_kind='message' then
-    select a.storage_bucket,a.storage_path into bucket,path from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
+    select a.storage_bucket,a.storage_path,a.message_id into bucket,path,target_message_id from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.is_room_member(m.room_id);
   else raise exception 'invalid attachment kind'; end if;
   if path is null then raise exception 'attachment not found or not owned'; end if;
+
   insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by) values(bucket,path,caller_id)
-  on conflict(storage_bucket,storage_path) do update set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),processed_at=null;
+  on conflict(storage_bucket,storage_path) do update
+  set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),
+      processed_at=null,
+      last_error=null;
+
+  if p_attachment_kind='post' then
+    delete from public.post_attachments where id=p_attachment_id and storage_path=path;
+  else
+    delete from public.message_attachments where id=p_attachment_id and storage_path=path;
+    delete from public.message_reactions where message_id=target_message_id;
+
+    update public.messages m
+    set content=null,deleted_at=now(),deleted_by=caller_id
+    where m.id=target_message_id
+      and m.deleted_at is null
+      and m.content is null
+      and not exists(select 1 from public.message_attachments a where a.message_id=m.id);
+  end if;
 end $$;
 
 create function public.enqueue_due_storage_cleanup()
@@ -231,15 +286,6 @@ begin
     perform public.purge_deleted_content('comment',target_id);
     result:=result+1;
   end loop;
-  for target_id in
-    select m.id from public.messages m
-    where m.deleted_at<now()-interval '7 days'
-      and not exists(select 1 from public.messages where parent_id=m.id and deleted_at is null)
-      and not exists(select 1 from public.message_attachments where message_id in (select id from public.messages where id=m.id or parent_id=m.id))
-  loop
-    perform public.purge_deleted_content('message',target_id);
-    result:=result+1;
-  end loop;
   return result;
 end $$;
 
@@ -260,7 +306,7 @@ revoke all on table private.attachment_cleanup_queue from public,anon,authentica
 revoke all on sequence private.attachment_cleanup_queue_id_seq from public,anon,authenticated;
 grant select,insert,update,delete on private.attachment_cleanup_queue to service_role;
 grant usage,select on sequence private.attachment_cleanup_queue_id_seq to service_role;
-grant execute on function public.finalize_post_attachment(bigint,text,text,text,int8,int4,text,int4,int4),public.finalize_message_attachment(bigint,text,text,text,int8,int4,int4,int4),public.finalize_avatar(text),public.finalize_space_image(bigint,text),public.request_attachment_removal(text,bigint) to authenticated;
-revoke execute on function public.finalize_post_attachment(bigint,text,text,text,int8,int4,text,int4,int4),public.finalize_message_attachment(bigint,text,text,text,int8,int4,int4,int4),public.finalize_avatar(text),public.finalize_space_image(bigint,text),public.request_attachment_removal(text,bigint) from public,anon,service_role;
+grant execute on function public.finalize_post_attachment(bigint,text,text,text,int8,int4,text,int4,int4),public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4),public.finalize_avatar(text),public.finalize_space_image(bigint,text),public.request_attachment_removal(text,bigint) to authenticated;
+revoke execute on function public.finalize_post_attachment(bigint,text,text,text,int8,int4,text,int4,int4),public.finalize_message_attachment(bigint,text,text,text,int8,int4,int4,int4),public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4),public.finalize_avatar(text),public.finalize_space_image(bigint,text),public.request_attachment_removal(text,bigint) from public,anon,service_role;
 grant execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text),public.cleanup_deleted_content(),public.reconcile_cached_counts() to service_role;
 revoke execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text),public.cleanup_deleted_content(),public.reconcile_cached_counts() from public,anon,authenticated;

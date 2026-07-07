@@ -26,11 +26,10 @@ create index idx_chat_room_members_user_joined_at on public.chat_room_members (u
 create index idx_chat_room_members_user_room on public.chat_room_members (user_id, room_id);
 create index idx_messages_sender_created_at on public.messages (sender_id, created_at);
 create index idx_messages_parent_created_at on public.messages (parent_id, created_at);
-create index idx_messages_active_room_created_at on public.messages (room_id, created_at)
+create index idx_messages_active_room_id on public.messages (room_id, id desc)
 where deleted_at is null;
 create index idx_message_reactions_type_count on public.message_reactions (message_id, reaction_type_id);
 create index idx_message_reactions_user_created_at on public.message_reactions (user_id, created_at);
-create index idx_message_reads_user_read_at on public.message_reads (user_id, read_at);
 create index idx_chat_room_read_states_user_last_read_at on public.chat_room_read_states (user_id, last_read_at);
 
 create index idx_notifications_recipient_created_at on public.notifications (recipient_id, created_at);
