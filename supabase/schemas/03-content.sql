@@ -25,7 +25,6 @@ create table public.post_attachments (
   content_type text not null,
   size_bytes int8 null,
   sort_order int4 not null default 0,
-  alt text null,
   width int4 null,
   height int4 null,
   created_at timestamptz not null default now()
@@ -83,8 +82,7 @@ alter table public.post_attachments
   add constraint post_attachments_file_name_check check (char_length(btrim(file_name)) between 1 and 255),
   add constraint post_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint post_attachments_size_check check (size_bytes is null or size_bytes >= 0),
-  add constraint post_attachments_sort_order_check check (sort_order >= 0),
-  add constraint post_attachments_alt_check check (alt is null or char_length(alt) <= 1000);
+  add constraint post_attachments_sort_order_check check (sort_order >= 0);
 
 alter table public.comments
   add constraint comments_parent_check check (parent_id is null or parent_id <> id),
@@ -93,18 +91,30 @@ alter table public.comments
 
 create function private.can_access_post(p_post_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
-  select exists(select 1 from public.posts p where p.id=p_post_id and p.deleted_at is null and private.is_space_member(p.space_id))
+  select exists(select 1 from public.posts p where p.id=p_post_id and p.deleted_at is null and private.can_participate_space(p.space_id))
 $$;
 create function private.can_access_comment(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.comments c where c.id=p_comment_id and c.deleted_at is null and private.can_access_post(c.post_id))
 $$;
-create function private.has_active_direct_reply(p_comment_id bigint)
+-- Comments nest to arbitrary depth, so a soft-deleted comment must stay visible (as a tombstone)
+-- while any descendant at any depth is still active, otherwise the reply chain to it would orphan.
+create function private.has_active_descendant(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
-  select exists(select 1 from public.comments where parent_id=p_comment_id and deleted_at is null)
+  with recursive descendants as (
+    select c.id, c.deleted_at, 1 as depth
+    from public.comments c
+    where c.parent_id = p_comment_id
+    union all
+    select child.id, child.deleted_at, d.depth + 1
+    from public.comments child
+    join descendants d on child.parent_id = d.id
+    where d.depth < 50
+  )
+  select exists (select 1 from descendants where deleted_at is null)
 $$;
-revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_direct_reply(bigint) from public, anon, service_role;
-grant execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_direct_reply(bigint) to authenticated;
+revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) from public, anon, service_role;
+grant execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) to authenticated;
 
 create function private.validate_comment_parent()
 returns trigger
@@ -118,10 +128,9 @@ begin
     from public.comments as parent
     where parent.id = new.parent_id
       and parent.post_id = new.post_id
-      and parent.parent_id is null
       and parent.deleted_at is null
   ) then
-    raise exception 'comment parent must be an active top-level comment on the same post';
+    raise exception 'comment parent must be an active comment on the same post';
   end if;
   return new;
 end;
@@ -136,12 +145,12 @@ revoke execute on function private.validate_comment_parent() from public, anon, 
 alter table public.posts enable row level security;
 alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
-create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.is_space_member(space_id));
-create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.is_space_member(space_id));
-create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.is_space_member(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.is_space_member(space_id));
+create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
+create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_participate_space(space_id));
+create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
-create policy comments_select on public.comments for select to authenticated using (private.can_access_post(post_id) and (deleted_at is null or private.has_active_direct_reply(id)));
+create policy comments_select on public.comments for select to authenticated using (private.can_access_post(post_id) and (deleted_at is null or private.has_active_descendant(id)));
 create policy comments_insert on public.comments for insert to authenticated with check (author_id=private.current_profile_id() and private.can_access_post(post_id));
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
 

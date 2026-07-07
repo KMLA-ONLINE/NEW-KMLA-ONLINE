@@ -723,7 +723,6 @@ export type Database = {
       }
       post_attachments: {
         Row: {
-          alt: string | null
           content_type: string
           created_at: string
           file_name: string
@@ -737,7 +736,6 @@ export type Database = {
           width: number | null
         }
         Insert: {
-          alt?: string | null
           content_type: string
           created_at?: string
           file_name: string
@@ -751,7 +749,6 @@ export type Database = {
           width?: number | null
         }
         Update: {
-          alt?: string | null
           content_type?: string
           created_at?: string
           file_name?: string
@@ -1070,6 +1067,57 @@ export type Database = {
           },
         ]
       }
+      space_invites: {
+        Row: {
+          created_at: string
+          created_by: number | null
+          expires_at: string | null
+          id: number
+          max_uses: number | null
+          revoked_at: string | null
+          space_id: number
+          token: string
+          use_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          expires_at?: string | null
+          id?: number
+          max_uses?: number | null
+          revoked_at?: string | null
+          space_id: number
+          token: string
+          use_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          expires_at?: string | null
+          id?: number
+          max_uses?: number | null
+          revoked_at?: string | null
+          space_id?: number
+          token?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_invites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_invites_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_members: {
         Row: {
           ban_reason: string | null
@@ -1077,6 +1125,7 @@ export type Database = {
           banned_by: number | null
           joined_at: string
           notification_setting: Database["public"]["Enums"]["notification_setting"]
+          pinned_at: string | null
           role: Database["public"]["Enums"]["member_role"]
           space_id: number
           user_id: number
@@ -1087,6 +1136,7 @@ export type Database = {
           banned_by?: number | null
           joined_at?: string
           notification_setting?: Database["public"]["Enums"]["notification_setting"]
+          pinned_at?: string | null
           role?: Database["public"]["Enums"]["member_role"]
           space_id: number
           user_id: number
@@ -1097,6 +1147,7 @@ export type Database = {
           banned_by?: number | null
           joined_at?: string
           notification_setting?: Database["public"]["Enums"]["notification_setting"]
+          pinned_at?: string | null
           role?: Database["public"]["Enums"]["member_role"]
           space_id?: number
           user_id?: number
@@ -1236,6 +1287,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_space_invite: { Args: { p_token: string }; Returns: number }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
@@ -1256,6 +1308,10 @@ export type Database = {
       create_direct_conversation: {
         Args: { p_peer_id: number }
         Returns: number
+      }
+      create_space_invite: {
+        Args: { p_expires_at?: string; p_max_uses?: number; p_space_id: number }
+        Returns: string
       }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
@@ -1289,6 +1345,8 @@ export type Database = {
           sender_id: number
         }[]
       }
+      join_space: { Args: { p_space_id: number }; Returns: undefined }
+      leave_space: { Args: { p_space_id: number }; Returns: undefined }
       list_conversations: {
         Args: never
         Returns: {
@@ -1324,6 +1382,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      revoke_space_invite: { Args: { p_invite_id: number }; Returns: undefined }
       search_messages: {
         Args: { p_conversation_id: number; p_query: string }
         Returns: {
@@ -1380,7 +1439,7 @@ export type Database = {
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
-      space_join_policy: "auto_join" | "invite_only"
+      space_join_policy: "open" | "public" | "invite_only"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -1523,7 +1582,7 @@ export const Constants = {
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
-      space_join_policy: ["auto_join", "invite_only"],
+      space_join_policy: ["open", "public", "invite_only"],
       space_type: ["group", "community"],
     },
   },

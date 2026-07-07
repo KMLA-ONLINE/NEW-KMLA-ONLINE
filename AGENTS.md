@@ -39,7 +39,6 @@
 
 - `.react-router/` is generated and gitignored.
 - The `lint`, `lint:fix`, and `format` scripts only target `app/`; root config files are outside those scripts.
-- Pre-commit runs `npx lint-staged` on staged `app/**/*.{ts,tsx}` only.
 
 ## Documentation
 
@@ -101,4 +100,3 @@
 - `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
 - `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54723/api/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
 - For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
-- This repo has local Supabase config in `supabase/config.toml`. For where DB structure lives and how to change it, follow the Database Schema Workflow section above.
