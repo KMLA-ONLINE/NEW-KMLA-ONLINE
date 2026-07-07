@@ -8,16 +8,10 @@ declare
   profile1 bigint;
   profile2 bigint;
   profile3 bigint;
-  space1 bigint;
-  post1 bigint;
-  post2 bigint;
-  comment1 bigint;
   room1 bigint;
   room2 bigint;
   message1 bigint;
-  notification_id bigint;
   queue1 bigint;
-  cleanup_count bigint;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
   values
@@ -80,92 +74,7 @@ begin
     if sqlerrm = 'direct room mutation was not blocked' then raise; end if;
   end;
 
-  space1 := public.create_space('community', 'Schema runtime check', null, 'auto_join');
-  insert into public.space_members (space_id, user_id)
-  values (space1, profile2)
-  on conflict do nothing;
-  insert into public.posts (space_id, space_type, author_id, title, content)
-  values (space1, 'community', profile1, '띄어 쓰기 검색', 'body')
-  returning id into post1;
-  insert into public.comments (post_id, author_id, content)
-  values (post1, profile2, 'child')
-  returning id into comment1;
-  if not exists (select 1 from public.search_posts('띄어쓰기', 'community', space1) where post_id = post1) then
-    raise exception 'space-insensitive post search failed';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'off'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'off notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is not null then
-    raise exception 'off notification setting did not suppress space notification';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'mentions'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'mentions all notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is not null then
-    raise exception 'mentions notification setting did not suppress all-level notification';
-  end if;
-  notification_id := public.create_notification(profile2, 'mentions notification test', null, profile1, p_post_id := post1, p_level := 'mention');
-  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
-    raise exception 'mention-level notification was not created';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'all'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'all notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
-    raise exception 'all notification setting did not allow all-level notification';
-  end if;
-
-  perform public.purge_deleted_content('post', post1);
-  if not exists (select 1 from public.posts where id = post1)
-    or not exists (select 1 from public.comments where id = comment1)
-  then
-    raise exception 'active purge modified content';
-  end if;
-
-  perform set_config('request.jwt.claim.sub', user2::text, true);
-  begin
-    perform public.soft_delete_post(post1);
-    raise exception 'unauthorized post deletion was not blocked';
-  exception when others then
-    if sqlerrm = 'unauthorized post deletion was not blocked' then raise; end if;
-  end;
-  if exists (select 1 from public.posts where id = post1 and deleted_at is not null) then
-    raise exception 'unauthorized post deletion changed target';
-  end if;
-
-  perform set_config('request.jwt.claim.sub', user1::text, true);
-  perform public.soft_delete_post(post1);
-  perform public.purge_deleted_content('post', post1);
-  if exists (select 1 from public.posts where id = post1)
-    or exists (select 1 from public.comments where id = comment1)
-  then
-    raise exception 'deleted post purge failed';
-  end if;
-
-  insert into public.posts (space_id, space_type, author_id, title, content, deleted_at, deleted_by)
-  values (space1, 'community', profile1, 'scheduled purge', 'body', now() - interval '8 days', profile1)
-  returning id into post2;
-  cleanup_count := public.cleanup_deleted_content();
-  if cleanup_count <> 1 or exists (select 1 from public.posts where id = post2) then
-    raise exception 'scheduled deleted post cleanup failed: count=%, exists=%',
-      cleanup_count,
-      exists (select 1 from public.posts where id = post2);
-  end if;
-
   perform public.bootstrap_first_app_admin(profile1);
-  begin
-    perform public.change_app_role(profile3, 'admin');
-    raise exception 'pending profile admin promotion was not blocked';
-  exception when others then
-    if sqlerrm = 'pending profile admin promotion was not blocked' then raise; end if;
-  end;
 
   insert into private.attachment_cleanup_queue (storage_bucket, storage_path)
   values ('avatars', user1::text || '/55555555-5555-4555-8555-555555555555')
@@ -186,7 +95,6 @@ begin
   end if;
 
   perform public.enqueue_due_storage_cleanup();
-  perform public.reconcile_cached_counts();
 
   if exists (
     select 1
@@ -213,8 +121,8 @@ begin
     raise exception 'document attachment MIME allowlist contract failed';
   end if;
 
-  if has_function_privilege('authenticated', 'public.cleanup_deleted_content()', 'EXECUTE')
-    or not has_function_privilege('service_role', 'public.cleanup_deleted_content()', 'EXECUTE')
+  if has_function_privilege('authenticated', 'public.enqueue_due_storage_cleanup()', 'EXECUTE')
+    or not has_function_privilege('service_role', 'public.enqueue_due_storage_cleanup()', 'EXECUTE')
     or has_table_privilege('authenticated', 'private.attachment_cleanup_queue', 'SELECT')
     or not has_table_privilege('service_role', 'private.attachment_cleanup_queue', 'SELECT')
   then

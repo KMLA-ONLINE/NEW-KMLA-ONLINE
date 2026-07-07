@@ -1266,26 +1266,8 @@ export type Database = {
         Args: { p_room_id: number; p_user_id: number }
         Returns: undefined
       }
-      add_space_member: {
-        Args: { p_space_id: number; p_user_id: number }
-        Returns: undefined
-      }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
-        Returns: undefined
-      }
-      change_app_role: {
-        Args: {
-          p_profile_id: number
-          p_role: Database["public"]["Enums"]["app_role"]
-        }
-        Returns: undefined
-      }
-      change_profile_status: {
-        Args: {
-          p_profile_id: number
-          p_status: Database["public"]["Enums"]["profile_status"]
-        }
         Returns: undefined
       }
       claim_storage_cleanup: {
@@ -1296,55 +1278,13 @@ export type Database = {
           storage_path: string
         }[]
       }
-      cleanup_deleted_content: { Args: never; Returns: number }
       cleanup_direct_chat_room: {
         Args: { p_room_id: number }
         Returns: undefined
       }
-      cleanup_notifications: { Args: never; Returns: number }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
-      create_club: {
-        Args: {
-          p_description: string
-          p_name: string
-          p_type: Database["public"]["Enums"]["club_type"]
-        }
-        Returns: number
-      }
-      create_club_apply_round: {
-        Args: { p_ends_at: string; p_name: string; p_starts_at: string }
-        Returns: number
-      }
       create_direct_chat: { Args: { p_other_user_id: number }; Returns: number }
       create_group_chat: { Args: { p_name: string }; Returns: number }
-      create_notification: {
-        Args: {
-          p_actor_id?: number
-          p_body: string
-          p_comment_id?: number
-          p_level?: Database["public"]["Enums"]["notification_level"]
-          p_message_id?: number
-          p_post_id?: number
-          p_recipient_id: number
-          p_space_id?: number
-          p_title: string
-        }
-        Returns: number
-      }
-      create_space: {
-        Args: {
-          p_description: string
-          p_join_policy: Database["public"]["Enums"]["space_join_policy"]
-          p_name: string
-          p_type: Database["public"]["Enums"]["space_type"]
-        }
-        Returns: number
-      }
-      delete_club: { Args: { p_club_id: number }; Returns: undefined }
-      delete_club_apply_round: {
-        Args: { p_round_id: number }
-        Returns: undefined
-      }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
         Args: { p_error: string; p_id: number }
@@ -1364,35 +1304,6 @@ export type Database = {
         }
         Returns: number
       }
-      finalize_post_attachment: {
-        Args: {
-          p_alt: string
-          p_content_type: string
-          p_file_name: string
-          p_height: number
-          p_post_id: number
-          p_size_bytes: number
-          p_sort_order: number
-          p_storage_path: string
-          p_width: number
-        }
-        Returns: number
-      }
-      finalize_space_image: {
-        Args: { p_space_id: number; p_storage_path: string }
-        Returns: undefined
-      }
-      grant_user_permission: {
-        Args: { p_permission_key: string; p_user_id: number }
-        Returns: undefined
-      }
-      join_space: { Args: { p_space_id: number }; Returns: undefined }
-      leave_space: { Args: { p_space_id: number }; Returns: undefined }
-      purge_deleted_content: {
-        Args: { p_entity_id: number; p_entity_type: string }
-        Returns: undefined
-      }
-      reconcile_cached_counts: { Args: never; Returns: undefined }
       remove_group_member: {
         Args: { p_room_id: number; p_user_id: number }
         Returns: undefined
@@ -1408,10 +1319,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      revoke_user_permission: {
-        Args: { p_permission_key: string; p_user_id: number }
-        Returns: undefined
-      }
       search_messages: {
         Args: { p_query: string; p_room_id: number }
         Returns: {
@@ -1421,48 +1328,8 @@ export type Database = {
           sender_name: string
         }[]
       }
-      search_posts: {
-        Args: {
-          p_query: string
-          p_space_id?: number
-          p_space_type?: Database["public"]["Enums"]["space_type"]
-        }
-        Returns: {
-          author_name: string
-          content_snippet: string
-          created_at: string
-          match_type: string
-          post_id: number
-          space_name: string
-          title: string
-        }[]
-      }
       set_anonymous_username: { Args: { p_value: string }; Returns: undefined }
-      set_post_pin: {
-        Args: { p_is_pinned: boolean; p_post_id: number }
-        Returns: undefined
-      }
-      set_space_member_ban: {
-        Args: {
-          p_banned: boolean
-          p_reason?: string
-          p_space_id: number
-          p_user_id: number
-        }
-        Returns: undefined
-      }
-      set_space_member_role: {
-        Args: {
-          p_role: Database["public"]["Enums"]["member_role"]
-          p_space_id: number
-          p_user_id: number
-        }
-        Returns: undefined
-      }
-      soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
-      soft_delete_post: { Args: { p_id: number }; Returns: undefined }
-      soft_delete_space: { Args: { p_id: number }; Returns: undefined }
       submit_onboarding: {
         Args: {
           p_birthday: string
@@ -1475,63 +1342,6 @@ export type Database = {
           p_phone_number: string
           p_student_number: string
           p_type: Database["public"]["Enums"]["profile_type"]
-        }
-        Returns: undefined
-      }
-      transfer_space_owner: {
-        Args: { p_new_owner_id: number; p_space_id: number }
-        Returns: undefined
-      }
-      update_club: {
-        Args: {
-          p_club_id: number
-          p_description: string
-          p_name: string
-          p_type: Database["public"]["Enums"]["club_type"]
-        }
-        Returns: undefined
-      }
-      update_club_apply_round: {
-        Args: {
-          p_ends_at: string
-          p_name: string
-          p_round_id: number
-          p_starts_at: string
-        }
-        Returns: undefined
-      }
-      update_space: {
-        Args: {
-          p_description: string
-          p_join_policy: Database["public"]["Enums"]["space_join_policy"]
-          p_name: string
-          p_space_id: number
-          p_type?: Database["public"]["Enums"]["space_type"]
-        }
-        Returns: undefined
-      }
-      update_verified_profile_identity: {
-        Args: {
-          p_class_no: number
-          p_cohort: number
-          p_dorm_room: number
-          p_profile_id: number
-          p_student_number: string
-          p_type: Database["public"]["Enums"]["profile_type"]
-        }
-        Returns: undefined
-      }
-      upsert_permission: {
-        Args: { p_description: string; p_key: string; p_name: string }
-        Returns: undefined
-      }
-      upsert_reaction_type: {
-        Args: {
-          p_icon: string
-          p_id: number
-          p_key: string
-          p_name: string
-          p_sort_order: number
         }
         Returns: undefined
       }
