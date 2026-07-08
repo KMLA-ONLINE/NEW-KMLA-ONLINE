@@ -56,6 +56,37 @@ begin
     raise exception 'space-insensitive message search failed';
   end if;
 
+  -- messages_pin_update lets any conversation member (not just the sender)
+  -- toggle pinned_at. profile2 did not send message1.
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  update public.messages set pinned_at = now() where id = message1;
+  if not exists (
+    select 1 from public.messages where id = message1 and pinned_at is not null and pinned_by = profile2
+  ) then
+    raise exception 'message pin contract failed';
+  end if;
+
+  update public.messages set pinned_at = null where id = message1;
+  if exists (
+    select 1 from public.messages where id = message1 and (pinned_at is not null or pinned_by is not null)
+  ) then
+    raise exception 'message unpin contract failed';
+  end if;
+
+  -- messages_pin_update's broader row visibility must not let a non-sender
+  -- sneak a content edit through; private.mark_message_edited() must block it.
+  begin
+    update public.messages set content = 'unauthorized edit' where id = message1;
+    raise exception 'non-sender message content edit should have been rejected';
+  exception
+    when others then
+      if sqlerrm <> 'not allowed to edit this message' then
+        raise;
+      end if;
+  end;
+
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+
   perform public.bootstrap_first_app_admin(profile1);
 
   insert into private.attachment_cleanup_queue (storage_bucket, storage_path)
@@ -87,6 +118,7 @@ begin
   end if;
 
   if not has_column_privilege('authenticated', 'public.messages', 'content', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.messages', 'pinned_at', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.message_reactions', 'reaction_type_id', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.chat_read_states', 'last_read_message_id', 'UPDATE')
     or not has_sequence_privilege('authenticated', 'public.conversations_id_seq', 'USAGE')

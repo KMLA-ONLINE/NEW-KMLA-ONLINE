@@ -32,6 +32,8 @@ create table public.messages (
   edited_at timestamptz null,
   deleted_at timestamptz null,
   deleted_by bigint null references public.profiles (id) on delete set null,
+  pinned_at timestamptz null,
+  pinned_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -73,6 +75,8 @@ create index idx_messages_sender_created_at on public.messages (sender_id, creat
 create index idx_messages_parent_created_at on public.messages (parent_id, created_at);
 create index idx_messages_active_conversation_id on public.messages (conversation_id, id desc)
 where deleted_at is null;
+create index idx_messages_pinned on public.messages (conversation_id, pinned_at desc)
+where pinned_at is not null and deleted_at is null;
 create index idx_message_reactions_type_count on public.message_reactions (message_id, reaction_type_id);
 create index idx_message_reactions_user_created_at on public.message_reactions (user_id, created_at);
 create index idx_chat_read_states_user_last_read_at on public.chat_read_states (user_id, last_read_at);
@@ -93,7 +97,8 @@ alter table public.direct_conversations
 alter table public.messages
   add constraint messages_parent_check check (parent_id is null or parent_id <> id),
   add constraint messages_content_check check (content is null or char_length(btrim(content)) between 1 and 10000),
-  add constraint messages_deleted_state_check check (deleted_at is not null or deleted_by is null);
+  add constraint messages_deleted_state_check check (deleted_at is not null or deleted_by is null),
+  add constraint messages_pinned_state_check check (pinned_at is not null or pinned_by is null);
 
 alter table public.message_attachments
   add constraint message_attachments_message_sort_key unique (message_id, sort_order),
@@ -188,6 +193,18 @@ begin
   if new.content is not null then
     new.content := nullif(btrim(new.content), '');
   end if;
+
+  -- messages_pin_update lets any conversation member update an active
+  -- message row (for pinning), which as a side effect widens row-level
+  -- visibility for this UPDATE command as a whole. Column grants alone
+  -- can't re-narrow that back down, so content edits are only actually
+  -- authorized here: sender, within the edit window.
+  if new.content is distinct from old.content
+    and (old.sender_id <> private.current_profile_id() or old.created_at < now() - interval '15 minutes')
+  then
+    raise exception 'not allowed to edit this message';
+  end if;
+
   if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
     new.edited_at := now();
   end if;
@@ -198,6 +215,28 @@ $$;
 create trigger trg_mark_message_edited
 before update of content on public.messages
 for each row execute function private.mark_message_edited();
+
+-- pinned_by is trigger-derived rather than client-writable, so pinning
+-- can't be spoofed as someone else and unpinning always clears it.
+create function private.stamp_message_pinned_by()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.pinned_at is null then
+    new.pinned_by := null;
+  else
+    new.pinned_by := private.current_profile_id();
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_stamp_message_pinned_by
+before update of pinned_at on public.messages
+for each row execute function private.stamp_message_pinned_by();
 
 create function private.mark_message_reaction_updated()
 returns trigger
@@ -302,6 +341,7 @@ for each row execute function private.mark_sender_chat_read();
 
 revoke execute on function private.validate_message_parent() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_message_edited() from public, anon, authenticated, service_role;
+revoke execute on function private.stamp_message_pinned_by() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_message_reaction_updated() from public, anon, authenticated, service_role;
 revoke execute on function private.validate_chat_read_state() from public, anon, authenticated, service_role;
 revoke execute on function private.add_conversation_creator_member() from public, anon, authenticated, service_role;
@@ -322,6 +362,10 @@ create policy conversation_members_insert on public.conversation_members for ins
 create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_conversation_member(conversation_id));
 create policy messages_insert on public.messages for insert to authenticated with check (sender_id=private.current_profile_id() and content is not null and private.is_valid_message_parent(parent_id,conversation_id) and private.is_conversation_member(conversation_id));
 create policy messages_update on public.messages for update to authenticated using (deleted_at is null and sender_id=private.current_profile_id() and created_at>=now()-interval '15 minutes' and private.is_conversation_member(conversation_id)) with check (deleted_at is null and sender_id=private.current_profile_id() and content is not null and created_at>=now()-interval '15 minutes' and private.is_conversation_member(conversation_id));
+-- Pinning is open to any conversation member (not just the sender), unlike
+-- content edits above. private.mark_message_edited() independently guards
+-- content against this broader row-level visibility.
+create policy messages_pin_update on public.messages for update to authenticated using (deleted_at is null and private.is_conversation_member(conversation_id)) with check (deleted_at is null and private.is_conversation_member(conversation_id));
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_select on public.message_reactions for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_insert on public.message_reactions for insert to authenticated with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
@@ -336,6 +380,7 @@ grant insert (type,name,created_by) on public.conversations to authenticated;
 grant insert (conversation_id,user_id) on public.conversation_members to authenticated;
 grant insert (conversation_id,sender_id,parent_id,content) on public.messages to authenticated;
 grant update (content) on public.messages to authenticated;
+grant update (pinned_at) on public.messages to authenticated;
 grant insert (message_id,user_id,reaction_type_id) on public.message_reactions to authenticated;
 grant update (reaction_type_id) on public.message_reactions to authenticated;
 grant delete on public.message_reactions to authenticated;
@@ -452,6 +497,8 @@ returns table(
   is_edited boolean,
   edited_at timestamptz,
   deleted_at timestamptz,
+  pinned_at timestamptz,
+  pinned_by jsonb,
   created_at timestamptz,
   attachments jsonb,
   reactions jsonb,
@@ -483,6 +530,8 @@ begin
     (page.edited_at is not null) as is_edited,
     page.edited_at,
     page.deleted_at,
+    page.pinned_at,
+    case when pinner.id is null then null else jsonb_build_object('id',pinner.id,'name',pinner.name) end as pinned_by,
     page.created_at,
     coalesce(attachments.items,'[]'::jsonb) as attachments,
     coalesce(reactions.items,'[]'::jsonb) as reactions,
@@ -491,6 +540,7 @@ begin
   join public.profiles sender on sender.id=page.sender_id
   left join public.messages parent on parent.id=page.parent_id
   left join public.profiles parent_sender on parent_sender.id=parent.sender_id
+  left join public.profiles pinner on pinner.id=page.pinned_by
   left join lateral (
     select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'content_type',a.content_type,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'created_at',a.created_at) order by a.sort_order,a.id) as items
     from public.message_attachments a where a.message_id=page.id
