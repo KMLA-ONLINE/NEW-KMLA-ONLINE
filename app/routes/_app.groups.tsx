@@ -127,13 +127,13 @@ export default function GroupsPage() {
         </div>
 
         {isOfficial ? (
-          <section className="flex flex-col gap-4">
+          <section className="flex flex-col gap-1.5 sm:gap-2">
             {officialSpaces.map((space) => (
               <SpaceCard key={space.name} space={space} variant="group" />
             ))}
           </section>
         ) : (
-          <section className="flex flex-col gap-4">
+          <section className="flex flex-col gap-1.5 sm:gap-2">
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold">가입한 그룹</h2>
               <p className="text-muted-foreground text-sm">
@@ -173,7 +173,7 @@ export default function GroupsPage() {
             </SidePanel>
 
             <SidePanel title="다른 그룹 추천">
-              <ul className="space-y-4 text-sm">
+              <ul className="space-y-3 text-sm">
                 {recommendedUnofficialSpaces.map((space) => (
                   <li key={space.name} className="flex items-start gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-base font-bold text-blue-500">
