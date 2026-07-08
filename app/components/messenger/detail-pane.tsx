@@ -1,4 +1,12 @@
-import { ArrowLeftIcon, ImageIcon, PanelRightCloseIcon, UsersIcon } from "lucide-react"
+import { useState } from "react"
+import {
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ImageIcon,
+  PanelRightCloseIcon,
+  UsersIcon,
+} from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
@@ -6,20 +14,33 @@ import { getRoomSubtitle, isImageAttachment } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Room } from "~/lib/messenger/types"
 
+const MEMBERS_PREVIEW_COUNT = 4
+
 export function DetailPane({
   room,
   compact = false,
   onBack,
   onClose,
+  onOpenMedia,
 }: {
   room: Room
   compact?: boolean
   onBack?: () => void
   onClose?: () => void
+  onOpenMedia?: () => void
 }) {
-  const media = room.messages.flatMap((message) =>
-    (message.attachments ?? []).filter((attachment) => isImageAttachment(attachment))
+  const [showAllMembers, setShowAllMembers] = useState(false)
+  const mediaCount = room.messages.reduce(
+    (total, message) =>
+      total +
+      (message.attachments?.filter((attachment) => isImageAttachment(attachment)).length ?? 0),
+    0
   )
+  const hasMoreMembers = room.participants.length > MEMBERS_PREVIEW_COUNT
+  const visibleParticipants =
+    showAllMembers || !hasMoreMembers
+      ? room.participants
+      : room.participants.slice(0, MEMBERS_PREVIEW_COUNT)
 
   return (
     <aside
@@ -64,9 +85,12 @@ export function DetailPane({
           <div className="flex items-center gap-2 text-sm font-semibold">
             <UsersIcon className="text-muted-foreground size-4" aria-hidden="true" />
             <span>Members</span>
+            <span className="text-muted-foreground ml-auto text-xs font-normal">
+              {room.participants.length}
+            </span>
           </div>
-          <div className="flex flex-col gap-1">
-            {room.participants.map((participant) => (
+          <div className="flex flex-col">
+            {visibleParticipants.map((participant) => (
               <div
                 key={participant.id}
                 className="hover:bg-muted/60 flex items-center gap-3 rounded-2xl p-2"
@@ -80,40 +104,38 @@ export function DetailPane({
               </div>
             ))}
           </div>
+          {hasMoreMembers ? (
+            <button
+              type="button"
+              onClick={() => setShowAllMembers((previous) => !previous)}
+              className="text-muted-foreground hover:bg-muted/60 flex items-center justify-center gap-1 rounded-2xl py-2 text-xs font-medium transition-colors"
+            >
+              {showAllMembers
+                ? "접기"
+                : `${room.participants.length - MEMBERS_PREVIEW_COUNT}명 더 보기`}
+              <ChevronDownIcon
+                className={cn("size-4 transition-transform", showAllMembers && "rotate-180")}
+                aria-hidden="true"
+              />
+            </button>
+          ) : null}
         </section>
 
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold">Shared media</h3>
-            <span className="text-muted-foreground text-xs">{media.length} items</span>
-          </div>
-          {media.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {media.map((attachment, index) =>
-                attachment.src ? (
-                  <img
-                    key={attachment.id ?? `${attachment.name}-${index}`}
-                    src={attachment.src}
-                    alt={attachment.name}
-                    className="aspect-square rounded-2xl object-cover"
-                  />
-                ) : (
-                  <div
-                    key={attachment.id ?? `${attachment.name}-${index}`}
-                    className="bg-muted flex aspect-square items-center justify-center rounded-2xl border"
-                    aria-label={attachment.name}
-                    role="img"
-                  >
-                    <ImageIcon className="text-primary" />
-                  </div>
-                )
-              )}
-            </div>
-          ) : (
-            <div className="text-muted-foreground rounded-3xl border border-dashed p-6 text-center text-sm">
-              No shared media yet.
-            </div>
-          )}
+        <section>
+          <button
+            type="button"
+            onClick={onOpenMedia}
+            className="hover:bg-muted/60 flex w-full items-center justify-between gap-3 rounded-2xl p-2 text-left transition-colors"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <ImageIcon className="text-muted-foreground size-4" aria-hidden="true" />
+              Shared media
+            </span>
+            <span className="text-muted-foreground flex items-center gap-1 text-xs">
+              {mediaCount}
+              <ChevronRightIcon className="size-4" aria-hidden="true" />
+            </span>
+          </button>
         </section>
       </div>
     </aside>

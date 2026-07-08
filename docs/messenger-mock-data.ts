@@ -51,6 +51,131 @@ export const seedRooms: Room[] = [
         readBy: ["minji"],
       },
       {
+        id: "minji-4-landscape",
+        senderId: "me",
+        attachments: [
+          {
+            id: "minji-4-landscape-1",
+            name: "Lab bench wide shot",
+            contentType: "image/jpeg",
+            width: 1600,
+            height: 900,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:05.000Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
+        id: "minji-4-portrait",
+        senderId: "me",
+        attachments: [
+          {
+            id: "minji-4-portrait-1",
+            name: "Poster full page",
+            contentType: "image/jpeg",
+            width: 720,
+            height: 1600,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:10.000Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
+        id: "minji-4-panorama",
+        senderId: "me",
+        attachments: [
+          {
+            id: "minji-4-panorama-1",
+            name: "Hallway panorama",
+            contentType: "image/jpeg",
+            width: 1800,
+            height: 500,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:15.000Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
+        id: "minji-4-pair",
+        senderId: "minji",
+        attachments: [
+          {
+            id: "minji-4-pair-1",
+            name: "Board photo 1",
+            contentType: "image/jpeg",
+            width: 1200,
+            height: 1600,
+          },
+          {
+            id: "minji-4-pair-2",
+            name: "Board photo 2",
+            contentType: "image/jpeg",
+            width: 1600,
+            height: 1200,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:18.000Z",
+      },
+      {
+        id: "minji-4-trio",
+        senderId: "me",
+        attachments: [
+          {
+            id: "minji-4-trio-1",
+            name: "Reaction step 1",
+            contentType: "image/jpeg",
+            width: 1200,
+            height: 1600,
+          },
+          {
+            id: "minji-4-trio-2",
+            name: "Reaction step 2",
+            contentType: "image/jpeg",
+            width: 1200,
+            height: 900,
+          },
+          {
+            id: "minji-4-trio-3",
+            name: "Reaction step 3",
+            contentType: "image/jpeg",
+            width: 1200,
+            height: 900,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:19.000Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
+        id: "minji-4-quad",
+        senderId: "minji",
+        attachments: [
+          { id: "minji-4-quad-1", name: "Angle 1", contentType: "image/jpeg" },
+          { id: "minji-4-quad-2", name: "Angle 2", contentType: "image/jpeg" },
+          { id: "minji-4-quad-3", name: "Angle 3", contentType: "image/jpeg" },
+          { id: "minji-4-quad-4", name: "Angle 4", contentType: "image/jpeg" },
+        ],
+        createdAt: "2026-07-03T20:44:19.500Z",
+      },
+      {
+        id: "minji-4-overflow",
+        senderId: "me",
+        attachments: [
+          { id: "minji-4-overflow-1", name: "Notes page 1", contentType: "image/png" },
+          { id: "minji-4-overflow-2", name: "Notes page 2", contentType: "image/png" },
+          { id: "minji-4-overflow-3", name: "Notes page 3", contentType: "image/png" },
+          { id: "minji-4-overflow-4", name: "Notes page 4", contentType: "image/png" },
+          { id: "minji-4-overflow-5", name: "Notes page 5", contentType: "image/png" },
+          { id: "minji-4-overflow-6", name: "Notes page 6", contentType: "image/png" },
+        ],
+        createdAt: "2026-07-03T20:44:19.800Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
         id: "minji-5",
         senderId: "me",
         content:
@@ -99,6 +224,38 @@ export const seedRooms: Room[] = [
           },
         ],
         createdAt: "2026-07-03T19:11:05.000Z",
+      },
+      {
+        id: "council-1-file-bundle",
+        senderId: "daniel",
+        attachments: [
+          {
+            id: "council-1-bundle-1",
+            name: "Budget breakdown.xlsx",
+            contentType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            sizeBytes: 92_400,
+          },
+          {
+            id: "council-1-bundle-2",
+            name: "Sponsor agreement.docx",
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            sizeBytes: 154_000,
+          },
+          {
+            id: "council-1-bundle-3",
+            name: "Booth layout.pdf",
+            contentType: "application/pdf",
+            sizeBytes: 1_248_000,
+          },
+          {
+            id: "council-1-bundle-4",
+            name: "Vendor contacts.zip",
+            contentType: "application/zip",
+            sizeBytes: 3_540_000,
+          },
+        ],
+        createdAt: "2026-07-03T19:12:00.000Z",
       },
       {
         id: "council-2",

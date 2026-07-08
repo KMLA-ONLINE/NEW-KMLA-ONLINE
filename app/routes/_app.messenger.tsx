@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router"
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
 import { DetailPane } from "~/components/messenger/detail-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
+import { SharedMediaPane } from "~/components/messenger/shared-media-pane"
 import { CURRENT_USER } from "~/lib/messenger/constants"
 import {
   getLastMessage,
@@ -49,6 +50,38 @@ function updateRoomSummaryMessages(room: RoomSummary, messages: Message[]): Room
   return getRoomSummary({ ...room, messages })
 }
 
+function readAttachment(file: File, index: number): Promise<MessageAttachment> {
+  const baseAttachment: MessageAttachment = {
+    id: `local-file-${Date.now()}-${index}`,
+    name: file.name,
+    contentType: file.type || undefined,
+    sizeBytes: file.size,
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return Promise.resolve(baseAttachment)
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.addEventListener("load", () => {
+      const src = typeof reader.result === "string" ? reader.result : undefined
+      if (!src) {
+        resolve(baseAttachment)
+        return
+      }
+
+      const image = new Image()
+      image.addEventListener("load", () => {
+        resolve({ ...baseAttachment, src, width: image.naturalWidth, height: image.naturalHeight })
+      })
+      image.addEventListener("error", () => resolve({ ...baseAttachment, src }))
+      image.src = src
+    })
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function MessengerPage() {
   const [roomSummaries, setRoomSummaries] = useState<RoomSummary[]>(() =>
     seedRooms.map((room) => getRoomSummary(room))
@@ -63,6 +96,8 @@ export default function MessengerPage() {
   const location = useLocation()
   const { roomId } = useParams()
   const isDetailOpen = location.pathname.endsWith("/details")
+  const isMediaOpen = location.pathname.endsWith("/media")
+  const isSecondaryOpen = isDetailOpen || isMediaOpen
   const selectedRoomId = roomId ?? null
 
   const normalizedSearchValue = searchValue.trim().toLowerCase()
@@ -182,45 +217,24 @@ export default function MessengerPage() {
     return true
   }
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
     event.currentTarget.value = ""
 
-    if (!selectedRoom || replyTo || !file) {
+    if (!selectedRoom || replyTo || files.length === 0) {
       return
     }
 
-    const sendAttachmentMessage = (src?: string) => {
-      const attachment: MessageAttachment = {
-        id: `local-file-${Date.now()}`,
-        src,
-        name: file.name,
-        contentType: file.type || undefined,
-        sizeBytes: file.size,
-      }
-      const nextMessage: Message = {
-        id: `local-${Date.now()}`,
-        senderId: CURRENT_USER.id,
-        attachments: [attachment],
-        createdAt: new Date().toISOString(),
-        read: true,
-      }
-
-      setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
+    const attachments = await Promise.all(files.map((file, index) => readAttachment(file, index)))
+    const nextMessage: Message = {
+      id: `local-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      attachments,
+      createdAt: new Date().toISOString(),
+      read: true,
     }
 
-    if (!file.type.startsWith("image/")) {
-      sendAttachmentMessage()
-      return
-    }
-
-    const reader = new FileReader()
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        sendAttachmentMessage(reader.result)
-      }
-    })
-    reader.readAsDataURL(file)
+    setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
   }
 
   if (roomSummaries.length === 0) {
@@ -233,7 +247,13 @@ export default function MessengerPage() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border">
-      <input ref={fileInputRef} type="file" className="sr-only" onChange={handleFileChange} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="sr-only"
+        onChange={handleFileChange}
+      />
 
       <main className="h-full min-h-0 md:hidden">
         {!selectedRoom ? (
@@ -247,7 +267,7 @@ export default function MessengerPage() {
           />
         ) : null}
 
-        {selectedRoom && !isDetailOpen ? (
+        {selectedRoom && !isSecondaryOpen ? (
           <RoomPane
             key={selectedRoom.id}
             room={selectedRoom}
@@ -269,6 +289,15 @@ export default function MessengerPage() {
             room={selectedRoom}
             compact={true}
             onBack={() => navigate(`/messenger/${selectedRoom.id}`)}
+            onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
+          />
+        ) : null}
+
+        {selectedRoom && isMediaOpen ? (
+          <SharedMediaPane
+            room={selectedRoom}
+            compact={true}
+            onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
           />
         ) : null}
       </main>
@@ -276,7 +305,7 @@ export default function MessengerPage() {
       <main
         className={cn(
           "hidden h-full min-h-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out md:grid",
-          isDetailOpen
+          isSecondaryOpen
             ? "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)_19rem]"
             : "md:grid-cols-[19.5rem_minmax(0,1fr)] lg:grid-cols-[22.5rem_minmax(0,1fr)]"
         )}
@@ -292,14 +321,14 @@ export default function MessengerPage() {
 
         {selectedRoom ? (
           <>
-            <div className={cn("h-full min-h-0", isDetailOpen && "hidden lg:block")}>
+            <div className={cn("h-full min-h-0", isSecondaryOpen && "hidden lg:block")}>
               <RoomPane
                 key={selectedRoom.id}
                 room={selectedRoom}
                 replyTo={replyTo}
                 onOpenDetail={() =>
                   navigate(
-                    isDetailOpen
+                    isSecondaryOpen
                       ? `/messenger/${selectedRoom.id}`
                       : `/messenger/${selectedRoom.id}/details`
                   )
@@ -317,6 +346,14 @@ export default function MessengerPage() {
               <DetailPane
                 room={selectedRoom}
                 onClose={() => navigate(`/messenger/${selectedRoom.id}`)}
+                onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
+              />
+            ) : null}
+
+            {isMediaOpen ? (
+              <SharedMediaPane
+                room={selectedRoom}
+                onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
               />
             ) : null}
           </>

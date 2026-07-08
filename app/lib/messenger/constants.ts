@@ -7,4 +7,3 @@ export const CURRENT_USER: Participant = {
 }
 
 export const DELETED_MESSAGE_LABEL = "삭제된 메시지입니다."
-export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const

@@ -52,6 +52,70 @@ export function isImageAttachment(attachment: MessageAttachment) {
   )
 }
 
+export function formatFileSize(sizeBytes: number | undefined) {
+  if (sizeBytes === undefined) {
+    return null
+  }
+
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 1024)} KB`
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export type ImageSizeBounds = {
+  maxWidth: number
+  maxHeight: number
+  minWidth: number
+  minHeight: number
+}
+
+// Mobile-safe box for a single image inside a chat bubble: wide enough to
+// read, capped so it never forces the bubble past its max-width on a narrow
+// screen.
+export const MESSAGE_IMAGE_BOUNDS: ImageSizeBounds = {
+  maxWidth: 224, // 14rem
+  maxHeight: 288, // 18rem
+  minWidth: 140,
+  minHeight: 110,
+}
+
+export function getBoundedImageSize(
+  width: number,
+  height: number,
+  bounds: ImageSizeBounds = MESSAGE_IMAGE_BOUNDS
+) {
+  const ratio = width / height
+  let boundedWidth = bounds.maxWidth
+  let boundedHeight = boundedWidth / ratio
+
+  if (boundedHeight > bounds.maxHeight) {
+    boundedHeight = bounds.maxHeight
+    boundedWidth = boundedHeight * ratio
+  }
+
+  // Extreme aspect ratios (panoramas, tall screenshots) get clamped to a
+  // minimum side; object-cover crops the rest, same as most chat apps.
+  boundedWidth = Math.min(bounds.maxWidth, Math.max(bounds.minWidth, boundedWidth))
+  boundedHeight = Math.min(bounds.maxHeight, Math.max(bounds.minHeight, boundedHeight))
+
+  return { width: Math.round(boundedWidth), height: Math.round(boundedHeight) }
+}
+
+export function getFileTypeLabel(attachment: MessageAttachment) {
+  if (attachment.contentType) {
+    return attachment.contentType.split("/").pop()?.toUpperCase() ?? "FILE"
+  }
+
+  const extension = attachment.name.split(".").pop()
+  return extension && extension !== attachment.name ? extension.toUpperCase() : "FILE"
+}
+
 export function getAttachmentPreview(attachments: MessageAttachment[] | undefined) {
   const firstAttachment = attachments?.[0]
   if (!firstAttachment) {

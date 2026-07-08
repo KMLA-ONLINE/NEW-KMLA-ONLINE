@@ -4,10 +4,12 @@ import { EllipsisIcon, ReplyIcon, SmileIcon } from "lucide-react"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
-import { MessageAttachmentPreview } from "~/components/messenger/message-attachment-preview"
-import { BubbleOverflowMenu, QuickReactionList } from "~/components/messenger/message-actions"
+import { MessageAttachmentGroup } from "~/components/messenger/message-attachment-preview"
+import { BubbleOverflowMenu } from "~/components/messenger/message-actions"
+import { QuickReactionList } from "~/components/quick-reaction-list"
 import { useMessageBubbleGestures } from "~/components/messenger/use-message-bubble-gestures"
-import { CURRENT_USER, DELETED_MESSAGE_LABEL, QUICK_REACTIONS } from "~/lib/messenger/constants"
+import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
+import { QUICK_REACTIONS } from "~/lib/reactions"
 import { formatMessageTime, getBubbleShapeClass, isDeletedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
@@ -53,7 +55,7 @@ export function MessageBubble({
   const groupedStackOffsetClass =
     groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
   const bubbleToneClass = isDeleted
-    ? "bg-muted/80 text-muted-foreground border border-border/60 italic"
+    ? "bg-muted/30 text-muted-foreground border border-border/60 italic"
     : isMine
       ? "bg-primary text-primary-foreground"
       : "bg-muted text-foreground"
@@ -286,6 +288,7 @@ export function MessageBubble({
                 )}
               >
                 <QuickReactionList
+                  className="messenger-scrollbar"
                   onSelect={(reaction) => {
                     onReact(message, reaction)
                     setIsReactionPickerOpen(false)
@@ -370,18 +373,12 @@ export function MessageBubble({
                   {!isDeleted && hasAttachments ? (
                     <div
                       className={cn(
-                        "relative flex max-w-full flex-col gap-1 transition-shadow duration-300",
+                        "relative transition-shadow duration-300",
                         isHighlighted &&
                           "ring-primary/25 ring-offset-background ring-2 ring-offset-2"
                       )}
                     >
-                      {attachments.map((attachment, index) => (
-                        <MessageAttachmentPreview
-                          key={attachment.id ?? `${attachment.name}-${index}`}
-                          attachment={attachment}
-                          className="max-w-[14rem] sm:max-w-[12rem]"
-                        />
-                      ))}
+                      <MessageAttachmentGroup attachments={attachments} />
                       {reactionBadge}
                     </div>
                   ) : null}
