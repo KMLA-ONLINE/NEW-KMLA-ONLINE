@@ -5,14 +5,15 @@ export default [
     index("./routes/_app._index.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
     route("community", "./routes/_app.community.tsx"),
-    route("messenger", "./routes/_app.messenger.tsx", [
-      index("./routes/_app.messenger-index.tsx"),
-      route(":roomId", "./routes/_app.messenger-room.tsx", [
-        route("details", "./routes/_app.messenger-room-details.tsx"),
-        route("invite", "./routes/_app.messenger-room-invite.tsx"),
-        route("media", "./routes/_app.messenger-room-media.tsx"),
-        route("members", "./routes/_app.messenger-room-members.tsx"),
-        route("search", "./routes/_app.messenger-room-search.tsx"),
+    route("messenger", "./routes/messenger/messenger.tsx", [
+      index("./routes/messenger/index.tsx"),
+      route(":roomId", "./routes/messenger/room.tsx", [
+        route("details", "./routes/messenger/details.tsx"),
+        route("invite", "./routes/messenger/invite.tsx"),
+        route("media", "./routes/messenger/media.tsx"),
+        route("members", "./routes/messenger/members.tsx"),
+        route("pinned", "./routes/messenger/pinned.tsx"),
+        route("search", "./routes/messenger/search.tsx"),
       ]),
     ]),
     route("menu", "./routes/_app.menu.tsx"),

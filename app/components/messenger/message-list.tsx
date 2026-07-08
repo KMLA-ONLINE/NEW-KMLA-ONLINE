@@ -19,6 +19,7 @@ export function MessageList({
   onReply,
   onReact,
   onDelete,
+  onTogglePin,
   onOpenActions,
   activeMobileActionMessageId,
   onCloseActions,
@@ -29,6 +30,7 @@ export function MessageList({
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
+  onTogglePin: (message: Message) => void
   onOpenActions: (message: Message) => void
   activeMobileActionMessageId: string | null
   onCloseActions: () => void
@@ -191,6 +193,7 @@ export function MessageList({
               onReply={onReply}
               onReact={onReact}
               onDelete={onDelete}
+              onTogglePin={onTogglePin}
               onOpenActions={onOpenActions}
               isMobileActionActive={activeMobileActionMessageId === viewModel.message.id}
               onCloseActions={onCloseActions}

@@ -3,13 +3,14 @@ import {
   ChevronRightIcon,
   ImageIcon,
   PanelRightCloseIcon,
+  PinIcon,
   SearchIcon,
   UsersIcon,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
-import { getRoomSubtitle, isImageAttachment } from "~/lib/messenger/utils"
+import { getPinnedMessages, getRoomSubtitle, isImageAttachment } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Room } from "~/lib/messenger/types"
 
@@ -20,6 +21,7 @@ export function DetailPane({
   onClose,
   onOpenMedia,
   onOpenMembers,
+  onOpenPinnedMessages,
   onOpenSearch,
 }: {
   room: Room
@@ -28,6 +30,7 @@ export function DetailPane({
   onClose?: () => void
   onOpenMedia?: () => void
   onOpenMembers?: () => void
+  onOpenPinnedMessages?: () => void
   onOpenSearch?: () => void
 }) {
   const mediaCount = room.messages.reduce(
@@ -36,6 +39,7 @@ export function DetailPane({
       (message.attachments?.filter((attachment) => isImageAttachment(attachment)).length ?? 0),
     0
   )
+  const pinnedCount = getPinnedMessages(room).length
 
   return (
     <aside
@@ -88,6 +92,21 @@ export function DetailPane({
             </span>
             <span className="text-muted-foreground flex items-center gap-1 text-xs">
               {room.participants.length}
+              <ChevronRightIcon className="size-4" aria-hidden="true" />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenPinnedMessages}
+            className="hover:bg-muted/60 flex w-full items-center justify-between gap-3 rounded-2xl p-2.5 text-left transition-colors"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <PinIcon className="text-muted-foreground size-4" aria-hidden="true" />
+              고정된 메시지
+            </span>
+            <span className="text-muted-foreground flex items-center gap-1 text-xs">
+              {pinnedCount}
               <ChevronRightIcon className="size-4" aria-hidden="true" />
             </span>
           </button>

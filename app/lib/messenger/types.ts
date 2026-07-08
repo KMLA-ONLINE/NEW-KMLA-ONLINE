@@ -41,6 +41,8 @@ export type Message = {
   reactions?: MessageReaction[]
   read?: boolean
   readBy?: string[]
+  pinnedAt?: string
+  pinnedBy?: string
 }
 
 export type Room = {

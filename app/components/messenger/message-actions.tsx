@@ -1,20 +1,24 @@
 import { useState, type ReactNode } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
-import { CopyIcon, EllipsisIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
+import { CopyIcon, EllipsisIcon, PinIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
 
-import { getReplyText, isDeletedMessage } from "~/lib/messenger/utils"
+import { getReplyText, isDeletedMessage, isPinnedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Message } from "~/lib/messenger/types"
 
 export function BubbleOverflowMenu({
   isMine,
+  isPinned,
   align,
   onDelete,
+  onPin,
   onClose,
 }: {
   isMine: boolean
+  isPinned: boolean
   align: "left" | "right"
   onDelete: () => void
+  onPin: () => void
   onClose: () => void
 }) {
   return (
@@ -40,13 +44,15 @@ export function BubbleOverflowMenu({
       >
         Forward
       </button>
-      <button
-        type="button"
-        className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
-        onClick={onClose}
-      >
-        Pin
-      </button>
+      {!isPinned ? (
+        <button
+          type="button"
+          className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
+          onClick={onPin}
+        >
+          고정
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -85,12 +91,14 @@ export function MessageActionPanel({
   onOpenChange,
   onReply,
   onDelete,
+  onPin,
 }: {
   message: Message | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onReply: (message: Message) => void
   onDelete: (message: Message) => void
+  onPin: (message: Message) => void
 }) {
   const [isMoreOpen, setIsMoreOpen] = useState(false)
 
@@ -99,6 +107,7 @@ export function MessageActionPanel({
   }
 
   const isMine = message.senderId === "me"
+  const isPinned = isPinnedMessage(message)
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setIsMoreOpen(false)
@@ -158,7 +167,18 @@ export function MessageActionPanel({
               />
             </div>
 
-            {isMoreOpen ? <div className="h-12" /> : null}
+            {isMoreOpen && !isPinned ? (
+              <div className="flex justify-start">
+                <MessageActionButton
+                  icon={<PinIcon className="size-5" />}
+                  label="고정"
+                  onClick={() => {
+                    onPin(message)
+                    handleOpenChange(false)
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
           <DialogPrimitive.Title className="sr-only">Message actions</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">

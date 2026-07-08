@@ -15,6 +15,7 @@ import {
   getBubbleShapeClass,
   getLinkedTextSegments,
   isDeletedMessage,
+  isPinnedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
@@ -57,6 +58,7 @@ export function MessageBubble({
   onReply,
   onReact,
   onDelete,
+  onTogglePin,
   onOpenActions,
   isMobileActionActive,
   onCloseActions,
@@ -74,6 +76,7 @@ export function MessageBubble({
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
+  onTogglePin: (message: Message) => void
   onOpenActions: (message: Message) => void
   isMobileActionActive: boolean
   onCloseActions: () => void
@@ -208,9 +211,14 @@ export function MessageBubble({
       {isOverflowOpen ? (
         <BubbleOverflowMenu
           isMine={isMine}
+          isPinned={isPinnedMessage(message)}
           align={isMine ? "left" : "right"}
           onDelete={() => {
             onDelete(message)
+            setIsOverflowOpen(false)
+          }}
+          onPin={() => {
+            onTogglePin(message)
             setIsOverflowOpen(false)
           }}
           onClose={() => setIsOverflowOpen(false)}

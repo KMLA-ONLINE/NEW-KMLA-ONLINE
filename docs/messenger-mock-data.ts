@@ -211,6 +211,8 @@ export const seedRooms: Room[] = [
         senderId: "daniel",
         content: "I moved the checklist into the drive folder.",
         createdAt: "2026-07-03T19:11:00.000Z",
+        pinnedAt: "2026-07-03T19:20:00.000Z",
+        pinnedBy: "daniel",
       },
       {
         id: "council-1-file",
@@ -302,6 +304,8 @@ export const seedRooms: Room[] = [
         ],
         read: true,
         readBy: ["daniel", "sora"],
+        pinnedAt: "2026-07-03T19:25:00.000Z",
+        pinnedBy: "me",
       },
     ],
   },

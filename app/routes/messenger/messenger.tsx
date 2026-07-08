@@ -6,6 +6,7 @@ import { DetailPane } from "~/components/messenger/detail-pane"
 import { InviteMembersPane } from "~/components/messenger/invite-members-pane"
 import { MembersPane } from "~/components/messenger/members-pane"
 import { MessageSearchPane } from "~/components/messenger/message-search-pane"
+import { PinnedMessagesPane } from "~/components/messenger/pinned-messages-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
 import { SharedMediaPane } from "~/components/messenger/shared-media-pane"
 import { useIsMobile } from "~/hooks/use-mobile"
@@ -16,9 +17,10 @@ import {
   getReplyText,
   isImageAttachment,
   isDeletedMessage,
+  isPinnedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import { seedRooms } from "../../docs/messenger-mock-data"
+import { seedRooms } from "../../../docs/messenger-mock-data"
 import type {
   Message,
   MessageAttachment,
@@ -107,6 +109,7 @@ export default function MessengerPage() {
   const isInviteOpen = location.pathname.endsWith("/invite")
   const isMediaOpen = location.pathname.endsWith("/media")
   const isMembersOpen = location.pathname.endsWith("/members")
+  const isPinnedOpen = location.pathname.endsWith("/pinned")
   const isSearchOpen = location.pathname.endsWith("/search")
   const selectedRoomId = roomId ?? null
 
@@ -121,7 +124,12 @@ export default function MessengerPage() {
     : null
   const isGroupInviteOpen = isInviteOpen && selectedRoomSummary?.type === "group"
   const isSecondaryOpen =
-    isDetailOpen || isGroupInviteOpen || isMediaOpen || isMembersOpen || isSearchOpen
+    isDetailOpen ||
+    isGroupInviteOpen ||
+    isMediaOpen ||
+    isMembersOpen ||
+    isPinnedOpen ||
+    isSearchOpen
 
   const getRoomHref = (roomId: string) =>
     isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
@@ -213,6 +221,8 @@ export default function MessengerPage() {
             ...candidate,
             deletedAt: new Date().toISOString(),
             deletedBy: CURRENT_USER.id,
+            pinnedAt: undefined,
+            pinnedBy: undefined,
           }
         : candidate
     )
@@ -222,6 +232,25 @@ export default function MessengerPage() {
     if (replyTo?.messageId === message.id) {
       setReplyTo(null)
     }
+  }
+
+  const togglePinMessage = (message: Message) => {
+    if (!selectedRoom || isDeletedMessage(message)) {
+      return
+    }
+
+    const shouldUnpin = isPinnedMessage(message)
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            pinnedAt: shouldUnpin ? undefined : new Date().toISOString(),
+            pinnedBy: shouldUnpin ? undefined : CURRENT_USER.id,
+          }
+        : candidate
+    )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
   }
 
   const sendMessage = (draft: string) => {
@@ -333,11 +362,13 @@ export default function MessengerPage() {
             showBackButton={true}
             onBack={() => navigate("/messenger")}
             onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+            onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
             onAttachFile={() => fileInputRef.current?.click()}
             onClearReply={() => setReplyTo(null)}
             onReply={openReply}
             onReact={reactToMessage}
             onDelete={deleteMessage}
+            onTogglePin={togglePinMessage}
             onSend={sendMessage}
             focusedMessageId={isMobile ? focusedMessageId : null}
             onFocusedMessageHandled={isMobile ? clearFocusedMessage : undefined}
@@ -351,6 +382,7 @@ export default function MessengerPage() {
             onBack={() => navigate(`/messenger/${selectedRoom.id}`)}
             onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
             onOpenMembers={() => navigate(`/messenger/${selectedRoom.id}/members`)}
+            onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
             onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
           />
         ) : null}
@@ -376,6 +408,16 @@ export default function MessengerPage() {
             compact={true}
             onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
             onInviteMembers={() => navigate(`/messenger/${selectedRoom.id}/invite`)}
+          />
+        ) : null}
+
+        {selectedRoom && isPinnedOpen ? (
+          <PinnedMessagesPane
+            room={selectedRoom}
+            compact={true}
+            onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+            onOpenMessage={openSearchResult}
+            onUnpinMessage={togglePinMessage}
           />
         ) : null}
 
@@ -420,11 +462,13 @@ export default function MessengerPage() {
                       : `/messenger/${selectedRoom.id}/details`
                   )
                 }
+                onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
                 onAttachFile={() => fileInputRef.current?.click()}
                 onClearReply={() => setReplyTo(null)}
                 onReply={openReply}
                 onReact={reactToMessage}
                 onDelete={deleteMessage}
+                onTogglePin={togglePinMessage}
                 onSend={sendMessage}
                 focusedMessageId={isMobile ? null : focusedMessageId}
                 onFocusedMessageHandled={isMobile ? undefined : clearFocusedMessage}
@@ -437,6 +481,7 @@ export default function MessengerPage() {
                 onClose={() => navigate(`/messenger/${selectedRoom.id}`)}
                 onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
                 onOpenMembers={() => navigate(`/messenger/${selectedRoom.id}/members`)}
+                onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
                 onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
               />
             ) : null}
@@ -457,6 +502,15 @@ export default function MessengerPage() {
                 room={selectedRoom}
                 onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
                 onInviteMembers={() => navigate(`/messenger/${selectedRoom.id}/invite`)}
+              />
+            ) : null}
+
+            {isPinnedOpen ? (
+              <PinnedMessagesPane
+                room={selectedRoom}
+                onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+                onOpenMessage={openSearchResult}
+                onUnpinMessage={togglePinMessage}
               />
             ) : null}
 

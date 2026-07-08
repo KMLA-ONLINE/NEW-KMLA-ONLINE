@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowDownIcon, ArrowLeftIcon, InfoIcon, PhoneIcon } from "lucide-react"
+import { ArrowDownIcon, ArrowLeftIcon, InfoIcon, PhoneIcon, PinIcon } from "lucide-react"
 
 import { MessageActionPanel } from "~/components/messenger/message-actions"
 import { MessageComposer } from "~/components/messenger/message-composer"
 import { MessageList } from "~/components/messenger/message-list"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
-import { getRoomSubtitle, isDeletedMessage } from "~/lib/messenger/utils"
+import {
+  getPinnedMessages,
+  getReplyText,
+  getRoomSubtitle,
+  isDeletedMessage,
+} from "~/lib/messenger/utils"
 import type { Message, ReplyPreview, Room } from "~/lib/messenger/types"
 
 export function RoomPane({
@@ -15,11 +20,13 @@ export function RoomPane({
   showBackButton = false,
   onBack,
   onOpenDetail,
+  onOpenPinnedMessages,
   onAttachFile,
   onClearReply,
   onReply,
   onReact,
   onDelete,
+  onTogglePin,
   onSend,
   focusedMessageId,
   onFocusedMessageHandled,
@@ -29,16 +36,19 @@ export function RoomPane({
   showBackButton?: boolean
   onBack?: () => void
   onOpenDetail: () => void
+  onOpenPinnedMessages: () => void
   onAttachFile: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
+  onTogglePin: (message: Message) => void
   onSend: (draft: string) => boolean
   focusedMessageId?: string | null
   onFocusedMessageHandled?: () => void
 }) {
   const subtitle = getRoomSubtitle(room)
+  const latestPinnedMessage = getPinnedMessages(room)[0]
   const messagesViewportRef = useRef<HTMLDivElement>(null)
   const previousRoomIdRef = useRef<string | null>(null)
   const lastMessageId = room.messages[room.messages.length - 1]?.id
@@ -168,6 +178,26 @@ export function RoomPane({
           </div>
         </header>
 
+        {latestPinnedMessage ? (
+          <div className="border-b px-3 py-2 sm:px-4">
+            <button
+              type="button"
+              onClick={onOpenPinnedMessages}
+              className="bg-muted/60 hover:bg-muted flex w-full min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors"
+            >
+              <PinIcon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1">
+                <span className="text-muted-foreground block text-[11px] leading-none font-medium">
+                  고정된 메시지
+                </span>
+                <span className="mt-0.5 block truncate text-sm">
+                  {getReplyText(latestPinnedMessage)}
+                </span>
+              </span>
+            </button>
+          </div>
+        ) : null}
+
         <div className="relative min-h-0 flex-1">
           <div
             ref={messagesViewportRef}
@@ -179,6 +209,7 @@ export function RoomPane({
                 onReply={onReply}
                 onReact={onReact}
                 onDelete={onDelete}
+                onTogglePin={onTogglePin}
                 onOpenActions={openActionPanel}
                 activeMobileActionMessageId={
                   isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
@@ -209,6 +240,7 @@ export function RoomPane({
           onOpenChange={handleActionPanelChange}
           onReply={onReply}
           onDelete={onDelete}
+          onPin={onTogglePin}
         />
 
         <MessageComposer

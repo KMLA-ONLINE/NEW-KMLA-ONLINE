@@ -57,6 +57,17 @@ export function isDeletedMessage(message: Message) {
   return Boolean(message.deletedAt)
 }
 
+export function isPinnedMessage(message: Message) {
+  return Boolean(message.pinnedAt) && !isDeletedMessage(message)
+}
+
+// ISO timestamps sort correctly as plain strings, so no Date parsing needed.
+export function getPinnedMessages(room: Room): Message[] {
+  return room.messages
+    .filter(isPinnedMessage)
+    .sort((first, second) => (second.pinnedAt ?? "").localeCompare(first.pinnedAt ?? ""))
+}
+
 export function getLastMessage(room: Room) {
   for (let index = room.messages.length - 1; index >= 0; index -= 1) {
     const message = room.messages[index]
