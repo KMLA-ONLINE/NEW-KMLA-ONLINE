@@ -122,7 +122,7 @@ export function MessageList({
           ? CURRENT_USER
           : (authorById.get(message.senderId) ?? {
               id: message.senderId,
-              name: "Unknown",
+              name: "알 수 없음",
               initials: "UN",
             }),
         replyPreviewText: message.replyTo

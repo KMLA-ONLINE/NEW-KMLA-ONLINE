@@ -25,7 +25,7 @@ export function getLastMessage(room: Room) {
 
 export function getMessagePreview(message: Message | undefined) {
   if (!message) {
-    return "No messages yet"
+    return "아직 메시지가 없습니다."
   }
 
   if (isDeletedMessage(message)) {
@@ -41,7 +41,7 @@ export function getMessagePreview(message: Message | undefined) {
     return attachmentPreview
   }
 
-  return "Attachment"
+  return "첨부 파일"
 }
 
 export function isImageAttachment(attachment: MessageAttachment) {
@@ -109,11 +109,11 @@ export function getBoundedImageSize(
 
 export function getFileTypeLabel(attachment: MessageAttachment) {
   if (attachment.contentType) {
-    return attachment.contentType.split("/").pop()?.toUpperCase() ?? "FILE"
+    return attachment.contentType.split("/").pop()?.toUpperCase() ?? "파일"
   }
 
   const extension = attachment.name.split(".").pop()
-  return extension && extension !== attachment.name ? extension.toUpperCase() : "FILE"
+  return extension && extension !== attachment.name ? extension.toUpperCase() : "파일"
 }
 
 export function getAttachmentPreview(attachments: MessageAttachment[] | undefined) {
@@ -128,7 +128,7 @@ export function getAttachmentPreview(attachments: MessageAttachment[] | undefine
 
   return (
     firstAttachment.name ||
-    (isImageAttachment(firstAttachment) ? "Image attached" : "File attached")
+    (isImageAttachment(firstAttachment) ? "이미지가 첨부되었습니다." : "파일이 첨부되었습니다.")
   )
 }
 
@@ -144,7 +144,7 @@ export function getMessageAuthor(room: Room, message: Message) {
   return (
     findParticipant(room, message.senderId) ?? {
       id: message.senderId,
-      name: "Unknown",
+      name: "알 수 없음",
       initials: "UN",
     }
   )
@@ -227,7 +227,7 @@ export function getReplyText(message: Message) {
     return attachmentPreview
   }
 
-  return "Attachment"
+  return "첨부 파일"
 }
 
 export function getReplyPreviewText(room: Room, replyPreview: ReplyPreview) {
@@ -360,5 +360,5 @@ export function shouldShowDateSeparator(
 }
 
 export function getRoomSubtitle(room: Room) {
-  return room.type === "group" ? `${room.participants.length} members` : ""
+  return room.type === "group" ? `${room.participants.length}명` : ""
 }

@@ -275,7 +275,7 @@ export default function MessengerPage() {
   if (roomSummaries.length === 0) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center border border-dashed md:rounded-[1.75rem]">
-        <p className="text-muted-foreground text-sm">No conversations available.</p>
+        <p className="text-muted-foreground text-sm">표시할 대화가 없습니다.</p>
       </div>
     )
   }
@@ -401,3 +401,5 @@ export default function MessengerPage() {
     </div>
   )
 }
+
+// TODO: 방 알림기능 스키마 추가

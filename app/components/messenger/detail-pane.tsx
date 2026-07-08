@@ -84,7 +84,7 @@ export function DetailPane({
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <UsersIcon className="text-muted-foreground size-4" aria-hidden="true" />
-            <span>Members</span>
+            <span>멤버</span>
             <span className="text-muted-foreground ml-auto text-xs font-normal">
               {room.participants.length}
             </span>
@@ -129,7 +129,7 @@ export function DetailPane({
           >
             <span className="flex items-center gap-2 text-sm font-semibold">
               <ImageIcon className="text-muted-foreground size-4" aria-hidden="true" />
-              Shared media
+              공유된 미디어
             </span>
             <span className="text-muted-foreground flex items-center gap-1 text-xs">
               {mediaCount}

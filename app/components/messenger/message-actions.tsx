@@ -123,7 +123,7 @@ export function MessageActionPanel({
             <div className="flex justify-between">
               <MessageActionButton
                 icon={<ReplyIcon className="size-5" />}
-                label="Reply"
+                label="답장"
                 onClick={() => {
                   onReply(message)
                   handleOpenChange(false)
@@ -131,13 +131,13 @@ export function MessageActionPanel({
               />
               <MessageActionButton
                 icon={<CopyIcon className="size-5" />}
-                label="Copy"
+                label="복사"
                 onClick={handleCopy}
               />
               {isMine ? (
                 <MessageActionButton
                   icon={<XIcon className="size-5" />}
-                  label="Delete"
+                  label="삭제"
                   className="text-destructive"
                   onClick={() => {
                     onDelete(message)
@@ -147,13 +147,13 @@ export function MessageActionPanel({
               ) : (
                 <MessageActionButton
                   icon={<SendIcon className="size-5" />}
-                  label="Forward"
+                  label="전달"
                   onClick={() => handleOpenChange(false)}
                 />
               )}
               <MessageActionButton
                 icon={<EllipsisIcon className="size-5" />}
-                label="More"
+                label="더보기"
                 onClick={() => setIsMoreOpen((previous) => !previous)}
               />
             </div>

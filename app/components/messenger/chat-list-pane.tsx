@@ -1,4 +1,4 @@
-import { SearchIcon } from "lucide-react"
+import { BellOffIcon, SearchIcon } from "lucide-react"
 import { Link } from "react-router"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
@@ -34,7 +34,7 @@ export function ChatListPane({
           <Input
             value={searchValue}
             className="bg-muted h-10 rounded-full border-0 pl-11 shadow-none"
-            placeholder="Search Messenger"
+            placeholder="메신저 검색"
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </div>
@@ -63,8 +63,11 @@ export function ChatListPane({
                     <span className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{room.name}</span>
                       {room.muted ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          Muted
+                        <Badge
+                          variant="secondary"
+                          className="size-5 shrink-0 rounded-full bg-transparent p-0"
+                        >
+                          <BellOffIcon className="size-3" aria-label="알림 꺼짐" />
                         </Badge>
                       ) : null}
                     </span>

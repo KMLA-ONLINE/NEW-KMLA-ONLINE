@@ -226,36 +226,57 @@ export const seedRooms: Room[] = [
         createdAt: "2026-07-03T19:11:05.000Z",
       },
       {
-        id: "council-1-file-bundle",
+        id: "council-1-budget-file",
         senderId: "daniel",
         attachments: [
           {
-            id: "council-1-bundle-1",
+            id: "council-1-budget-file-1",
             name: "Budget breakdown.xlsx",
             contentType:
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             sizeBytes: 92_400,
           },
+        ],
+        createdAt: "2026-07-03T19:12:00.000Z",
+      },
+      {
+        id: "council-1-sponsor-file",
+        senderId: "daniel",
+        attachments: [
           {
-            id: "council-1-bundle-2",
+            id: "council-1-sponsor-file-1",
             name: "Sponsor agreement.docx",
             contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             sizeBytes: 154_000,
           },
+        ],
+        createdAt: "2026-07-03T19:12:01.000Z",
+      },
+      {
+        id: "council-1-layout-file",
+        senderId: "daniel",
+        attachments: [
           {
-            id: "council-1-bundle-3",
+            id: "council-1-layout-file-1",
             name: "Booth layout.pdf",
             contentType: "application/pdf",
             sizeBytes: 1_248_000,
           },
+        ],
+        createdAt: "2026-07-03T19:12:02.000Z",
+      },
+      {
+        id: "council-1-vendor-file",
+        senderId: "daniel",
+        attachments: [
           {
-            id: "council-1-bundle-4",
+            id: "council-1-vendor-file-1",
             name: "Vendor contacts.zip",
             contentType: "application/zip",
             sizeBytes: 3_540_000,
           },
         ],
-        createdAt: "2026-07-03T19:12:00.000Z",
+        createdAt: "2026-07-03T19:12:03.000Z",
       },
       {
         id: "council-2",
