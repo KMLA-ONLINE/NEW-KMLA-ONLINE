@@ -37,7 +37,7 @@ export function BubbleOverflowMenu({
           className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
           onClick={onDelete}
         >
-          Delete
+          삭제
         </button>
       ) : null}
       <button
@@ -45,7 +45,7 @@ export function BubbleOverflowMenu({
         className="hover:bg-muted text-foreground flex w-full rounded-xl px-3 py-2 text-left text-sm transition-colors"
         onClick={onClose}
       >
-        Forward
+        전달
       </button>
       <button
         type="button"
