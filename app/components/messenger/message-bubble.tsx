@@ -55,7 +55,7 @@ export function MessageBubble({
   const groupedStackOffsetClass =
     groupPosition === "middle" || groupPosition === "end" ? "-mt-0.5" : ""
   const bubbleToneClass = isDeleted
-    ? "bg-muted/30 text-muted-foreground border border-border/60 italic"
+    ? "bg-muted/15 text-muted-foreground border border-border/40 italic"
     : isMine
       ? "bg-primary text-primary-foreground"
       : "bg-muted text-foreground"

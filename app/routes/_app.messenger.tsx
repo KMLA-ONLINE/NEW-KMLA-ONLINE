@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react"
+import { useEffect, useRef, useState, type ChangeEvent } from "react"
 import { useLocation, useNavigate, useParams } from "react-router"
 
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
@@ -10,6 +10,7 @@ import {
   getLastMessage,
   getMessageAuthor,
   getReplyText,
+  isImageAttachment,
   isDeletedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
@@ -92,6 +93,7 @@ export default function MessengerPage() {
   const [searchValue, setSearchValue] = useState("")
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const selectedRoomIdRef = useRef<string | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const { roomId } = useParams()
@@ -112,6 +114,14 @@ export default function MessengerPage() {
 
   const getRoomHref = (roomId: string) =>
     isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
+
+  useEffect(() => {
+    selectedRoomIdRef.current = selectedRoomId
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }, [selectedRoomId])
 
   const selectRoom = (roomId: string) => {
     setReplyTo(null)
@@ -136,7 +146,6 @@ export default function MessengerPage() {
     if (!selectedRoom || isDeletedMessage(message)) {
       return
     }
-
     const author = getMessageAuthor(selectedRoom, message)
     setReplyTo({
       messageId: message.id,
@@ -199,12 +208,13 @@ export default function MessengerPage() {
       return false
     }
 
+    const now = Date.now()
     const nextMessage: Message = {
-      id: `local-${Date.now()}`,
+      id: `local-${now}-text`,
       senderId: CURRENT_USER.id,
       content: nextContent,
       replyTo: replyTo ?? undefined,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(now).toISOString(),
       read: true,
     }
 
@@ -225,16 +235,41 @@ export default function MessengerPage() {
       return
     }
 
+    const targetRoomId = selectedRoom.id
     const attachments = await Promise.all(files.map((file, index) => readAttachment(file, index)))
-    const nextMessage: Message = {
-      id: `local-${Date.now()}`,
-      senderId: CURRENT_USER.id,
-      attachments,
-      createdAt: new Date().toISOString(),
-      read: true,
+    if (selectedRoomIdRef.current !== targetRoomId) {
+      return
     }
 
-    setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
+    const now = Date.now()
+    const imageAttachments = attachments.filter((attachment) => isImageAttachment(attachment))
+    const fileAttachments = attachments.filter((attachment) => !isImageAttachment(attachment))
+    const nextMessages: Message[] = []
+
+    // Attachments are sent immediately instead of being previewed in the
+    // composer. The message model still separates attachment shapes: images can
+    // share one message, while files are always one message per file.
+    if (imageAttachments.length > 0) {
+      nextMessages.push({
+        id: `local-${now}-images`,
+        senderId: CURRENT_USER.id,
+        attachments: imageAttachments,
+        createdAt: new Date(now).toISOString(),
+        read: true,
+      })
+    }
+
+    fileAttachments.forEach((attachment, index) => {
+      nextMessages.push({
+        id: `local-${now}-file-${index}`,
+        senderId: CURRENT_USER.id,
+        attachments: [attachment],
+        createdAt: new Date(now + nextMessages.length).toISOString(),
+        read: true,
+      })
+    })
+
+    setSelectedRoomMessages(targetRoomId, [...selectedRoom.messages, ...nextMessages])
   }
 
   if (roomSummaries.length === 0) {

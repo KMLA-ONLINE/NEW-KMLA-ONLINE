@@ -54,10 +54,10 @@ export function MessageComposer({
           </Button>
         </div>
       ) : null}
-      <div className="flex items-center gap-1 p-1.5">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-x-1 p-1.5 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
         <div
           className={cn(
-            "flex origin-left items-center gap-1 overflow-hidden transition-[max-width,opacity,transform,margin] duration-200 ease-out motion-reduce:transition-none",
+            "col-start-1 flex origin-left items-center gap-1 overflow-hidden transition-[max-width,opacity,transform,margin] duration-200 ease-out motion-reduce:transition-none",
             isComposerFocused
               ? "max-sm:-mr-1 max-sm:max-w-0 max-sm:scale-95 max-sm:opacity-0"
               : "max-sm:max-w-32 max-sm:opacity-100"
@@ -74,14 +74,14 @@ export function MessageComposer({
           </Button>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center self-stretch transition-[flex-basis] duration-200 ease-out motion-reduce:transition-none">
+        <div className="bg-muted col-start-2 flex min-w-0 rounded-[1.5rem] px-1.5 py-1">
           <textarea
             ref={textareaRef}
             value={draft}
             rows={1}
             aria-label="Message input"
             placeholder="Aa"
-            className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden rounded-[1.5rem] border-0 px-4 py-2 text-sm leading-5 shadow-none outline-none"
+            className="placeholder:text-muted-foreground min-h-7 min-w-0 flex-1 resize-none overflow-y-hidden border-0 bg-transparent px-2.5 py-1 text-sm leading-5 shadow-none outline-none"
             onChange={(event) => {
               setDraft(event.target.value)
               resizeTextarea(event.currentTarget)
@@ -102,7 +102,7 @@ export function MessageComposer({
           size="icon-sm"
           aria-label={isComposerFocused ? "Send message" : "Choose emoji"}
           disabled={isComposerFocused ? !canSend : false}
-          className="text-primary relative shrink-0 self-end overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
+          className="text-primary relative col-start-3 shrink-0 overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
           onMouseDown={(event) => event.preventDefault()}
           onClick={isComposerFocused ? sendDraft : undefined}
         >
@@ -126,7 +126,7 @@ export function MessageComposer({
           variant="ghost"
           size="icon-sm"
           aria-label="Choose emoji"
-          className="hidden sm:inline-flex"
+          className="col-start-3 hidden sm:inline-flex"
           onMouseDown={(event) => event.preventDefault()}
         >
           <SmileIcon />
@@ -137,7 +137,7 @@ export function MessageComposer({
           size="icon-sm"
           aria-label="Send message"
           disabled={!canSend}
-          className="text-primary hidden self-end sm:inline-flex [&_svg]:size-5"
+          className="text-primary col-start-4 hidden sm:inline-flex [&_svg]:size-5"
           onMouseDown={(event) => event.preventDefault()}
           onClick={sendDraft}
         >
