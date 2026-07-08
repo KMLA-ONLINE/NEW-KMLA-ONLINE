@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { EllipsisIcon, ReplyIcon, SmileIcon } from "lucide-react"
+import { EllipsisIcon, PinIcon, ReplyIcon, SmileIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -273,10 +273,20 @@ export function MessageBubble({
       </Badge>
     ) : null
 
+  const pinBadge = isPinnedMessage(message) ? (
+    <span
+      role="img"
+      aria-label="고정된 메시지"
+      className="text-destructive absolute -top-1 -left-2 z-10 -rotate-45 drop-shadow-sm"
+    >
+      <PinIcon className="size-4 fill-current" aria-hidden="true" />
+    </span>
+  ) : null
+
   return (
     <div className={cn("flex flex-col gap-1", groupedStackOffsetClass)}>
       {showName ? (
-        <div className="pl-10">
+        <div className={cn("pl-10", pinBadge && "mb-1")}>
           <span className="text-muted-foreground text-xs font-medium">{author.name}</span>
         </div>
       ) : null}
@@ -409,6 +419,7 @@ export function MessageBubble({
                         </p>
                       ) : null}
                       {!hasAttachments ? reactionBadge : null}
+                      {!hasAttachments ? pinBadge : null}
                     </div>
                   ) : null}
                   {!isDeleted && hasAttachments ? (
@@ -421,6 +432,7 @@ export function MessageBubble({
                     >
                       <MessageAttachmentGroup attachments={attachments} />
                       {reactionBadge}
+                      {pinBadge}
                     </div>
                   ) : null}
                 </div>

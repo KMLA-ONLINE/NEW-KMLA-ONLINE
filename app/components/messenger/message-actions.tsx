@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
-import { CopyIcon, EllipsisIcon, PinIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
+import { CopyIcon, PinIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
 
 import { getReplyText, isDeletedMessage, isPinnedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
@@ -100,8 +100,6 @@ export function MessageActionPanel({
   onDelete: (message: Message) => void
   onPin: (message: Message) => void
 }) {
-  const [isMoreOpen, setIsMoreOpen] = useState(false)
-
   if (!message || isDeletedMessage(message)) {
     return null
   }
@@ -109,10 +107,6 @@ export function MessageActionPanel({
   const isMine = message.senderId === "me"
   const isPinned = isPinnedMessage(message)
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setIsMoreOpen(false)
-    }
-
     onOpenChange(nextOpen)
   }
 
@@ -128,57 +122,47 @@ export function MessageActionPanel({
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange} modal={false}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Content className="bg-card data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-6 fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto w-auto max-w-md px-2 py-2 duration-150">
-          <div className="space-y-3">
-            <div className="flex justify-between">
+          <div className="flex justify-between">
+            <MessageActionButton
+              icon={<ReplyIcon className="size-5" />}
+              label="답장"
+              onClick={() => {
+                onReply(message)
+                handleOpenChange(false)
+              }}
+            />
+            <MessageActionButton
+              icon={<CopyIcon className="size-5" />}
+              label="복사"
+              onClick={handleCopy}
+            />
+            {!isPinned ? (
               <MessageActionButton
-                icon={<ReplyIcon className="size-5" />}
-                label="답장"
+                icon={<PinIcon className="size-5" />}
+                label="고정"
                 onClick={() => {
-                  onReply(message)
+                  onPin(message)
                   handleOpenChange(false)
                 }}
               />
-              <MessageActionButton
-                icon={<CopyIcon className="size-5" />}
-                label="복사"
-                onClick={handleCopy}
-              />
-              {isMine ? (
-                <MessageActionButton
-                  icon={<XIcon className="size-5" />}
-                  label="삭제"
-                  className="text-destructive"
-                  onClick={() => {
-                    onDelete(message)
-                    handleOpenChange(false)
-                  }}
-                />
-              ) : (
-                <MessageActionButton
-                  icon={<SendIcon className="size-5" />}
-                  label="전달"
-                  onClick={() => handleOpenChange(false)}
-                />
-              )}
-              <MessageActionButton
-                icon={<EllipsisIcon className="size-5" />}
-                label="더보기"
-                onClick={() => setIsMoreOpen((previous) => !previous)}
-              />
-            </div>
-
-            {isMoreOpen && !isPinned ? (
-              <div className="flex justify-start">
-                <MessageActionButton
-                  icon={<PinIcon className="size-5" />}
-                  label="고정"
-                  onClick={() => {
-                    onPin(message)
-                    handleOpenChange(false)
-                  }}
-                />
-              </div>
             ) : null}
+            {isMine ? (
+              <MessageActionButton
+                icon={<XIcon className="size-5" />}
+                label="삭제"
+                className="text-destructive"
+                onClick={() => {
+                  onDelete(message)
+                  handleOpenChange(false)
+                }}
+              />
+            ) : (
+              <MessageActionButton
+                icon={<SendIcon className="size-5" />}
+                label="전달"
+                onClick={() => handleOpenChange(false)}
+              />
+            )}
           </div>
           <DialogPrimitive.Title className="sr-only">Message actions</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
