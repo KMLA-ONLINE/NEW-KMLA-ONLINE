@@ -10,9 +10,38 @@ import { QuickReactionList } from "~/components/quick-reaction-list"
 import { useMessageBubbleGestures } from "~/components/messenger/use-message-bubble-gestures"
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
 import { QUICK_REACTIONS } from "~/lib/reactions"
-import { formatMessageTime, getBubbleShapeClass, isDeletedMessage } from "~/lib/messenger/utils"
+import {
+  formatMessageTime,
+  getBubbleShapeClass,
+  getLinkedTextSegments,
+  isDeletedMessage,
+} from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
+
+function LinkedMessageText({ text }: { text: string }) {
+  return (
+    <>
+      {getLinkedTextSegments(text).map((segment, index) => {
+        if (segment.type === "text") {
+          return segment.text
+        }
+
+        return (
+          <a
+            key={`${segment.href}-${index}`}
+            href={segment.href}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            {segment.text}
+          </a>
+        )
+      })}
+    </>
+  )
+}
 
 export function MessageBubble({
   message,
@@ -367,7 +396,9 @@ export function MessageBubble({
                           {DELETED_MESSAGE_LABEL}
                         </p>
                       ) : message.content ? (
-                        <p className="text-sm leading-5 whitespace-pre-wrap">{message.content}</p>
+                        <p className="text-sm leading-5 whitespace-pre-wrap">
+                          <LinkedMessageText text={message.content} />
+                        </p>
                       ) : null}
                       {!hasAttachments ? reactionBadge : null}
                     </div>

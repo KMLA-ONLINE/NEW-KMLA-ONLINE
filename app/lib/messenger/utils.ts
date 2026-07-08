@@ -7,6 +7,52 @@ import type {
   Room,
 } from "~/lib/messenger/types"
 
+export type LinkedTextSegment =
+  | {
+      type: "text"
+      text: string
+    }
+  | {
+      type: "link"
+      text: string
+      href: string
+    }
+
+const MESSAGE_LINK_PATTERN = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
+const TRAILING_LINK_PUNCTUATION_PATTERN = /[.,!?;:]+$/
+
+export function getLinkedTextSegments(text: string): LinkedTextSegment[] {
+  const segments: LinkedTextSegment[] = []
+  let lastIndex = 0
+
+  for (const match of text.matchAll(MESSAGE_LINK_PATTERN)) {
+    const matchedText = match[0]
+    const matchIndex = match.index ?? 0
+
+    if (matchIndex > lastIndex) {
+      segments.push({ type: "text", text: text.slice(lastIndex, matchIndex) })
+    }
+
+    const linkText = matchedText.replace(TRAILING_LINK_PUNCTUATION_PATTERN, "")
+    const trailingText = matchedText.slice(linkText.length)
+    const href = linkText.startsWith("http") ? linkText : `https://${linkText}`
+
+    segments.push({ type: "link", text: linkText, href })
+
+    if (trailingText) {
+      segments.push({ type: "text", text: trailingText })
+    }
+
+    lastIndex = matchIndex + matchedText.length
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", text: text.slice(lastIndex) })
+  }
+
+  return segments.length > 0 ? segments : [{ type: "text", text }]
+}
+
 export function isDeletedMessage(message: Message) {
   return Boolean(message.deletedAt)
 }
