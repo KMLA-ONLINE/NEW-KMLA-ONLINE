@@ -241,7 +241,7 @@ export function RoomPane({
           onOpenChange={handleActionPanelChange}
           onReply={onReply}
           onDelete={onDelete}
-          onPin={onTogglePin}
+          onTogglePin={onTogglePin}
         />
 
         <MessageComposer

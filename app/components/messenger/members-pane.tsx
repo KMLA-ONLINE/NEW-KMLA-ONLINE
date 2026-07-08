@@ -53,7 +53,7 @@ export function MembersPane({
                 <AvatarFallback>{participant.initials}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="text-md ml-1 truncate font-medium">{participant.name}</p>
+                <p className="truncate text-sm font-medium">{participant.name}</p>
               </div>
             </div>
           ))}

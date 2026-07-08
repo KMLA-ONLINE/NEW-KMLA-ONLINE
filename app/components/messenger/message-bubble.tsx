@@ -20,6 +20,21 @@ import {
 import { cn } from "~/lib/utils"
 import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
 
+// The message viewport (RoomPane) clips overflow via .messenger-scrollbar;
+// popovers anchored "above" a bubble near the top of that scroll area would
+// otherwise get cut off, so flip them below when there isn't enough room.
+function getPopoverPlacement(anchor: HTMLElement | null, requiredSpace: number): "top" | "bottom" {
+  if (!anchor) {
+    return "top"
+  }
+
+  const scrollContainer = anchor.closest<HTMLElement>(".messenger-scrollbar")
+  const containerTop = scrollContainer?.getBoundingClientRect().top ?? 0
+  const anchorTop = anchor.getBoundingClientRect().top
+
+  return anchorTop - containerTop < requiredSpace ? "bottom" : "top"
+}
+
 function LinkedMessageText({ text }: { text: string }) {
   return (
     <>
@@ -93,6 +108,8 @@ export function MessageBubble({
       : "bg-muted text-foreground"
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false)
   const [isOverflowOpen, setIsOverflowOpen] = useState(false)
+  const [reactionPickerPlacement, setReactionPickerPlacement] = useState<"top" | "bottom">("top")
+  const [overflowMenuPlacement, setOverflowMenuPlacement] = useState<"top" | "bottom">("top")
   const interactionRef = useRef<HTMLDivElement>(null)
   const isDesktopActionOpen = isReactionPickerOpen || isOverflowOpen
   const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
@@ -155,6 +172,22 @@ export function MessageBubble({
     }
   }, [isDesktopActionOpen])
 
+  useEffect(() => {
+    if (!isReactionPickerVisible) {
+      return
+    }
+
+    setReactionPickerPlacement(getPopoverPlacement(interactionRef.current, 90))
+  }, [isReactionPickerVisible])
+
+  useEffect(() => {
+    if (!isOverflowOpen) {
+      return
+    }
+
+    setOverflowMenuPlacement(getPopoverPlacement(interactionRef.current, 150))
+  }, [isOverflowOpen])
+
   if (message.senderId === "system") {
     return (
       <div className="flex justify-center">
@@ -213,11 +246,12 @@ export function MessageBubble({
           isMine={isMine}
           isPinned={isPinnedMessage(message)}
           align={isMine ? "left" : "right"}
+          placement={overflowMenuPlacement}
           onDelete={() => {
             onDelete(message)
             setIsOverflowOpen(false)
           }}
-          onPin={() => {
+          onTogglePin={() => {
             onTogglePin(message)
             setIsOverflowOpen(false)
           }}
@@ -330,7 +364,10 @@ export function MessageBubble({
             {isReactionPickerVisible ? (
               <div
                 className={cn(
-                  "bg-popover absolute bottom-[calc(100%+0.5rem)] z-60 rounded-2xl border p-2 shadow-lg",
+                  "bg-popover absolute z-60 rounded-2xl border p-2 shadow-lg",
+                  reactionPickerPlacement === "top"
+                    ? "bottom-[calc(100%+0.5rem)]"
+                    : "top-[calc(100%+0.5rem)]",
                   isMine ? "right-0" : "left-0"
                 )}
               >
@@ -410,11 +447,11 @@ export function MessageBubble({
                       )}
                     >
                       {isDeleted ? (
-                        <p className="text-sm leading-5 whitespace-pre-wrap">
+                        <p className="text-sm leading-5 wrap-break-word whitespace-pre-wrap">
                           {DELETED_MESSAGE_LABEL}
                         </p>
                       ) : message.content ? (
-                        <p className="text-sm leading-5 whitespace-pre-wrap">
+                        <p className="text-sm leading-5 wrap-break-word whitespace-pre-wrap">
                           <LinkedMessageText text={message.content} />
                         </p>
                       ) : null}

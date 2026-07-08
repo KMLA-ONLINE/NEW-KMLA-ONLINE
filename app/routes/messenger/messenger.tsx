@@ -354,25 +354,27 @@ export default function MessengerPage() {
           />
         ) : null}
 
-        {selectedRoom && !isSecondaryOpen ? (
-          <RoomPane
-            key={selectedRoom.id}
-            room={selectedRoom}
-            replyTo={replyTo}
-            showBackButton={true}
-            onBack={() => navigate("/messenger")}
-            onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
-            onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
-            onAttachFile={() => fileInputRef.current?.click()}
-            onClearReply={() => setReplyTo(null)}
-            onReply={openReply}
-            onReact={reactToMessage}
-            onDelete={deleteMessage}
-            onTogglePin={togglePinMessage}
-            onSend={sendMessage}
-            focusedMessageId={isMobile ? focusedMessageId : null}
-            onFocusedMessageHandled={isMobile ? clearFocusedMessage : undefined}
-          />
+        {selectedRoom ? (
+          <div className={cn("h-full min-h-0", isSecondaryOpen && "hidden")}>
+            <RoomPane
+              key={selectedRoom.id}
+              room={selectedRoom}
+              replyTo={replyTo}
+              showBackButton={true}
+              onBack={() => navigate("/messenger")}
+              onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+              onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
+              onAttachFile={() => fileInputRef.current?.click()}
+              onClearReply={() => setReplyTo(null)}
+              onReply={openReply}
+              onReact={reactToMessage}
+              onDelete={deleteMessage}
+              onTogglePin={togglePinMessage}
+              onSend={sendMessage}
+              focusedMessageId={isMobile ? focusedMessageId : null}
+              onFocusedMessageHandled={isMobile ? clearFocusedMessage : undefined}
+            />
+          </div>
         ) : null}
 
         {selectedRoom && isDetailOpen ? (
