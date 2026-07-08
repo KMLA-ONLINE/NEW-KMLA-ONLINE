@@ -47,7 +47,10 @@ export function SharedMediaPane({
 
   return (
     <aside
-      className={cn("bg-card flex h-full min-h-0 flex-col overflow-hidden", !compact && "border-l")}
+      className={cn(
+        "bg-card flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
+        !compact && "border-l"
+      )}
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <Button variant="ghost" size="icon-sm" aria-label="정보로 돌아가기" onClick={onBack}>
@@ -56,8 +59,8 @@ export function SharedMediaPane({
         <p className="text-sm font-semibold">공유된 미디어</p>
       </header>
 
-      <Tabs defaultValue="images" className="flex min-h-0 flex-1 flex-col gap-0">
-        <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <Tabs defaultValue="images" className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
+        <div className="messenger-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4">
           <TabsContent value="images">
             {images.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
@@ -67,7 +70,7 @@ export function SharedMediaPane({
                       key={attachment.id ?? `${attachment.name}-${index}`}
                       src={attachment.src}
                       alt={attachment.name}
-                      className="aspect-square rounded-2xl object-cover"
+                      className="aspect-square w-full rounded-2xl object-cover"
                     />
                   ) : (
                     <div
@@ -102,10 +105,16 @@ export function SharedMediaPane({
           </TabsContent>
         </div>
 
-        <TabsList className="mx-4 mb-4 grid w-full grid-cols-2">
-          <TabsTrigger value="images">이미지 {images.length}</TabsTrigger>
-          <TabsTrigger value="files">파일 {files.length}</TabsTrigger>
-        </TabsList>
+        <div className="shrink-0 px-4 pt-1 pb-2">
+          <TabsList className="grid w-full min-w-0 grid-cols-2">
+            <TabsTrigger value="images" className="min-w-0">
+              이미지 {images.length}
+            </TabsTrigger>
+            <TabsTrigger value="files" className="min-w-0">
+              파일 {files.length}
+            </TabsTrigger>
+          </TabsList>
+        </div>
       </Tabs>
     </aside>
   )
