@@ -31,13 +31,14 @@
 
 - For normal code changes, run `npm run lint` then `npm run typecheck`.
 - `npm run typecheck` runs `react-router typegen && tsc`; it regenerates `.react-router/types`.
-- There are currently no test files or CI workflows in this repo.
+- `npm test` runs vitest (test files live next to routes, e.g. `app/routes/_app.profile.test.tsx`).
+- DB checks live in `supabase/tests/`: run `schema_runtime_check.sql` with psql against the local DB after `supabase db reset` (`begin ... rollback`, safe to re-run). `schema_rls_check.sql` is stale — it asserts contracts that were never implemented (identity stamping, a `message_reads` table) and currently fails; do not use it as a gate. `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
+- The only CI workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync); tests are not run in CI.
 
 ## Scope / Generated Files
 
 - `.react-router/` is generated and gitignored.
 - The `lint`, `lint:fix`, and `format` scripts only target `app/`; root config files are outside those scripts.
-- Pre-commit runs `npx lint-staged` on staged `app/**/*.{ts,tsx}` only.
 
 ## Documentation
 
@@ -51,12 +52,24 @@
 - `app/components/ui/` is reserved for atom-level UI primitives.
 - Service/domain components must live in `app/components/`, not `app/components/ui/`.
 
+## Database Schema Workflow
+
+- The DB source of truth is `supabase/schemas/`: declarative schema files split by domain, each file ordered type → table → index → function → trigger → RLS/policy → RPC. Do not create global per-object-type files (`rls.sql`, `rpc.sql`); keep a domain's objects together. Shared `private.*` helpers used across domains belong in a foundation/shared file.
+- `supabase/migrations/` is a delta artifact for applying changes to production DB safely. It is not where you read or edit the current structure.
+- To change the DB: edit `supabase/schemas/` first, then generate the migration with `supabase db diff -f <name>`. Never modify or delete a migration that has been applied to production.
+- Data-preserving changes (rename, backfill, type conversion, NOT NULL transition, any DML) must be written explicitly in the migration. The diff tool does not capture DML (e.g. `storage.buckets` seed rows, which live at the end of the baseline migration) and is unreliable for grant/revoke changes — review generated migrations by hand; `schema_runtime_check.sql` catches grant regressions.
+- After a schema change, verify with `supabase db reset`, `schema_runtime_check.sql`, and `supabase db diff` returning "No schema changes found".
+- Human-readable docs for the schema live in `docs/db/` (`README.md` for rules, `domains/*.md` mapped 1:1 to schema files, listing every RPC and trigger). Update them in the same task as schema changes.
+- The remote DB still carries pre-transition migration history; on first deploy align it with `supabase db reset --linked` (pre-launch, no data to keep) or `supabase migration repair`, then use normal `supabase db push`.
+
 ## Database Architecture
 
-- **Writes (mutations):** use **RPC functions** (`supabase.rpc(...)`). They run as `SECURITY DEFINER` and handle atomic multi-table changes with auth checks (`private.require_current_profile()`, `private.require_app_admin()`).
-- **Simple reads (single-table, client-side filtering/pagination):** use direct table access via `supabase.from(...)` with RLS as the authorization boundary.
-- **Complex reads (search, aggregation, cross-table joins, admin views):** use **RPC functions**.
-- Denormalized counters such as `posts.comment_count`, `posts.reaction_count`, and `spaces.member_count` are cached values. Do not treat them as authoritative when exact counts are required.
+- RPC surface was intentionally trimmed (2026-07): only chat/messaging, automatic storage cleanup, and basic profile lifecycle RPCs exist. See `docs/db/domains/*.md` for the per-domain RPC and trigger inventory.
+- **Chat/messaging and profile lifecycle writes:** use **RPC functions** (`supabase.rpc(...)`). They run as `SECURITY DEFINER` and handle atomic multi-table changes with auth checks (`private.require_current_profile()`, `private.require_app_admin()`).
+- **Posts, comments, reactions, gongangs, song requests, club applications:** direct table access via `supabase.from(...)` with RLS and column-level grants as the authorization boundary. These domains have no RPCs.
+- **Spaces:** currently no write path for authenticated users — space RPCs were removed and `spaces`/`space_members` have no direct insert grants (only `notification_setting` update). Re-add RPCs or grants before building space features.
+- **Reads:** direct table access with RLS. Message search uses the `search_messages` RPC; there is no post search RPC.
+- Denormalized counters such as `posts.comment_count`, `posts.reaction_count`, and `spaces.member_count` are cached values with no reconciliation job (`reconcile_cached_counts` was removed). Do not treat them as authoritative when exact counts are required.
 
 ## DB Types
 
@@ -87,4 +100,3 @@
 - `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
 - `opencode.json` enables the `supabase` MCP server at `http://127.0.0.1:54723/api/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
 - For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
-- This repo has local Supabase config in `supabase/config.toml` and migrations in `supabase/migrations/`.
