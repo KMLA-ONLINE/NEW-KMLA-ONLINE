@@ -304,8 +304,10 @@ export function MessageBubble({
                 type="button"
                 aria-label="원본 메시지로 이동" //db 연동 후에는 원본 메시지가 현재 리스트에 없을 수 있어서 주변 fetch 필요.
                 className={cn(
-                  "flex max-w-full flex-col gap-1 text-left transition-opacity hover:opacity-80",
-                  isMine ? "mr-2 items-end" : "ml-2 items-start"
+                  "flex w-fit flex-col gap-1 text-left transition-opacity hover:opacity-80",
+                  isMine
+                    ? "mr-2 max-w-[74%] items-end sm:max-w-[70%] md:max-w-[68%]"
+                    : "ml-2 max-w-[70%] items-start"
                 )}
                 onPointerDown={(event) => event.stopPropagation()}
                 onPointerMove={(event) => event.stopPropagation()}
@@ -324,11 +326,11 @@ export function MessageBubble({
                 </div>
                 <div
                   className={cn(
-                    "bg-muted/30 text-muted-foreground max-w-[calc(100%-1.25rem)] rounded-2xl px-2.5 pt-1.5 pb-4 text-sm",
+                    "bg-muted/30 text-muted-foreground max-w-full rounded-2xl px-2.5 pt-1.5 pb-4 text-sm",
                     isMine ? "rounded-br-md" : "rounded-bl-md"
                   )}
                 >
-                  <div className="line-clamp-2 whitespace-pre-wrap">
+                  <div className="line-clamp-2 break-words whitespace-normal">
                     {replyPreviewText ?? message.replyTo.text}
                   </div>
                 </div>

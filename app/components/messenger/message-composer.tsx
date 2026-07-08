@@ -65,12 +65,12 @@ export function MessageComposer({
         >
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             aria-label="Add attachment"
             disabled={!canAttach}
             onClick={onAttachFile}
           >
-            <PaperclipIcon />
+            <PaperclipIcon className="size-5" />
           </Button>
         </div>
 
@@ -99,7 +99,7 @@ export function MessageComposer({
 
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label={isComposerFocused ? "Send message" : "Choose emoji"}
           disabled={isComposerFocused ? !canSend : false}
           className="text-primary relative col-start-3 shrink-0 overflow-hidden transition-[background-color,color,border-color] duration-200 ease-out motion-reduce:transition-none sm:hidden"
@@ -109,7 +109,7 @@ export function MessageComposer({
           <span className="relative block size-5">
             <SmileIcon
               className={cn(
-                "absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+                "absolute inset-0 size-5 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
                 isComposerFocused ? "scale-90 opacity-0" : "scale-100 opacity-100"
               )}
             />
@@ -124,20 +124,20 @@ export function MessageComposer({
 
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label="Choose emoji"
           className="col-start-3 hidden sm:inline-flex"
           onMouseDown={(event) => event.preventDefault()}
         >
-          <SmileIcon />
+          <SmileIcon className="size-5" />
         </Button>
 
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label="Send message"
           disabled={!canSend}
-          className="text-primary col-start-4 hidden sm:inline-flex [&_svg]:size-5"
+          className="text-primary col-start-4 hidden sm:inline-flex"
           onMouseDown={(event) => event.preventDefault()}
           onClick={sendDraft}
         >
