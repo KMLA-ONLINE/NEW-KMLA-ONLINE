@@ -3,7 +3,7 @@ type SpaceCardVariant = "community" | "group"
 type SpaceCardSpace = {
   name: string
   description: string
-  notificationCount?: string
+  memberCount?: string
 }
 
 export function SpaceCard({
@@ -32,8 +32,8 @@ export function SpaceCard({
       </p>
 
       <div className="col-span-2 flex items-center justify-end gap-3 sm:col-span-1 sm:flex-col sm:items-end sm:justify-between">
-        {variant === "community" && space.notificationCount ? (
-          <span className="text-muted-foreground text-xs">알림 설정 {space.notificationCount}</span>
+        {variant === "community" && space.memberCount ? (
+          <span className="text-muted-foreground text-xs">멤버 {space.memberCount}</span>
         ) : null}
 
         <button className="rounded-md border px-4 py-2 text-sm font-medium">열기</button>
