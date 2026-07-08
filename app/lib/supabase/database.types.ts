@@ -560,6 +560,8 @@ export type Database = {
           edited_at: string | null
           id: number
           parent_id: number | null
+          pinned_at: string | null
+          pinned_by: number | null
           sender_id: number
         }
         Insert: {
@@ -571,6 +573,8 @@ export type Database = {
           edited_at?: string | null
           id?: number
           parent_id?: number | null
+          pinned_at?: string | null
+          pinned_by?: number | null
           sender_id: number
         }
         Update: {
@@ -582,6 +586,8 @@ export type Database = {
           edited_at?: string | null
           id?: number
           parent_id?: number | null
+          pinned_at?: string | null
+          pinned_by?: number | null
           sender_id?: number
         }
         Relationships: [
@@ -604,6 +610,13 @@ export type Database = {
             columns: ["parent_id"]
             isOneToOne: false
             referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_pinned_by_fkey"
+            columns: ["pinned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1339,6 +1352,8 @@ export type Database = {
           is_edited: boolean
           message_id: number
           parent_message: Json
+          pinned_at: string
+          pinned_by: Json
           reactions: Json
           reads: Json
           sender: Json
