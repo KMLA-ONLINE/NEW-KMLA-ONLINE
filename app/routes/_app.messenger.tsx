@@ -3,6 +3,8 @@ import { useLocation, useNavigate, useParams } from "react-router"
 
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
 import { DetailPane } from "~/components/messenger/detail-pane"
+import { InviteMembersPane } from "~/components/messenger/invite-members-pane"
+import { MessageSearchPane } from "~/components/messenger/message-search-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
 import { SharedMediaPane } from "~/components/messenger/shared-media-pane"
 import { CURRENT_USER } from "~/lib/messenger/constants"
@@ -92,14 +94,16 @@ export default function MessengerPage() {
   )
   const [searchValue, setSearchValue] = useState("")
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedRoomIdRef = useRef<string | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const { roomId } = useParams()
   const isDetailOpen = location.pathname.endsWith("/details")
+  const isInviteOpen = location.pathname.endsWith("/invite")
   const isMediaOpen = location.pathname.endsWith("/media")
-  const isSecondaryOpen = isDetailOpen || isMediaOpen
+  const isSearchOpen = location.pathname.endsWith("/search")
   const selectedRoomId = roomId ?? null
 
   const normalizedSearchValue = searchValue.trim().toLowerCase()
@@ -111,6 +115,8 @@ export default function MessengerPage() {
   const selectedRoom = selectedRoomSummary
     ? { ...selectedRoomSummary, messages: messagesByRoomId[selectedRoomSummary.id] ?? [] }
     : null
+  const isGroupInviteOpen = isInviteOpen && selectedRoomSummary?.type === "group"
+  const isSecondaryOpen = isDetailOpen || isGroupInviteOpen || isMediaOpen || isSearchOpen
 
   const getRoomHref = (roomId: string) =>
     isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
@@ -125,9 +131,19 @@ export default function MessengerPage() {
 
   const selectRoom = (roomId: string) => {
     setReplyTo(null)
+    setFocusedMessageId(null)
     setRoomSummaries((previousRooms) =>
       previousRooms.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room))
     )
+  }
+
+  const openSearchResult = (messageId: string) => {
+    if (!selectedRoom) {
+      return
+    }
+
+    setFocusedMessageId(messageId)
+    navigate(`/messenger/${selectedRoom.id}`)
   }
 
   const setSelectedRoomMessages = (roomId: string, messages: Message[]) => {
@@ -316,6 +332,8 @@ export default function MessengerPage() {
             onReact={reactToMessage}
             onDelete={deleteMessage}
             onSend={sendMessage}
+            focusedMessageId={focusedMessageId}
+            onFocusedMessageHandled={() => setFocusedMessageId(null)}
           />
         ) : null}
 
@@ -324,7 +342,16 @@ export default function MessengerPage() {
             room={selectedRoom}
             compact={true}
             onBack={() => navigate(`/messenger/${selectedRoom.id}`)}
+            onInviteMembers={() => navigate(`/messenger/${selectedRoom.id}/invite`)}
             onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
+            onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
+          />
+        ) : null}
+
+        {selectedRoom && isGroupInviteOpen ? (
+          <InviteMembersPane
+            compact={true}
+            onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
           />
         ) : null}
 
@@ -333,6 +360,15 @@ export default function MessengerPage() {
             room={selectedRoom}
             compact={true}
             onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+          />
+        ) : null}
+
+        {selectedRoom && isSearchOpen ? (
+          <MessageSearchPane
+            room={selectedRoom}
+            compact={true}
+            onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+            onOpenMessage={openSearchResult}
           />
         ) : null}
       </main>
@@ -374,6 +410,8 @@ export default function MessengerPage() {
                 onReact={reactToMessage}
                 onDelete={deleteMessage}
                 onSend={sendMessage}
+                focusedMessageId={focusedMessageId}
+                onFocusedMessageHandled={() => setFocusedMessageId(null)}
               />
             </div>
 
@@ -381,14 +419,28 @@ export default function MessengerPage() {
               <DetailPane
                 room={selectedRoom}
                 onClose={() => navigate(`/messenger/${selectedRoom.id}`)}
+                onInviteMembers={() => navigate(`/messenger/${selectedRoom.id}/invite`)}
                 onOpenMedia={() => navigate(`/messenger/${selectedRoom.id}/media`)}
+                onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
               />
+            ) : null}
+
+            {isGroupInviteOpen ? (
+              <InviteMembersPane onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)} />
             ) : null}
 
             {isMediaOpen ? (
               <SharedMediaPane
                 room={selectedRoom}
                 onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+              />
+            ) : null}
+
+            {isSearchOpen ? (
+              <MessageSearchPane
+                room={selectedRoom}
+                onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
+                onOpenMessage={openSearchResult}
               />
             ) : null}
           </>

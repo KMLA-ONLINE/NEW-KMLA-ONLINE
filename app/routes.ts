@@ -9,7 +9,9 @@ export default [
       index("./routes/_app.messenger-index.tsx"),
       route(":roomId", "./routes/_app.messenger-room.tsx", [
         route("details", "./routes/_app.messenger-room-details.tsx"),
+        route("invite", "./routes/_app.messenger-room-invite.tsx"),
         route("media", "./routes/_app.messenger-room-media.tsx"),
+        route("search", "./routes/_app.messenger-room-search.tsx"),
       ]),
     ]),
     route("menu", "./routes/_app.menu.tsx"),

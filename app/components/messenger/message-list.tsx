@@ -22,6 +22,8 @@ export function MessageList({
   onOpenActions,
   activeMobileActionMessageId,
   onCloseActions,
+  focusedMessageId,
+  onFocusedMessageHandled,
 }: {
   room: Room
   onReply: (message: Message) => void
@@ -30,6 +32,8 @@ export function MessageList({
   onOpenActions: (message: Message) => void
   activeMobileActionMessageId: string | null
   onCloseActions: () => void
+  focusedMessageId?: string | null
+  onFocusedMessageHandled?: () => void
 }) {
   const messages = room.messages
   const participants = room.participants
@@ -65,6 +69,19 @@ export function MessageList({
       highlightTimerRef.current = null
     }, 1200)
   }
+
+  useEffect(() => {
+    if (!focusedMessageId) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      openReplyTarget(focusedMessageId)
+      onFocusedMessageHandled?.()
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [focusedMessageId, onFocusedMessageHandled])
 
   useEffect(
     () => () => {

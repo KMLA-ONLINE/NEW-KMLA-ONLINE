@@ -5,6 +5,8 @@ import {
   ChevronRightIcon,
   ImageIcon,
   PanelRightCloseIcon,
+  SearchIcon,
+  UserPlusIcon,
   UsersIcon,
 } from "lucide-react"
 
@@ -21,13 +23,17 @@ export function DetailPane({
   compact = false,
   onBack,
   onClose,
+  onInviteMembers,
   onOpenMedia,
+  onOpenSearch,
 }: {
   room: Room
   compact?: boolean
   onBack?: () => void
   onClose?: () => void
+  onInviteMembers?: () => void
   onOpenMedia?: () => void
+  onOpenSearch?: () => void
 }) {
   const [showAllMembers, setShowAllMembers] = useState(false)
   const mediaCount = room.messages.reduce(
@@ -90,6 +96,18 @@ export function DetailPane({
             </span>
           </div>
           <div className="flex flex-col">
+            {room.type === "group" && onInviteMembers ? (
+              <button
+                type="button"
+                onClick={onInviteMembers}
+                className="hover:bg-muted/60 flex items-center gap-3 rounded-2xl p-2 text-left transition-colors"
+              >
+                <span className="bg-background flex size-8 shrink-0 items-center justify-center rounded-full border">
+                  <UserPlusIcon className="text-muted-foreground size-4" aria-hidden="true" />
+                </span>
+                <span className="truncate text-sm font-medium">멤버 초대</span>
+              </button>
+            ) : null}
             {visibleParticipants.map((participant) => (
               <div
                 key={participant.id}
@@ -121,7 +139,19 @@ export function DetailPane({
           ) : null}
         </section>
 
-        <section>
+        <section className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="hover:bg-muted/60 flex w-full items-center justify-between gap-3 rounded-2xl p-2 text-left transition-colors"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <SearchIcon className="text-muted-foreground size-4" aria-hidden="true" />
+              메시지 검색
+            </span>
+            <ChevronRightIcon className="text-muted-foreground size-4" aria-hidden="true" />
+          </button>
+
           <button
             type="button"
             onClick={onOpenMedia}

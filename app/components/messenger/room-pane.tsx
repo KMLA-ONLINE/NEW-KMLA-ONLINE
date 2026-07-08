@@ -21,6 +21,8 @@ export function RoomPane({
   onReact,
   onDelete,
   onSend,
+  focusedMessageId,
+  onFocusedMessageHandled,
 }: {
   room: Room
   replyTo: ReplyPreview | null
@@ -33,6 +35,8 @@ export function RoomPane({
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
   onSend: (draft: string) => boolean
+  focusedMessageId?: string | null
+  onFocusedMessageHandled?: () => void
 }) {
   const subtitle = getRoomSubtitle(room)
   const messagesViewportRef = useRef<HTMLDivElement>(null)
@@ -72,7 +76,7 @@ export function RoomPane({
   }, [showBackButton])
 
   useEffect(() => {
-    if (!isMessageListReady) {
+    if (!isMessageListReady || focusedMessageId) {
       return
     }
 
@@ -88,7 +92,7 @@ export function RoomPane({
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [isMessageListReady, room.id, lastMessageId])
+  }, [focusedMessageId, isMessageListReady, room.id, lastMessageId])
 
   return (
     <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
@@ -147,6 +151,8 @@ export function RoomPane({
                 isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
               }
               onCloseActions={() => handleActionPanelChange(false)}
+              focusedMessageId={focusedMessageId}
+              onFocusedMessageHandled={onFocusedMessageHandled}
             />
           ) : null}
         </div>
