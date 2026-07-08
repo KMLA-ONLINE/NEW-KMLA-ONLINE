@@ -44,7 +44,7 @@ export function MessageComposer({
   return (
     <footer className="bg-card/95 shrink-0 [padding-bottom:calc(0.5rem+env(safe-area-inset-bottom))]">
       {replyTo ? (
-        <div className="mb-2 flex items-start justify-between gap-3 border-t-1 px-3 py-2">
+        <div className="mb-2 flex items-start justify-between gap-3 border-t px-3 py-2">
           <div className="min-w-0 text-xs">
             <p className="font-medium">{replyTo.author}에게 답장</p>
             <p className="text-muted-foreground line-clamp-1">{replyTo.text}</p>

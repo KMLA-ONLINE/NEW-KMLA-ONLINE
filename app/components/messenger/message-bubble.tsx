@@ -312,7 +312,7 @@ export function MessageBubble({
             {isReactionPickerVisible ? (
               <div
                 className={cn(
-                  "bg-popover absolute bottom-[calc(100%+0.5rem)] z-[60] rounded-2xl border p-2 shadow-lg",
+                  "bg-popover absolute bottom-[calc(100%+0.5rem)] z-60 rounded-2xl border p-2 shadow-lg",
                   isMine ? "right-0" : "left-0"
                 )}
               >
@@ -359,7 +359,7 @@ export function MessageBubble({
                     isMine ? "rounded-br-md" : "rounded-bl-md"
                   )}
                 >
-                  <div className="line-clamp-2 break-words whitespace-normal">
+                  <div className="line-clamp-2 wrap-break-word whitespace-normal">
                     {replyPreviewText ?? message.replyTo.text}
                   </div>
                 </div>
@@ -427,8 +427,8 @@ export function MessageBubble({
           {!isDeleted && readReceipts.length > 0 ? (
             <div className="flex -space-x-1" aria-label="Read by">
               {readReceipts.map((participant) => (
-                <Avatar key={participant.id} className="ring-background mt-2 !size-4 ring-1">
-                  <AvatarFallback className="!text-[7px]">{participant.initials}</AvatarFallback>
+                <Avatar key={participant.id} className="ring-background mt-2 size-4! ring-1">
+                  <AvatarFallback className="text-[7px]!">{participant.initials}</AvatarFallback>
                 </Avatar>
               ))}
             </div>

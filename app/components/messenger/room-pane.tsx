@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeftIcon, InfoIcon, PhoneIcon } from "lucide-react"
+import { ArrowDownIcon, ArrowLeftIcon, InfoIcon, PhoneIcon } from "lucide-react"
 
 import { MessageActionPanel } from "~/components/messenger/message-actions"
 import { MessageComposer } from "~/components/messenger/message-composer"
@@ -45,6 +45,7 @@ export function RoomPane({
   const [isMessageListReady, setIsMessageListReady] = useState(!showBackButton)
   const [isActionPanelOpen, setIsActionPanelOpen] = useState(false)
   const [activeActionMessage, setActiveActionMessage] = useState<Message | null>(null)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   const openActionPanel = (message: Message) => {
     if (isDeletedMessage(message)) {
@@ -76,6 +77,12 @@ export function RoomPane({
   }, [showBackButton])
 
   useEffect(() => {
+    // focusedMessageId is intentionally excluded from the deps: it flips back
+    // to null once MessageList finishes scrolling to the focused message, and
+    // reacting to that transition here would immediately re-scroll the
+    // viewport to the bottom and undo it. Reading the latest value in the
+    // body still skips the initial autoscroll when a room is opened via a
+    // search result.
     if (!isMessageListReady || focusedMessageId) {
       return
     }
@@ -92,7 +99,32 @@ export function RoomPane({
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [focusedMessageId, isMessageListReady, room.id, lastMessageId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMessageListReady, room.id, lastMessageId])
+
+  useEffect(() => {
+    const viewport = messagesViewportRef.current
+    if (!isMessageListReady || !viewport) {
+      return
+    }
+
+    const SCROLL_TO_BOTTOM_THRESHOLD = 240
+    const handleScroll = () => {
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+      setShowScrollToBottom(distanceFromBottom > SCROLL_TO_BOTTOM_THRESHOLD)
+    }
+
+    handleScroll()
+    viewport.addEventListener("scroll", handleScroll, { passive: true })
+    return () => viewport.removeEventListener("scroll", handleScroll)
+  }, [isMessageListReady, room.id, lastMessageId])
+
+  const scrollToBottom = () => {
+    messagesViewportRef.current?.scrollTo({
+      top: messagesViewportRef.current.scrollHeight,
+      behavior: "smooth",
+    })
+  }
 
   return (
     <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
@@ -136,24 +168,37 @@ export function RoomPane({
           </div>
         </header>
 
-        <div
-          ref={messagesViewportRef}
-          className="messenger-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
-        >
-          {isMessageListReady ? (
-            <MessageList
-              room={room}
-              onReply={onReply}
-              onReact={onReact}
-              onDelete={onDelete}
-              onOpenActions={openActionPanel}
-              activeMobileActionMessageId={
-                isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
-              }
-              onCloseActions={() => handleActionPanelChange(false)}
-              focusedMessageId={focusedMessageId}
-              onFocusedMessageHandled={onFocusedMessageHandled}
-            />
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={messagesViewportRef}
+            className="messenger-scrollbar h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
+          >
+            {isMessageListReady ? (
+              <MessageList
+                room={room}
+                onReply={onReply}
+                onReact={onReact}
+                onDelete={onDelete}
+                onOpenActions={openActionPanel}
+                activeMobileActionMessageId={
+                  isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
+                }
+                onCloseActions={() => handleActionPanelChange(false)}
+                focusedMessageId={focusedMessageId}
+                onFocusedMessageHandled={onFocusedMessageHandled}
+              />
+            ) : null}
+          </div>
+
+          {showScrollToBottom ? (
+            <button
+              type="button"
+              aria-label="맨 아래로 이동"
+              onClick={scrollToBottom}
+              className="bg-background text-foreground hover:bg-muted absolute bottom-4 left-1/2 z-10 flex size-10 -translate-x-1/2 items-center justify-center rounded-full border shadow-md transition-colors"
+            >
+              <ArrowDownIcon className="size-5" />
+            </button>
           ) : null}
         </div>
 

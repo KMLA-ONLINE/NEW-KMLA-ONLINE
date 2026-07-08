@@ -11,6 +11,7 @@ export default [
         route("details", "./routes/_app.messenger-room-details.tsx"),
         route("invite", "./routes/_app.messenger-room-invite.tsx"),
         route("media", "./routes/_app.messenger-room-media.tsx"),
+        route("members", "./routes/_app.messenger-room-members.tsx"),
         route("search", "./routes/_app.messenger-room-search.tsx"),
       ]),
     ]),
