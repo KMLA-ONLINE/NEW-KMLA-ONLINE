@@ -49,11 +49,11 @@ export function MembersPane({
               key={participant.id}
               className="hover:bg-muted/60 flex items-center gap-3 rounded-2xl p-2"
             >
-              <Avatar size="sm">
+              <Avatar>
                 <AvatarFallback>{participant.initials}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{participant.name}</p>
+                <p className="text-md ml-1 truncate font-medium">{participant.name}</p>
               </div>
             </div>
           ))}

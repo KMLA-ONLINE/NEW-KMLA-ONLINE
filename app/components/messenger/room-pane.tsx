@@ -7,6 +7,7 @@ import { MessageList } from "~/components/messenger/message-list"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
+  getMessageAuthor,
   getPinnedMessages,
   getReplyText,
   getRoomSubtitle,
@@ -183,12 +184,12 @@ export function RoomPane({
             <button
               type="button"
               onClick={onOpenPinnedMessages}
-              className="bg-muted/60 hover:bg-muted flex w-full min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors"
+              className="flex w-full min-w-0 items-center gap-2 py-2.5 text-left"
             >
-              <PinIcon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+              <PinIcon className="text-muted-foreground mr-1 size-4 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1">
                 <span className="text-muted-foreground block text-[11px] leading-none font-medium">
-                  고정된 메시지
+                  {getMessageAuthor(room, latestPinnedMessage).name}
                 </span>
                 <span className="mt-0.5 block truncate text-sm">
                   {getReplyText(latestPinnedMessage)}
