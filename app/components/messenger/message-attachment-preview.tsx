@@ -1,10 +1,15 @@
-import { FileIcon, ImageIcon } from "lucide-react"
+import type { ComponentType, CSSProperties } from "react"
+import { FileIcon, ImageIcon, VideoIcon } from "lucide-react"
 
+import { AudioPlayer } from "~/components/media/audio-player"
+import { VideoPlayer } from "~/components/media/video-player"
+import { PhotoLink } from "~/components/messenger/photo-link"
 import {
   MESSAGE_IMAGE_BOUNDS,
   formatFileSize,
+  getAttachmentKind,
   getBoundedImageSize,
-  isImageAttachment,
+  getBoundedVideoBox,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { MessageAttachment } from "~/lib/messenger/types"
@@ -12,6 +17,19 @@ import type { MessageAttachment } from "~/lib/messenger/types"
 const DEFAULT_IMAGE_SIZE = getBoundedImageSize(4, 3)
 const IMAGE_GRID_SIZE = MESSAGE_IMAGE_BOUNDS.maxWidth
 const IMAGE_GRID_MAX_TILES = 4
+const MEDIA_BOX_CLASS = "bg-muted max-w-full overflow-hidden rounded-3xl border"
+
+/** A fixed pixel box; object-cover crops the photo into it. */
+function getImageBoxStyle(attachment: MessageAttachment): CSSProperties {
+  return attachment.width && attachment.height
+    ? getBoundedImageSize(attachment.width, attachment.height)
+    : DEFAULT_IMAGE_SIZE
+}
+
+/** A width and a ratio, so a narrowed bubble shortens the clip instead of letterboxing it. */
+function getVideoBoxStyle(attachment: MessageAttachment): CSSProperties {
+  return getBoundedVideoBox(attachment.width, attachment.height)
+}
 
 function getImageGridTileSpanClassName(tileCount: number, index: number) {
   if (tileCount === 2) {
@@ -23,6 +41,30 @@ function getImageGridTileSpanClassName(tileCount: number, index: number) {
   }
 
   return ""
+}
+
+/** Stands in for an attachment whose source has not been resolved yet. */
+function MediaPlaceholder({
+  name,
+  icon: Icon = ImageIcon,
+  className,
+  style,
+}: {
+  name: string
+  icon?: ComponentType<{ className?: string }>
+  className?: string
+  style?: CSSProperties
+}) {
+  return (
+    <div
+      role="img"
+      aria-label={name}
+      style={style}
+      className={cn("flex items-center justify-center", className)}
+    >
+      <Icon className="text-primary" />
+    </div>
+  )
 }
 
 function FilePreview({
@@ -59,32 +101,45 @@ function MessageImage({
   attachment: MessageAttachment
   className?: string
 }) {
-  const size =
-    attachment.width && attachment.height
-      ? getBoundedImageSize(attachment.width, attachment.height)
-      : DEFAULT_IMAGE_SIZE
+  const boxStyle = getImageBoxStyle(attachment)
+  const boxClassName = cn(MEDIA_BOX_CLASS, className)
+
+  if (!attachment.src) {
+    return <MediaPlaceholder name={attachment.name} style={boxStyle} className={boxClassName} />
+  }
+
+  return (
+    <figure style={boxStyle} className={boxClassName}>
+      <PhotoLink attachmentId={attachment.id} className="block size-full">
+        <img src={attachment.src} alt={attachment.name} className="size-full object-cover" />
+      </PhotoLink>
+    </figure>
+  )
+}
+
+function MessageVideo({
+  attachment,
+  className,
+}: {
+  attachment: MessageAttachment
+  className?: string
+}) {
+  const boxStyle = getVideoBoxStyle(attachment)
 
   if (!attachment.src) {
     return (
-      <div
-        role="img"
-        aria-label={attachment.name}
-        style={{ width: size.width, height: size.height }}
-        className={cn("bg-muted max-w-full overflow-hidden rounded-3xl border", className)}
-      >
-        <div className="flex size-full items-center justify-center">
-          <ImageIcon className="text-primary" />
-        </div>
-      </div>
+      <MediaPlaceholder
+        name={attachment.name}
+        icon={VideoIcon}
+        style={boxStyle}
+        className={cn(MEDIA_BOX_CLASS, className)}
+      />
     )
   }
 
   return (
-    <figure
-      style={{ width: size.width, height: size.height }}
-      className={cn("bg-muted max-w-full overflow-hidden rounded-3xl border", className)}
-    >
-      <img src={attachment.src} alt={attachment.name} className="size-full object-cover" />
+    <figure style={boxStyle} className={cn(MEDIA_BOX_CLASS, "bg-black", className)}>
+      <VideoPlayer src={attachment.src} name={attachment.name} />
     </figure>
   )
 }
@@ -101,31 +156,33 @@ function MessageImageGrid({ attachments }: { attachments: MessageAttachment[] })
       {visibleAttachments.map((attachment, index) => {
         const isLastTile = index === visibleAttachments.length - 1
         const showOverflow = isLastTile && remainder > 0
+        // pointer-events-none so the badge does not swallow the tile's link.
+        const overflowBadge = showOverflow ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50">
+            <span className="text-lg font-semibold text-white">+{remainder}</span>
+          </div>
+        ) : null
 
         return (
           <div
-            key={attachment.id ?? `${attachment.name}-${index}`}
+            key={attachment.id}
             className={cn(
               "bg-muted relative overflow-hidden",
               getImageGridTileSpanClassName(visibleAttachments.length, index)
             )}
           >
             {attachment.src ? (
-              <img src={attachment.src} alt={attachment.name} className="size-full object-cover" />
+              <PhotoLink attachmentId={attachment.id} className="block size-full">
+                <img
+                  src={attachment.src}
+                  alt={attachment.name}
+                  className="size-full object-cover"
+                />
+              </PhotoLink>
             ) : (
-              <div
-                role="img"
-                aria-label={attachment.name}
-                className="flex size-full items-center justify-center"
-              >
-                <ImageIcon className="text-primary" />
-              </div>
+              <MediaPlaceholder name={attachment.name} className="size-full" />
             )}
-            {showOverflow ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                <span className="text-lg font-semibold text-white">+{remainder}</span>
-              </div>
-            ) : null}
+            {overflowBadge}
           </div>
         )
       })}
@@ -140,8 +197,7 @@ export function MessageAttachmentGroup({
   attachments: MessageAttachment[]
   className?: string
 }) {
-  const images = attachments.filter((attachment) => isImageAttachment(attachment))
-  const files = attachments.filter((attachment) => !isImageAttachment(attachment))
+  const images = attachments.filter((attachment) => getAttachmentKind(attachment) === "image")
   const [firstImage] = images
 
   return (
@@ -151,9 +207,32 @@ export function MessageAttachmentGroup({
       ) : firstImage ? (
         <MessageImage attachment={firstImage} />
       ) : null}
-      {files.map((attachment, index) => (
-        <FilePreview key={attachment.id ?? `${attachment.name}-${index}`} attachment={attachment} />
-      ))}
+
+      {attachments.map((attachment) => {
+        const kind = getAttachmentKind(attachment)
+
+        if (kind === "image") {
+          return null
+        }
+
+        if (kind === "video") {
+          return <MessageVideo key={attachment.id} attachment={attachment} />
+        }
+
+        // Audio with no source is just a file we happen to be unable to play.
+        if (kind === "audio" && attachment.src) {
+          return (
+            <AudioPlayer
+              key={attachment.id}
+              src={attachment.src}
+              name={attachment.name}
+              durationSeconds={attachment.durationSeconds}
+            />
+          )
+        }
+
+        return <FilePreview key={attachment.id} attachment={attachment} />
+      })}
     </div>
   )
 }

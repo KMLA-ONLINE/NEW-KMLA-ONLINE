@@ -1,5 +1,5 @@
-import { CURRENT_USER } from "../app/lib/messenger/constants"
-import type { Room } from "../app/lib/messenger/types"
+import { CURRENT_USER } from "~/lib/messenger/constants"
+import type { Room } from "~/lib/messenger/types"
 
 export const seedRooms: Room[] = [
   {
@@ -37,13 +37,29 @@ export const seedRooms: Room[] = [
         createdAt: "2026-07-03T20:43:00.000Z",
       },
       {
+        // A reply to a reply: this quotes minji-3, which itself quotes minji-2.
+        // Only one level renders at a time; tapping a preview walks the chain.
+        id: "minji-3-reply",
+        senderId: "me",
+        replyTo: {
+          messageId: "minji-3",
+          author: "Minji Kang",
+          text: "Perfect. Can you send the board photo again? The first image was cropped on my phone.",
+        },
+        content: "Resending it now, uncropped.",
+        createdAt: "2026-07-03T20:43:30.000Z",
+        read: true,
+        readBy: ["minji"],
+      },
+      {
         id: "minji-4",
         senderId: "me",
         attachments: [
           {
             id: "minji-4-file-1",
+            src: "/messenger/whiteboard-snapshot.png",
             name: "Whiteboard snapshot",
-            contentType: "image/jpeg",
+            contentType: "image/png",
           },
         ],
         createdAt: "2026-07-03T20:44:00.000Z",
@@ -56,8 +72,9 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "minji-4-landscape-1",
+            src: "/messenger/lab-bench-wide-shot.png",
             name: "Lab bench wide shot",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1600,
             height: 900,
           },
@@ -72,8 +89,9 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "minji-4-portrait-1",
+            src: "/messenger/poster-full-page.png",
             name: "Poster full page",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 720,
             height: 1600,
           },
@@ -88,8 +106,9 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "minji-4-panorama-1",
+            src: "/messenger/hallway-panorama.png",
             name: "Hallway panorama",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1800,
             height: 500,
           },
@@ -104,15 +123,17 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "minji-4-pair-1",
+            src: "/messenger/board-photo-1.png",
             name: "Board photo 1",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1200,
             height: 1600,
           },
           {
             id: "minji-4-pair-2",
+            src: "/messenger/board-photo-2.png",
             name: "Board photo 2",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1600,
             height: 1200,
           },
@@ -125,22 +146,25 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "minji-4-trio-1",
+            src: "/messenger/reaction-step-1.png",
             name: "Reaction step 1",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1200,
             height: 1600,
           },
           {
             id: "minji-4-trio-2",
+            src: "/messenger/reaction-step-2.png",
             name: "Reaction step 2",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1200,
             height: 900,
           },
           {
             id: "minji-4-trio-3",
+            src: "/messenger/reaction-step-3.png",
             name: "Reaction step 3",
-            contentType: "image/jpeg",
+            contentType: "image/png",
             width: 1200,
             height: 900,
           },
@@ -153,10 +177,30 @@ export const seedRooms: Room[] = [
         id: "minji-4-quad",
         senderId: "minji",
         attachments: [
-          { id: "minji-4-quad-1", name: "Angle 1", contentType: "image/jpeg" },
-          { id: "minji-4-quad-2", name: "Angle 2", contentType: "image/jpeg" },
-          { id: "minji-4-quad-3", name: "Angle 3", contentType: "image/jpeg" },
-          { id: "minji-4-quad-4", name: "Angle 4", contentType: "image/jpeg" },
+          {
+            id: "minji-4-quad-1",
+            src: "/messenger/angle-1.png",
+            name: "Angle 1",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-quad-2",
+            src: "/messenger/angle-2.png",
+            name: "Angle 2",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-quad-3",
+            src: "/messenger/angle-3.png",
+            name: "Angle 3",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-quad-4",
+            src: "/messenger/angle-4.png",
+            name: "Angle 4",
+            contentType: "image/png",
+          },
         ],
         createdAt: "2026-07-03T20:44:19.500Z",
       },
@@ -164,16 +208,63 @@ export const seedRooms: Room[] = [
         id: "minji-4-overflow",
         senderId: "me",
         attachments: [
-          { id: "minji-4-overflow-1", name: "Notes page 1", contentType: "image/png" },
-          { id: "minji-4-overflow-2", name: "Notes page 2", contentType: "image/png" },
-          { id: "minji-4-overflow-3", name: "Notes page 3", contentType: "image/png" },
-          { id: "minji-4-overflow-4", name: "Notes page 4", contentType: "image/png" },
-          { id: "minji-4-overflow-5", name: "Notes page 5", contentType: "image/png" },
-          { id: "minji-4-overflow-6", name: "Notes page 6", contentType: "image/png" },
+          {
+            id: "minji-4-overflow-1",
+            src: "/messenger/notes-page-1.png",
+            name: "Notes page 1",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-overflow-2",
+            src: "/messenger/notes-page-2.png",
+            name: "Notes page 2",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-overflow-3",
+            src: "/messenger/notes-page-3.png",
+            name: "Notes page 3",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-overflow-4",
+            src: "/messenger/notes-page-4.png",
+            name: "Notes page 4",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-overflow-5",
+            src: "/messenger/notes-page-5.png",
+            name: "Notes page 5",
+            contentType: "image/png",
+          },
+          {
+            id: "minji-4-overflow-6",
+            src: "/messenger/notes-page-6.png",
+            name: "Notes page 6",
+            contentType: "image/png",
+          },
         ],
         createdAt: "2026-07-03T20:44:19.800Z",
         read: true,
         readBy: ["minji"],
+      },
+      {
+        id: "minji-4-portrait-clip",
+        senderId: "minji",
+        attachments: [
+          {
+            id: "minji-4-portrait-clip-1",
+            src: "/messenger/poster-reveal.mp4",
+            name: "Poster reveal.mp4",
+            contentType: "video/mp4",
+            sizeBytes: 39_102,
+            width: 360,
+            height: 640,
+            durationSeconds: 4,
+          },
+        ],
+        createdAt: "2026-07-03T20:44:19.900Z",
       },
       {
         id: "minji-5",
@@ -234,8 +325,7 @@ export const seedRooms: Room[] = [
           {
             id: "council-1-budget-file-1",
             name: "Budget breakdown.xlsx",
-            contentType:
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             sizeBytes: 92_400,
           },
         ],
@@ -279,6 +369,53 @@ export const seedRooms: Room[] = [
           },
         ],
         createdAt: "2026-07-03T19:12:03.000Z",
+      },
+      {
+        id: "council-1-clip",
+        senderId: "sora",
+        attachments: [
+          {
+            id: "council-1-clip-1",
+            src: "/messenger/rehearsal-clip.wav",
+            name: "Rehearsal clip.wav",
+            contentType: "audio/wav",
+            sizeBytes: 96_044,
+            durationSeconds: 6,
+          },
+        ],
+        createdAt: "2026-07-03T19:12:04.000Z",
+      },
+      {
+        id: "council-1-walkthrough",
+        senderId: "yujin",
+        attachments: [
+          {
+            id: "council-1-walkthrough-1",
+            src: "/messenger/booth-walkthrough.mp4",
+            name: "Booth walkthrough.mp4",
+            contentType: "video/mp4",
+            sizeBytes: 60_905,
+            width: 640,
+            height: 360,
+            durationSeconds: 6,
+          },
+        ],
+        createdAt: "2026-07-03T19:12:05.000Z",
+      },
+      {
+        // Dimensions withheld on purpose: exercises the reserved default ratio.
+        id: "council-1-stage-check",
+        senderId: "daniel",
+        attachments: [
+          {
+            id: "council-1-stage-check-1",
+            src: "/messenger/stage-check.mp4",
+            name: "Stage check.mp4",
+            contentType: "video/mp4",
+            sizeBytes: 45_568,
+          },
+        ],
+        createdAt: "2026-07-03T19:12:06.000Z",
       },
       {
         id: "council-2",
@@ -343,6 +480,7 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "debate-1-file-1",
+            src: "/messenger/debate-bracket.png",
             name: "Case map draft",
             contentType: "image/png",
           },

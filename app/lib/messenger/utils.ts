@@ -95,11 +95,62 @@ export function getMessagePreview(message: Message | undefined) {
   return "첨부 파일"
 }
 
+export type AttachmentKind = "image" | "audio" | "video" | "file"
+
+// Mirrors public.message_attachment_mime_types. Deliberately no "svg": the
+// server rejects image/svg+xml, since an SVG can carry script and the download
+// link opens it directly.
+const EXTENSIONS_BY_KIND: Record<Exclude<AttachmentKind, "file">, Set<string>> = {
+  image: new Set(["jpeg", "jpg", "png", "webp"]),
+  audio: new Set(["aac", "m4a", "mp3", "oga", "ogg", "wav"]),
+  video: new Set(["mov", "mp4", "webm"]),
+}
+
+function getFileExtension(name: string) {
+  const extension = name.split(".").pop()?.toLowerCase()
+  return extension && extension !== name.toLowerCase() ? extension : null
+}
+
+// contentType is the source of truth (message_attachments.content_type is NOT
+// NULL), but a locally attached File can report an empty type, so fall back to
+// the extension rather than silently rendering a photo as a grey file chip.
+export function getAttachmentKind(attachment: MessageAttachment): AttachmentKind {
+  const mediaKinds = ["image", "audio", "video"] as const
+
+  for (const kind of mediaKinds) {
+    if (attachment.contentType?.startsWith(`${kind}/`)) {
+      return kind
+    }
+  }
+
+  const extension = getFileExtension(attachment.name)
+
+  for (const kind of mediaKinds) {
+    if (extension && EXTENSIONS_BY_KIND[kind].has(extension)) {
+      return kind
+    }
+  }
+
+  return "file"
+}
+
 export function isImageAttachment(attachment: MessageAttachment) {
-  return (
-    attachment.contentType?.startsWith("image/") ||
-    attachment.src?.startsWith("data:image/") ||
-    false
+  return getAttachmentKind(attachment) === "image"
+}
+
+/**
+ * The viewable images sent alongside `attachmentId`, in attachment order. The
+ * viewer steps within one message rather than the whole room: that is the set
+ * the sender chose, and it keeps a lone photo from opening a gallery strip.
+ */
+export function getMessageImages(room: Room, attachmentId: string) {
+  const message = room.messages.find((candidate) =>
+    candidate.attachments?.some((attachment) => attachment.id === attachmentId)
+  )
+
+  return (message?.attachments ?? []).filter(
+    (attachment): attachment is MessageAttachment & { src: string } =>
+      isImageAttachment(attachment) && Boolean(attachment.src)
   )
 }
 
@@ -134,6 +185,46 @@ export const MESSAGE_IMAGE_BOUNDS: ImageSizeBounds = {
   maxHeight: 288, // 18rem
   minWidth: 140,
   minHeight: 110,
+}
+
+/**
+ * Video gets its own box, and shapes it differently.
+ *
+ * A photo is cropped into a fixed pixel box by object-cover, so the bubble
+ * clamping that box on a narrow screen costs nothing. Cropping a video is not on
+ * the table, so a fixed height would just grow letterbox bars once the bubble's
+ * max-width bites. A width plus an aspect ratio keeps the height tracking
+ * whatever width the bubble actually grants.
+ *
+ * Wider than a photo, because the native controls have to fit along the bottom.
+ */
+export const MESSAGE_VIDEO_BOUNDS = {
+  maxWidth: 260,
+  maxHeight: 340,
+  // Taller than this and a phone screen scrolls; wider and the controls outgrow
+  // the picture. Past either, we do letterbox rather than distort.
+  minAspectRatio: 0.5,
+  maxAspectRatio: 2.5,
+  // Reserved before the clip reports its real dimensions, so nothing reflows.
+  defaultAspectRatio: 16 / 9,
+}
+
+/**
+ * A tall clip keeps its shape and gives up width, rather than sitting in a
+ * fixed-width box behind two black pillars.
+ */
+export function getBoundedVideoBox(
+  width: number | undefined,
+  height: number | undefined,
+  bounds = MESSAGE_VIDEO_BOUNDS
+) {
+  const sourceRatio = width && height ? width / height : bounds.defaultAspectRatio
+  const aspectRatio = Math.min(bounds.maxAspectRatio, Math.max(bounds.minAspectRatio, sourceRatio))
+
+  return {
+    width: Math.min(bounds.maxWidth, Math.round(bounds.maxHeight * aspectRatio)),
+    aspectRatio,
+  }
 }
 
 export function getBoundedImageSize(

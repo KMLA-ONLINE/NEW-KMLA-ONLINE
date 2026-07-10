@@ -10,7 +10,7 @@ import {
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
-import { getPinnedMessages, getRoomSubtitle, isImageAttachment } from "~/lib/messenger/utils"
+import { getRoomSubtitle } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Room } from "~/lib/messenger/types"
 
@@ -33,14 +33,6 @@ export function DetailPane({
   onOpenPinnedMessages?: () => void
   onOpenSearch?: () => void
 }) {
-  const mediaCount = room.messages.reduce(
-    (total, message) =>
-      total +
-      (message.attachments?.filter((attachment) => isImageAttachment(attachment)).length ?? 0),
-    0
-  )
-  const pinnedCount = getPinnedMessages(room).length
-
   return (
     <aside
       className={cn("bg-card flex h-full min-h-0 flex-col overflow-hidden", !compact && "border-l")}
@@ -90,10 +82,7 @@ export function DetailPane({
               <UsersIcon className="text-muted-foreground size-4" aria-hidden="true" />
               멤버
             </span>
-            <span className="text-muted-foreground flex items-center gap-1 text-xs">
-              {room.participants.length}
-              <ChevronRightIcon className="size-4" aria-hidden="true" />
-            </span>
+            <ChevronRightIcon className="text-muted-foreground size-4" aria-hidden="true" />
           </button>
 
           <button
@@ -105,10 +94,7 @@ export function DetailPane({
               <PinIcon className="text-muted-foreground size-4" aria-hidden="true" />
               고정된 메시지
             </span>
-            <span className="text-muted-foreground flex items-center gap-1 text-xs">
-              {pinnedCount}
-              <ChevronRightIcon className="size-4" aria-hidden="true" />
-            </span>
+            <ChevronRightIcon className="text-muted-foreground size-4" aria-hidden="true" />
           </button>
 
           <button
@@ -132,10 +118,7 @@ export function DetailPane({
               <ImageIcon className="text-muted-foreground size-4" aria-hidden="true" />
               공유된 미디어
             </span>
-            <span className="text-muted-foreground flex items-center gap-1 text-xs">
-              {mediaCount}
-              <ChevronRightIcon className="size-4" aria-hidden="true" />
-            </span>
+            <ChevronRightIcon className="text-muted-foreground size-4" aria-hidden="true" />
           </button>
         </section>
       </div>
