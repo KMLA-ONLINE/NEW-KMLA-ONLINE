@@ -171,4 +171,22 @@ body {
       background-color: transparent;
     }
   }
+
+  .messenger-scrollbar {
+    scrollbar-color: oklch(0.708 0 0) white;
+  }
+
+  .messenger-scrollbar::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .messenger-scrollbar::-webkit-scrollbar-track {
+    background: white;
+  }
+
+  .messenger-scrollbar::-webkit-scrollbar-thumb {
+    background: oklch(0.708 0 0);
+    border: 2px solid white;
+    border-radius: 9999px;
+  }
 }
