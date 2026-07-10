@@ -1,11 +1,5 @@
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
-import type {
-  Message,
-  MessageAttachment,
-  MessageGroupPosition,
-  ReplyPreview,
-  Room,
-} from "~/lib/messenger/types"
+import type { Message, MessageAttachment, MessageGroupPosition, Room } from "~/lib/messenger/types"
 
 export type LinkedTextSegment =
   | {
@@ -285,16 +279,6 @@ export function getReplyText(message: Message) {
   }
 
   return "첨부 파일"
-}
-
-export function getReplyPreviewText(room: Room, replyPreview: ReplyPreview) {
-  const referencedMessage = room.messages.find((message) => message.id === replyPreview.messageId)
-
-  if (!referencedMessage) {
-    return replyPreview.text
-  }
-
-  return getReplyText(referencedMessage)
 }
 
 export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPosition) {

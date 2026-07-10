@@ -1,16 +1,16 @@
 import { FileIcon, ImageIcon } from "lucide-react"
 
 import {
+  MESSAGE_IMAGE_BOUNDS,
   formatFileSize,
   getBoundedImageSize,
-  getFileTypeLabel,
   isImageAttachment,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { MessageAttachment } from "~/lib/messenger/types"
 
 const DEFAULT_IMAGE_SIZE = getBoundedImageSize(4, 3)
-const IMAGE_GRID_SIZE = 224 // px, matches MESSAGE_IMAGE_BOUNDS.maxWidth
+const IMAGE_GRID_SIZE = MESSAGE_IMAGE_BOUNDS.maxWidth
 const IMAGE_GRID_MAX_TILES = 4
 
 function getImageGridTileSpanClassName(tileCount: number, index: number) {
@@ -45,7 +45,7 @@ function FilePreview({
         <FileIcon className="text-muted-foreground size-3.5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-weight:700 block truncate text-[13px]">{attachment.name}</span>
+        <span className="block truncate text-[13px]">{attachment.name}</span>
         <span className="text-muted-foreground mt-0.5 block truncate text-xs">{fileSize}</span>
       </span>
     </div>
@@ -72,14 +72,8 @@ function MessageImage({
         style={{ width: size.width, height: size.height }}
         className={cn("bg-muted max-w-full overflow-hidden rounded-3xl border", className)}
       >
-        <div className="grid h-full grid-cols-[1.3fr_0.7fr] gap-1 p-1">
-          <div className="bg-primary/20 flex items-center justify-center rounded-2xl">
-            <ImageIcon className="text-primary" />
-          </div>
-          <div className="grid gap-1">
-            <div className="bg-background rounded-2xl" />
-            <div className="bg-primary/15 rounded-2xl" />
-          </div>
+        <div className="flex size-full items-center justify-center">
+          <ImageIcon className="text-primary" />
         </div>
       </div>
     )
@@ -119,7 +113,11 @@ function MessageImageGrid({ attachments }: { attachments: MessageAttachment[] })
             {attachment.src ? (
               <img src={attachment.src} alt={attachment.name} className="size-full object-cover" />
             ) : (
-              <div className="flex size-full items-center justify-center">
+              <div
+                role="img"
+                aria-label={attachment.name}
+                className="flex size-full items-center justify-center"
+              >
                 <ImageIcon className="text-primary" />
               </div>
             )}
