@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 
 import type { Message } from "~/lib/messenger/types"
 
@@ -29,6 +35,7 @@ export function useMessageBubbleGestures({
   const pendingSwipeOffsetRef = useRef(0)
   const hasSwipeGestureRef = useRef(false)
   const isSwipingRef = useRef(false)
+  const suppressClickRef = useRef(false)
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -84,7 +91,9 @@ export function useMessageBubbleGestures({
     hasSwipeGestureRef.current = false
     setSwipeDistance(0)
     isSwipingRef.current = false
+    suppressClickRef.current = false
     longPressTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = true
       onOpenActions(message)
       clearLongPress()
     }, 450)
@@ -136,12 +145,30 @@ export function useMessageBubbleGestures({
     const shouldReply =
       hasSwipeGestureRef.current && swipeOffsetRef.current >= SWIPE_REPLY_TRIGGER_DISTANCE
 
+    if (hasSwipeGestureRef.current) {
+      suppressClickRef.current = true
+    }
+
     clearLongPress()
     resetSwipe()
 
     if (shouldReply) {
       onReply(message)
     }
+  }
+
+  // A long press or a swipe still ends with the browser firing `click` on
+  // whatever was under the finger, which would e.g. open an image on top of the
+  // action menu the long press just opened. Swallow that one click; the next
+  // pointerdown clears the flag.
+  const handleClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressClickRef.current) {
+      return
+    }
+
+    suppressClickRef.current = false
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   useEffect(
@@ -165,6 +192,7 @@ export function useMessageBubbleGestures({
       onPointerUp: finishPointerInteraction,
       onPointerCancel: finishPointerInteraction,
       onPointerLeave: finishPointerInteraction,
+      onClickCapture: handleClickCapture,
     },
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
-import { useLocation, useNavigate, useParams } from "react-router"
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router"
 
+import { ImageViewer } from "~/components/media/image-viewer"
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
 import { DetailPane } from "~/components/messenger/detail-pane"
 import { InviteMembersPane } from "~/components/messenger/invite-members-pane"
@@ -10,17 +11,23 @@ import { PinnedMessagesPane } from "~/components/messenger/pinned-messages-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
 import { SharedMediaPane } from "~/components/messenger/shared-media-pane"
 import { useIsMobile } from "~/hooks/use-mobile"
-import { CURRENT_USER } from "~/lib/messenger/constants"
 import {
+  CURRENT_USER,
+  PHOTO_SEARCH_PARAM,
+  type PhotoViewerLocationState,
+} from "~/lib/messenger/constants"
+import { seedRooms } from "~/lib/messenger/mock-data"
+import {
+  getAttachmentKind,
   getLastMessage,
   getMessageAuthor,
+  getMessageImages,
   getReplyText,
   isImageAttachment,
   isDeletedMessage,
   isPinnedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import { seedRooms } from "../../../docs/messenger-mock-data"
 import type {
   Message,
   MessageAttachment,
@@ -57,7 +64,49 @@ function updateRoomSummaryMessages(room: RoomSummary, messages: Message[]): Room
   return getRoomSummary({ ...room, messages })
 }
 
-function readAttachment(file: File, index: number): Promise<MessageAttachment> {
+function readImageSize(src: string) {
+  return new Promise<{ width?: number; height?: number }>((resolve) => {
+    const image = new Image()
+    image.addEventListener("load", () =>
+      resolve({ width: image.naturalWidth, height: image.naturalHeight })
+    )
+    image.addEventListener("error", () => resolve({}))
+    image.src = src
+  })
+}
+
+function readAudioDuration(src: string) {
+  return new Promise<number | undefined>((resolve) => {
+    const audio = new Audio()
+    audio.preload = "metadata"
+    audio.addEventListener("loadedmetadata", () =>
+      resolve(Number.isFinite(audio.duration) ? audio.duration : undefined)
+    )
+    audio.addEventListener("error", () => resolve(undefined))
+    audio.src = src
+  })
+}
+
+function readVideoMetadata(src: string) {
+  return new Promise<{ width?: number; height?: number; durationSeconds?: number }>((resolve) => {
+    const video = document.createElement("video")
+    video.preload = "metadata"
+    video.addEventListener("loadedmetadata", () =>
+      resolve({
+        width: video.videoWidth || undefined,
+        height: video.videoHeight || undefined,
+        durationSeconds: Number.isFinite(video.duration) ? video.duration : undefined,
+      })
+    )
+    video.addEventListener("error", () => resolve({}))
+    video.src = src
+  })
+}
+
+// Object URLs rather than base64 data URLs: an mp3 read with readAsDataURL
+// would sit in React state a third larger than the file itself. The caller owns
+// revoking the returned src.
+async function readAttachment(file: File, index: number): Promise<MessageAttachment> {
   const baseAttachment: MessageAttachment = {
     id: `local-file-${Date.now()}-${index}`,
     name: file.name,
@@ -65,28 +114,23 @@ function readAttachment(file: File, index: number): Promise<MessageAttachment> {
     sizeBytes: file.size,
   }
 
-  if (!file.type.startsWith("image/")) {
-    return Promise.resolve(baseAttachment)
+  const kind = getAttachmentKind(baseAttachment)
+
+  if (kind === "file") {
+    return baseAttachment
   }
 
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.addEventListener("load", () => {
-      const src = typeof reader.result === "string" ? reader.result : undefined
-      if (!src) {
-        resolve(baseAttachment)
-        return
-      }
+  const src = URL.createObjectURL(file)
 
-      const image = new Image()
-      image.addEventListener("load", () => {
-        resolve({ ...baseAttachment, src, width: image.naturalWidth, height: image.naturalHeight })
-      })
-      image.addEventListener("error", () => resolve({ ...baseAttachment, src }))
-      image.src = src
-    })
-    reader.readAsDataURL(file)
-  })
+  if (kind === "image") {
+    return { ...baseAttachment, src, ...(await readImageSize(src)) }
+  }
+
+  if (kind === "video") {
+    return { ...baseAttachment, src, ...(await readVideoMetadata(src)) }
+  }
+
+  return { ...baseAttachment, src, durationSeconds: await readAudioDuration(src) }
 }
 
 export default function MessengerPage() {
@@ -102,8 +146,10 @@ export default function MessengerPage() {
   const isMobile = useIsMobile()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedRoomIdRef = useRef<string | null>(null)
+  const objectUrlsRef = useRef<string[]>([])
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { roomId } = useParams()
   const isDetailOpen = location.pathname.endsWith("/details")
   const isInviteOpen = location.pathname.endsWith("/invite")
@@ -122,6 +168,11 @@ export default function MessengerPage() {
   const selectedRoom = selectedRoomSummary
     ? { ...selectedRoomSummary, messages: messagesByRoomId[selectedRoomSummary.id] ?? [] }
     : null
+  const openPhotoId = searchParams.get(PHOTO_SEARCH_PARAM)
+  const viewerImages =
+    selectedRoom && openPhotoId
+      ? getMessageImages(selectedRoom, openPhotoId).map(({ id, src, name }) => ({ id, src, name }))
+      : []
   const isGroupInviteOpen = isInviteOpen && selectedRoomSummary?.type === "group"
   const isSecondaryOpen =
     isDetailOpen ||
@@ -141,6 +192,39 @@ export default function MessengerPage() {
       fileInputRef.current.value = ""
     }
   }, [selectedRoomId])
+
+  useEffect(
+    () => () => {
+      objectUrlsRef.current.forEach((objectUrl) => URL.revokeObjectURL(objectUrl))
+    },
+    []
+  )
+
+  // The search param only records that the viewer is open, and on which photo.
+  // Moving between photos afterwards is the viewer's own business: a router
+  // round trip per swipe would land back here mid-gesture and fight the finger.
+  //
+  // PhotoLink pushes a marked history entry, so closing steps back and the
+  // mobile back gesture closes the viewer too. A deep link is not ours to step
+  // back from, so that entry is unmarked and gets the param stripped instead.
+  const isPushedPhotoEntry = Boolean(
+    (location.state as PhotoViewerLocationState | null)?.photoViewerPushed
+  )
+  const closePhotoViewer = useCallback(() => {
+    if (isPushedPhotoEntry) {
+      navigate(-1)
+      return
+    }
+
+    setSearchParams(
+      (previousSearchParams) => {
+        const nextSearchParams = new URLSearchParams(previousSearchParams)
+        nextSearchParams.delete(PHOTO_SEARCH_PARAM)
+        return nextSearchParams
+      },
+      { replace: true, preventScrollReset: true }
+    )
+  }, [isPushedPhotoEntry, navigate, setSearchParams])
 
   const selectRoom = (roomId: string) => {
     setReplyTo(null)
@@ -289,9 +373,18 @@ export default function MessengerPage() {
 
     const targetRoomId = selectedRoom.id
     const attachments = await Promise.all(files.map((file, index) => readAttachment(file, index)))
+    const objectUrls = attachments
+      .map((attachment) => attachment.src)
+      .filter((src): src is string => Boolean(src?.startsWith("blob:")))
+
+    // The room changed while we were reading the files, so these attachments
+    // are thrown away. Release their object URLs now rather than at unmount.
     if (selectedRoomIdRef.current !== targetRoomId) {
+      objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl))
       return
     }
+
+    objectUrlsRef.current.push(...objectUrls)
 
     const now = Date.now()
     const imageAttachments = attachments.filter((attachment) => isImageAttachment(attachment))
@@ -341,6 +434,8 @@ export default function MessengerPage() {
         className="sr-only"
         onChange={handleFileChange}
       />
+
+      <ImageViewer images={viewerImages} openImageId={openPhotoId} onClose={closePhotoViewer} />
 
       <main className="h-full min-h-0 md:hidden">
         {!selectedRoom ? (

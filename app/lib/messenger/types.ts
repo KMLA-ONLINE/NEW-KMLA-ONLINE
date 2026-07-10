@@ -9,13 +9,16 @@ export type Participant = {
 }
 
 export type MessageAttachment = {
-  id?: string
+  id: string
   src?: string
   name: string
   contentType?: string
   sizeBytes?: number
+  /** Images and video. */
   width?: number
   height?: number
+  /** Audio and video. Not persisted yet — message_attachments has no duration column. */
+  durationSeconds?: number
 }
 
 export type ReplyPreview = {
@@ -53,6 +56,11 @@ export type Room = {
   participants: Participant[]
   messages: Message[]
   unreadCount?: number
+  /**
+   * Derived, not stored: chat_notification_settings holds `muted_until`, which
+   * carries both "for 8 hours" and "until I say otherwise". Recompute it as the
+   * deadline passes rather than caching a boolean.
+   */
   muted?: boolean
 }
 

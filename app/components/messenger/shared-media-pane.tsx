@@ -1,8 +1,14 @@
-import { ArrowLeftIcon, FileIcon, ImageIcon } from "lucide-react"
+import { ArrowLeftIcon, FileIcon, ImageIcon, MusicIcon, VideoIcon } from "lucide-react"
 
+import { PhotoLink } from "~/components/messenger/photo-link"
 import { Button } from "~/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs"
-import { formatFileSize, getFileTypeLabel, isImageAttachment } from "~/lib/messenger/utils"
+import {
+  formatFileSize,
+  getAttachmentKind,
+  getFileTypeLabel,
+  isImageAttachment,
+} from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { MessageAttachment, Room } from "~/lib/messenger/types"
 
@@ -14,13 +20,21 @@ function EmptyState({ label }: { label: string }) {
   )
 }
 
+const ROW_ICON_BY_KIND = {
+  image: ImageIcon,
+  audio: MusicIcon,
+  video: VideoIcon,
+  file: FileIcon,
+}
+
 function FileRow({ attachment }: { attachment: MessageAttachment }) {
   const fileSize = formatFileSize(attachment.sizeBytes)
+  const RowIcon = ROW_ICON_BY_KIND[getAttachmentKind(attachment)]
 
   return (
-    <div className="bg-muted/50 flex items-center gap-3 rounded-2xl border p-3">
-      <span className="bg-background flex size-9 shrink-0 items-center justify-center rounded-xl border">
-        <FileIcon className="text-muted-foreground size-4" />
+    <div className="flex items-center gap-3 py-3">
+      <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-xl">
+        <RowIcon className="text-muted-foreground size-4" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{attachment.name}</p>
@@ -64,17 +78,22 @@ export function SharedMediaPane({
           <TabsContent value="images">
             {images.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {images.map((attachment, index) =>
+                {images.map((attachment) =>
                   attachment.src ? (
-                    <img
-                      key={attachment.id ?? `${attachment.name}-${index}`}
-                      src={attachment.src}
-                      alt={attachment.name}
-                      className="aspect-square w-full rounded-2xl object-cover"
-                    />
+                    <PhotoLink
+                      key={attachment.id}
+                      attachmentId={attachment.id}
+                      className="block aspect-square overflow-hidden rounded-2xl"
+                    >
+                      <img
+                        src={attachment.src}
+                        alt={attachment.name}
+                        className="size-full object-cover"
+                      />
+                    </PhotoLink>
                   ) : (
                     <div
-                      key={attachment.id ?? `${attachment.name}-${index}`}
+                      key={attachment.id}
                       className="bg-muted flex aspect-square items-center justify-center rounded-2xl border"
                       aria-label={attachment.name}
                       role="img"
@@ -91,12 +110,9 @@ export function SharedMediaPane({
 
           <TabsContent value="files">
             {files.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                {files.map((attachment, index) => (
-                  <FileRow
-                    key={attachment.id ?? `${attachment.name}-${index}`}
-                    attachment={attachment}
-                  />
+              <div className="flex flex-col divide-y">
+                {files.map((attachment) => (
+                  <FileRow key={attachment.id} attachment={attachment} />
                 ))}
               </div>
             ) : (
