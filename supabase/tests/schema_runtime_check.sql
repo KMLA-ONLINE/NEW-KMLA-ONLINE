@@ -121,10 +121,49 @@ begin
     or not has_column_privilege('authenticated', 'public.messages', 'pinned_at', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.message_reactions', 'reaction_type_id', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.chat_read_states', 'last_read_message_id', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.chat_notification_settings', 'muted_until', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.chat_notification_settings', 'level', 'UPDATE')
     or not has_sequence_privilege('authenticated', 'public.conversations_id_seq', 'USAGE')
     or not has_sequence_privilege('authenticated', 'public.messages_id_seq', 'USAGE')
   then
     raise exception 'chat write grants missing';
+  end if;
+
+  -- An insert/update policy open to authenticated, on a table authenticated may
+  -- not write a single column of, is a policy that can never fire. That is what a
+  -- lost column grant looks like: `supabase db diff` emits table-level grants only
+  -- and drops the column-level ones written in the declarative schema.
+  if exists (
+    select 1
+    from pg_policy pol
+    join pg_class c on c.oid = pol.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and pol.polcmd in ('a', 'w')
+      and (pol.polroles = '{0}'::oid[] or 'authenticated'::regrole = any (pol.polroles))
+      and not has_any_column_privilege(
+            'authenticated',
+            c.oid,
+            case pol.polcmd when 'a' then 'INSERT' else 'UPDATE' end
+          )
+  ) then
+    raise exception 'an insert/update policy for authenticated has no matching column grant';
+  end if;
+
+  -- The other direction: a table-wide write grant hands authenticated every
+  -- column, including ones added later. Client writes are always column-scoped.
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind = 'r'
+      and (
+        has_table_privilege('authenticated', c.oid, 'INSERT')
+        or has_table_privilege('authenticated', c.oid, 'UPDATE')
+      )
+  ) then
+    raise exception 'authenticated holds a table-wide insert/update grant; scope it to columns';
   end if;
 
   if exists (
@@ -135,6 +174,61 @@ begin
       and has_function_privilege('anon', p.oid, 'EXECUTE')
   ) then
     raise exception 'anon must not execute public application functions';
+  end if;
+
+  -- 00-foundation revokes the default privileges *for role postgres*, so an
+  -- object created by any other role -- supabase_admin, whose defaults still hand
+  -- anon arwdDxtm -- would be born readable by anon, and no schema file would say
+  -- so. Nothing in public is ever anon's.
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind in ('r', 'p', 'v', 'm', 'f')
+      and (
+        has_any_column_privilege('anon', c.oid, 'SELECT')
+        or has_any_column_privilege('anon', c.oid, 'INSERT')
+        or has_any_column_privilege('anon', c.oid, 'UPDATE')
+        or has_any_column_privilege('anon', c.oid, 'REFERENCES')
+        or has_table_privilege('anon', c.oid, 'DELETE')
+        or has_table_privilege('anon', c.oid, 'TRUNCATE')
+        or has_table_privilege('anon', c.oid, 'TRIGGER')
+      )
+  ) then
+    raise exception 'anon must not hold privileges on public tables';
+  end if;
+
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind = 'S'
+      and (
+        has_sequence_privilege('anon', c.oid, 'USAGE')
+        or has_sequence_privilege('anon', c.oid, 'SELECT')
+        or has_sequence_privilege('anon', c.oid, 'UPDATE')
+      )
+  ) then
+    raise exception 'anon must not hold privileges on public sequences';
+  end if;
+
+  -- A public function nobody may execute is dead, and almost always means a
+  -- grant was lost. `supabase db diff` does not track execute privileges, and
+  -- renaming a function's parameter forces it to drop and recreate the function,
+  -- which silently discards the grant. Default privileges then leave it callable
+  -- by no one.
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prokind = 'f'
+      and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      and not has_function_privilege('service_role', p.oid, 'EXECUTE')
+  ) then
+    raise exception 'a public function is executable by no role: a grant was probably lost';
   end if;
 
   if (
@@ -150,6 +244,54 @@ begin
       ]::text[]
   ) <> 2 then
     raise exception 'document attachment MIME allowlist contract failed';
+  end if;
+
+  -- public.message_attachment_mime_types is the single source for what may be
+  -- attached to a message. The bucket's own allowlist is generated from it, so
+  -- the two drifting apart is the failure this catches.
+  if (
+    select b.allowed_mime_types
+    from storage.buckets b
+    where b.id = 'message-files'
+  ) is distinct from (
+    select array_agg(content_type order by content_type)
+    from public.message_attachment_mime_types
+  ) then
+    raise exception 'message-files bucket allowlist has drifted from message_attachment_mime_types';
+  end if;
+
+  if (
+    select b.file_size_limit
+    from storage.buckets b
+    where b.id = 'message-files'
+  ) is distinct from (select max(max_bytes) from public.message_attachment_mime_types) then
+    raise exception 'message-files bucket file_size_limit has drifted from message_attachment_mime_types';
+  end if;
+
+  -- Messages accept media, and SVG stays rejected. `kind` is universal and lives
+  -- in public.mime_types; what a message accepts, and how large, is per-surface.
+  if not exists (
+      select 1 from public.message_attachment_mime_types allowed
+      join public.mime_types mime on mime.content_type = allowed.content_type
+      where mime.kind = 'audio'
+    )
+    or not exists (
+      select 1 from public.message_attachment_mime_types allowed
+      join public.mime_types mime on mime.content_type = allowed.content_type
+      where mime.kind = 'video'
+    )
+    or exists (select 1 from public.message_attachment_mime_types where content_type = 'image/svg+xml')
+  then
+    raise exception 'message attachment MIME registry contract failed';
+  end if;
+
+  -- Every accepted type is classified. The foreign key guarantees it; this is
+  -- here so a future surface that forgets the classification table fails loudly.
+  if exists (
+    select 1 from public.message_attachment_mime_types allowed
+    where not exists (select 1 from public.mime_types mime where mime.content_type = allowed.content_type)
+  ) then
+    raise exception 'message attachment MIME registry has unclassified types';
   end if;
 
   if has_function_privilege('authenticated', 'public.enqueue_due_storage_cleanup()', 'EXECUTE')

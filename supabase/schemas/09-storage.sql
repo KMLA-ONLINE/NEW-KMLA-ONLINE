@@ -76,15 +76,17 @@ create policy message_files_insert on storage.objects for insert to authenticate
   )
 );
 
-create function public.request_attachment_removal(p_attachment_kind text,p_attachment_id bigint)
+-- p_owner_type says which table owns the attachment, 'post' or 'message'. Not to
+-- be confused with public.attachment_kind, which says what the attachment is.
+create function public.request_attachment_removal(p_owner_type text,p_attachment_id bigint)
 returns void language plpgsql security definer set search_path='' as $$
 declare caller_id bigint:=private.require_current_profile(true); bucket text; path text; target_message_id bigint;
 begin
-  if p_attachment_kind='post' then
+  if p_owner_type='post' then
     select a.storage_bucket,a.storage_path into bucket,path from public.post_attachments a join public.posts p on p.id=a.post_id where a.id=p_attachment_id and p.author_id=caller_id and p.deleted_at is null;
-  elsif p_attachment_kind='message' then
+  elsif p_owner_type='message' then
     select a.storage_bucket,a.storage_path,a.message_id into bucket,path,target_message_id from public.message_attachments a join public.messages m on m.id=a.message_id where a.id=p_attachment_id and m.sender_id=caller_id and m.deleted_at is null and private.can_access_message(m.id);
-  else raise exception 'invalid attachment kind'; end if;
+  else raise exception 'attachment owner type must be post or message'; end if;
   if path is null then raise exception 'attachment not found or not owned'; end if;
 
   insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by) values(bucket,path,caller_id)
@@ -93,7 +95,7 @@ begin
       processed_at=null,
       last_error=null;
 
-  if p_attachment_kind='post' then
+  if p_owner_type='post' then
     delete from public.post_attachments where id=p_attachment_id and storage_path=path;
   else
     delete from public.message_attachments where id=p_attachment_id and storage_path=path;

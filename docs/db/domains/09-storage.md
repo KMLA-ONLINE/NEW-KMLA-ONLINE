@@ -37,5 +37,6 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 - 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프.
 - profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}` 경로를 사용한다(direct/room 구분 없음).
-- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachment()`는 chat 문서에 있다.
+- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat 문서에 있다.
+- `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `schema_runtime_check.sql`이 둘의 drift를 잡는다.
 - post 첨부/space 이미지 finalize RPC는 2026-07 정리에서 제거돼 현재 해당 bucket의 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).

@@ -45,6 +45,39 @@ create extension if not exists btree_gist with schema extensions;
 
 grant usage on schema public, private to authenticated, service_role;
 
+-- What an attachment is, as opposed to what its MIME string happens to say.
+create type public.attachment_kind as enum ('image', 'audio', 'video', 'file');
+
+-- How much a user wants to hear about a given target. Shared by the notification
+-- feed (06-notifications) and per-conversation settings (05-chat), both of which
+-- are applied after this file. Muting is not a level: see chat_notification_settings.
+create type public.notification_level as enum ('mention', 'all');
+
+-- Classification is universal: image/png is an image in a chat bubble and in a
+-- post alike, so it is recorded once, here. Which types a given surface accepts,
+-- and how large it lets them be, is a separate and per-surface decision that
+-- lives with that surface (public.message_attachment_mime_types).
+--
+-- This has to precede 03-content and 05-chat, hence its home in foundation.
+create table public.mime_types (
+  content_type text primary key,
+  kind public.attachment_kind not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.mime_types
+  add constraint mime_types_content_type_check check (char_length(btrim(content_type)) between 1 and 255);
+
+alter table public.mime_types enable row level security;
+
+-- Every authenticated caller, not just accepted ones: private.is_accepted_user()
+-- is defined in 01-identity and does not exist yet, and a table of MIME strings
+-- carries nothing worth gating.
+create policy mime_types_select on public.mime_types for select to authenticated using (true);
+
+grant select on public.mime_types to authenticated;
+grant select, insert, update, delete on public.mime_types to service_role;
+
 create function private.require_service_role()
 returns void language plpgsql stable security definer set search_path='' as $$
 begin

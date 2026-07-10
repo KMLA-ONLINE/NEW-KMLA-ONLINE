@@ -10,7 +10,7 @@ recipient 중심 알림 inbox. actor와 대상(space/post/comment/message)은 nu
 
 ## RPC
 
-없음. 생성을 맡던 `create_notification()`(service-role, 대상 관계 검증 + 알림 설정 suppression)과 정리용 `cleanup_notifications()`는 2026-07 정리에서 제거됐다 — 현재 생성/정리 경로가 없다.
+현재 생성/정리 경로가 없다.
 
 ## Private helper
 
@@ -23,4 +23,6 @@ recipient 중심 알림 inbox. actor와 대상(space/post/comment/message)은 nu
 ## 주의
 
 - authenticated는 본인 수신 알림 select와 `read_at` update만 가능하다.
-- `notification_level` enum은 남아 있지만 이를 쓰던 RPC가 제거돼 현재 미사용이다.
+- `notification_level` enum은 [00-foundation](00-foundation.md)으로 옮겼다 — 05-chat의 `chat_notification_settings`가 먼저 필요로 하기 때문이다.
+- 알림을 **생성하는 경로가 아직 없다**: insert grant도 trigger도 RPC도 없다.
+- 채팅은 메시지마다 알림 행을 만들지 않는다. 안 읽음 배지는 `chat_read_states`에서 파생되고(`list_conversations().unread_count`), 푸시는 저장하지 않는 일시적 전달이다. 메시지당 수신자당 행을 쌓으면 배지를 중복 저장하면서 팬아웃이 터진다. `notifications.message_id`는 **멘션**처럼 실제로 지속되어야 하는 알림에만 쓴다 — 그때 `notification_level`이 의미를 갖는다.

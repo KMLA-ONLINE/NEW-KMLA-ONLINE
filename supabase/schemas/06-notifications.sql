@@ -1,4 +1,5 @@
-create type public.notification_level as enum ('mention', 'all');
+-- public.notification_level lives in 00-foundation: 05-chat needs it, and this
+-- file is applied after that one.
 
 create table public.notifications (
   id bigserial primary key,
