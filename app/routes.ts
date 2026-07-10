@@ -18,6 +18,7 @@ export default [
     ]),
     route("menu", "./routes/_app.menu.tsx"),
     route("profile", "./routes/_app.profile.tsx"),
+    route("profile/edit", "./routes/_app.profile.edit.tsx"),
   ]),
   route("login", "./routes/login.tsx"),
   route("signup", "./routes/signup.tsx"),

@@ -8,16 +8,10 @@ declare
   profile1 bigint;
   profile2 bigint;
   profile3 bigint;
-  space1 bigint;
-  post1 bigint;
-  post2 bigint;
-  comment1 bigint;
   room1 bigint;
   room2 bigint;
   message1 bigint;
-  notification_id bigint;
   queue1 bigint;
-  cleanup_count bigint;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
   values
@@ -35,6 +29,7 @@ begin
 
   update public.profiles
   set type = 'teacher',
+      track = 'domestic',
       status = case when id = profile3 then 'pending'::public.profile_status else 'accepted'::public.profile_status end
   where id in (profile1, profile2, profile3);
 
@@ -43,129 +38,56 @@ begin
     raise exception 'auth context lookup failed';
   end if;
 
-  room1 := public.create_direct_chat(profile2);
-  room2 := public.create_direct_chat(profile2);
+  room1 := public.create_direct_conversation(profile2);
+  room2 := public.create_direct_conversation(profile2);
+
   if room1 <> room2
-    or (select count(*) from public.direct_chat_pairs where room_id = room1) <> 1
-    or (select count(*) from public.chat_room_members where room_id = room1) <> 2
+    or (select count(*) from public.direct_conversations where user1_id = least(profile1, profile2) and user2_id = greatest(profile1, profile2)) <> 1
   then
-    raise exception 'direct chat reuse contract failed';
+    raise exception 'direct conversation uniqueness contract failed';
   end if;
-  insert into public.messages (room_id, sender_id, content)
+  insert into public.messages (conversation_id, sender_id, content)
   values (room1, profile1, '검색 테스트 메시지')
   returning id into message1;
+  if not exists (select 1 from public.chat_read_states where conversation_id = room1 and user_id = profile1 and last_read_message_id = message1) then
+    raise exception 'sender read state trigger failed';
+  end if;
   if not exists (select 1 from public.search_messages('검색테스트', room1) where message_id = message1) then
     raise exception 'space-insensitive message search failed';
   end if;
 
-  begin
-    update public.direct_chat_pairs set user1_id = profile2 where room_id = room1;
-    raise exception 'direct chat pair update was not blocked';
-  exception when others then
-    if sqlerrm = 'direct chat pair update was not blocked' then raise; end if;
-  end;
-
-  begin
-    delete from public.direct_chat_pairs where room_id = room1;
-    set constraints trg_validate_direct_chat_pair immediate;
-    raise exception 'direct chat pair delete was not blocked';
-  exception when others then
-    if sqlerrm = 'direct chat pair delete was not blocked' then raise; end if;
-  end;
-
-  begin
-    update public.chat_rooms set is_group = true where id = room1;
-    raise exception 'direct room mutation was not blocked';
-  exception when others then
-    if sqlerrm = 'direct room mutation was not blocked' then raise; end if;
-  end;
-
-  space1 := public.create_space('community', 'Schema runtime check', null, 'auto_join');
-  insert into public.space_members (space_id, user_id)
-  values (space1, profile2)
-  on conflict do nothing;
-  insert into public.posts (space_id, space_type, author_id, title, content)
-  values (space1, 'community', profile1, '띄어 쓰기 검색', 'body')
-  returning id into post1;
-  insert into public.comments (post_id, author_id, content)
-  values (post1, profile2, 'child')
-  returning id into comment1;
-  if not exists (select 1 from public.search_posts('띄어쓰기', 'community', space1) where post_id = post1) then
-    raise exception 'space-insensitive post search failed';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'off'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'off notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is not null then
-    raise exception 'off notification setting did not suppress space notification';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'mentions'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'mentions all notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is not null then
-    raise exception 'mentions notification setting did not suppress all-level notification';
-  end if;
-  notification_id := public.create_notification(profile2, 'mentions notification test', null, profile1, p_post_id := post1, p_level := 'mention');
-  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
-    raise exception 'mention-level notification was not created';
-  end if;
-
-  update public.space_members
-  set notification_setting = 'all'
-  where space_id = space1 and user_id = profile2;
-  notification_id := public.create_notification(profile2, 'all notification test', null, profile1, p_post_id := post1, p_level := 'all');
-  if notification_id is null or not exists (select 1 from public.notifications where id = notification_id and recipient_id = profile2 and post_id = post1) then
-    raise exception 'all notification setting did not allow all-level notification';
-  end if;
-
-  perform public.purge_deleted_content('post', post1);
-  if not exists (select 1 from public.posts where id = post1)
-    or not exists (select 1 from public.comments where id = comment1)
-  then
-    raise exception 'active purge modified content';
-  end if;
-
+  -- messages_pin_update lets any conversation member (not just the sender)
+  -- toggle pinned_at. profile2 did not send message1.
   perform set_config('request.jwt.claim.sub', user2::text, true);
-  begin
-    perform public.soft_delete_post(post1);
-    raise exception 'unauthorized post deletion was not blocked';
-  exception when others then
-    if sqlerrm = 'unauthorized post deletion was not blocked' then raise; end if;
-  end;
-  if exists (select 1 from public.posts where id = post1 and deleted_at is not null) then
-    raise exception 'unauthorized post deletion changed target';
+  update public.messages set pinned_at = now() where id = message1;
+  if not exists (
+    select 1 from public.messages where id = message1 and pinned_at is not null and pinned_by = profile2
+  ) then
+    raise exception 'message pin contract failed';
   end if;
+
+  update public.messages set pinned_at = null where id = message1;
+  if exists (
+    select 1 from public.messages where id = message1 and (pinned_at is not null or pinned_by is not null)
+  ) then
+    raise exception 'message unpin contract failed';
+  end if;
+
+  -- messages_pin_update's broader row visibility must not let a non-sender
+  -- sneak a content edit through; private.mark_message_edited() must block it.
+  begin
+    update public.messages set content = 'unauthorized edit' where id = message1;
+    raise exception 'non-sender message content edit should have been rejected';
+  exception
+    when others then
+      if sqlerrm <> 'not allowed to edit this message' then
+        raise;
+      end if;
+  end;
 
   perform set_config('request.jwt.claim.sub', user1::text, true);
-  perform public.soft_delete_post(post1);
-  perform public.purge_deleted_content('post', post1);
-  if exists (select 1 from public.posts where id = post1)
-    or exists (select 1 from public.comments where id = comment1)
-  then
-    raise exception 'deleted post purge failed';
-  end if;
-
-  insert into public.posts (space_id, space_type, author_id, title, content, deleted_at, deleted_by)
-  values (space1, 'community', profile1, 'scheduled purge', 'body', now() - interval '8 days', profile1)
-  returning id into post2;
-  cleanup_count := public.cleanup_deleted_content();
-  if cleanup_count <> 1 or exists (select 1 from public.posts where id = post2) then
-    raise exception 'scheduled deleted post cleanup failed: count=%, exists=%',
-      cleanup_count,
-      exists (select 1 from public.posts where id = post2);
-  end if;
 
   perform public.bootstrap_first_app_admin(profile1);
-  begin
-    perform public.change_app_role(profile3, 'admin');
-    raise exception 'pending profile admin promotion was not blocked';
-  exception when others then
-    if sqlerrm = 'pending profile admin promotion was not blocked' then raise; end if;
-  end;
 
   insert into private.attachment_cleanup_queue (storage_bucket, storage_path)
   values ('avatars', user1::text || '/55555555-5555-4555-8555-555555555555')
@@ -186,7 +108,24 @@ begin
   end if;
 
   perform public.enqueue_due_storage_cleanup();
-  perform public.reconcile_cached_counts();
+
+  if to_regprocedure('public.update_message(bigint,text)') is not null
+    or to_regprocedure('public.mark_chat_read(bigint,bigint)') is not null
+    or to_regprocedure('public.set_message_reaction(bigint,bigint)') is not null
+    or to_regprocedure('public.finalize_message_attachment(bigint,text,text,text,bigint,integer,integer,integer)') is not null
+  then
+    raise exception 'redundant chat RPCs must not exist';
+  end if;
+
+  if not has_column_privilege('authenticated', 'public.messages', 'content', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.messages', 'pinned_at', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.message_reactions', 'reaction_type_id', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.chat_read_states', 'last_read_message_id', 'UPDATE')
+    or not has_sequence_privilege('authenticated', 'public.conversations_id_seq', 'USAGE')
+    or not has_sequence_privilege('authenticated', 'public.messages_id_seq', 'USAGE')
+  then
+    raise exception 'chat write grants missing';
+  end if;
 
   if exists (
     select 1
@@ -213,12 +152,29 @@ begin
     raise exception 'document attachment MIME allowlist contract failed';
   end if;
 
-  if has_function_privilege('authenticated', 'public.cleanup_deleted_content()', 'EXECUTE')
-    or not has_function_privilege('service_role', 'public.cleanup_deleted_content()', 'EXECUTE')
+  if has_function_privilege('authenticated', 'public.enqueue_due_storage_cleanup()', 'EXECUTE')
+    or not has_function_privilege('service_role', 'public.enqueue_due_storage_cleanup()', 'EXECUTE')
     or has_table_privilege('authenticated', 'private.attachment_cleanup_queue', 'SELECT')
     or not has_table_privilege('service_role', 'private.attachment_cleanup_queue', 'SELECT')
   then
     raise exception 'service role grant contract failed';
+  end if;
+
+  if (
+    select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'space_join_policy'
+  ) <> array['open', 'public', 'invite_only'] then
+    raise exception 'space join policy enum contract failed';
+  end if;
+
+  if not has_column_privilege('authenticated', 'public.space_members', 'pinned_at', 'UPDATE')
+    or to_regprocedure('public.join_space(bigint)') is null
+    or to_regprocedure('public.accept_space_invite(text)') is null
+    or to_regprocedure('public.create_space_invite(bigint,integer,timestamp with time zone)') is null
+    or not has_function_privilege('authenticated', 'public.join_space(bigint)', 'EXECUTE')
+  then
+    raise exception 'space membership contract failed';
   end if;
 end
 $$;

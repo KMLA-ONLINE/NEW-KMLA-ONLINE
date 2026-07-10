@@ -34,108 +34,43 @@ export type Database = {
   }
   public: {
     Tables: {
-      chat_room_members: {
+      chat_read_states: {
         Row: {
-          joined_at: string
-          room_id: number
-          user_id: number
-        }
-        Insert: {
-          joined_at?: string
-          room_id: number
-          user_id: number
-        }
-        Update: {
-          joined_at?: string
-          room_id?: number
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_room_members_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_room_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chat_room_read_states: {
-        Row: {
+          conversation_id: number
           last_read_at: string
           last_read_message_id: number | null
-          room_id: number
           user_id: number
         }
         Insert: {
+          conversation_id: number
           last_read_at?: string
           last_read_message_id?: number | null
-          room_id: number
           user_id: number
         }
         Update: {
+          conversation_id?: number
           last_read_at?: string
           last_read_message_id?: number | null
-          room_id?: number
           user_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "chat_room_read_states_last_read_message_id_fkey"
+            foreignKeyName: "chat_read_states_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_read_states_last_read_message_id_fkey"
             columns: ["last_read_message_id"]
             isOneToOne: false
             referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "chat_room_read_states_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "chat_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_room_read_states_user_id_fkey"
+            foreignKeyName: "chat_read_states_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chat_rooms: {
-        Row: {
-          created_at: string
-          created_by: number | null
-          id: number
-          is_group: boolean
-          name: string | null
-        }
-        Insert: {
-          created_at?: string
-          created_by?: number | null
-          id?: number
-          is_group?: boolean
-          name?: string | null
-        }
-        Update: {
-          created_at?: string
-          created_by?: number | null
-          id?: number
-          is_group?: boolean
-          name?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_rooms_created_by_fkey"
-            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -254,7 +189,6 @@ export type Database = {
         Row: {
           comment_id: number
           created_at: string
-          id: number
           reaction_type_id: number
           updated_at: string | null
           user_id: number
@@ -262,7 +196,6 @@ export type Database = {
         Insert: {
           comment_id: number
           created_at?: string
-          id?: number
           reaction_type_id: number
           updated_at?: string | null
           user_id: number
@@ -270,7 +203,6 @@ export type Database = {
         Update: {
           comment_id?: number
           created_at?: string
-          id?: number
           reaction_type_id?: number
           updated_at?: string | null
           user_id?: number
@@ -367,42 +299,104 @@ export type Database = {
           },
         ]
       }
-      direct_chat_pairs: {
+      conversation_members: {
+        Row: {
+          conversation_id: number
+          joined_at: string
+          user_id: number
+        }
+        Insert: {
+          conversation_id: number
+          joined_at?: string
+          user_id: number
+        }
+        Update: {
+          conversation_id?: number
+          joined_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_members_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
         Row: {
           created_at: string
-          room_id: number
+          created_by: number | null
+          id: number
+          name: string | null
+          type: Database["public"]["Enums"]["conversation_type"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          name?: string | null
+          type: Database["public"]["Enums"]["conversation_type"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          id?: number
+          name?: string | null
+          type?: Database["public"]["Enums"]["conversation_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      direct_conversations: {
+        Row: {
+          conversation_id: number
           user1_id: number
           user2_id: number
         }
         Insert: {
-          created_at?: string
-          room_id: number
+          conversation_id: number
           user1_id: number
           user2_id: number
         }
         Update: {
-          created_at?: string
-          room_id?: number
+          conversation_id?: number
           user1_id?: number
           user2_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "direct_chat_pairs_room_id_fkey"
-            columns: ["room_id"]
+            foreignKeyName: "direct_conversations_conversation_id_fkey"
+            columns: ["conversation_id"]
             isOneToOne: true
-            referencedRelation: "chat_rooms"
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "direct_chat_pairs_user1_id_fkey"
+            foreignKeyName: "direct_conversations_user1_id_fkey"
             columns: ["user1_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "direct_chat_pairs_user2_id_fkey"
+            foreignKeyName: "direct_conversations_user2_id_fkey"
             columns: ["user2_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -513,7 +507,6 @@ export type Database = {
       message_reactions: {
         Row: {
           created_at: string
-          id: number
           message_id: number
           reaction_type_id: number
           updated_at: string | null
@@ -521,7 +514,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: number
           message_id: number
           reaction_type_id: number
           updated_at?: string | null
@@ -529,7 +521,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: number
           message_id?: number
           reaction_type_id?: number
           updated_at?: string | null
@@ -559,77 +550,54 @@ export type Database = {
           },
         ]
       }
-      message_reads: {
-        Row: {
-          message_id: number
-          read_at: string
-          user_id: number
-        }
-        Insert: {
-          message_id: number
-          read_at?: string
-          user_id: number
-        }
-        Update: {
-          message_id?: number
-          read_at?: string
-          user_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "message_reads_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "message_reads_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       messages: {
         Row: {
-          content: string
+          content: string | null
+          conversation_id: number
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
           edited_at: string | null
           id: number
-          is_edited: boolean
           parent_id: number | null
-          room_id: number
+          pinned_at: string | null
+          pinned_by: number | null
           sender_id: number
         }
         Insert: {
-          content: string
+          content?: string | null
+          conversation_id: number
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
           edited_at?: string | null
           id?: number
-          is_edited?: boolean
           parent_id?: number | null
-          room_id: number
+          pinned_at?: string | null
+          pinned_by?: number | null
           sender_id: number
         }
         Update: {
-          content?: string
+          content?: string | null
+          conversation_id?: number
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
           edited_at?: string | null
           id?: number
-          is_edited?: boolean
           parent_id?: number | null
-          room_id?: number
+          pinned_at?: string | null
+          pinned_by?: number | null
           sender_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_deleted_by_fkey"
             columns: ["deleted_by"]
@@ -645,10 +613,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "messages_room_id_fkey"
-            columns: ["room_id"]
+            foreignKeyName: "messages_pinned_by_fkey"
+            columns: ["pinned_by"]
             isOneToOne: false
-            referencedRelation: "chat_rooms"
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -768,7 +736,6 @@ export type Database = {
       }
       post_attachments: {
         Row: {
-          alt: string | null
           content_type: string
           created_at: string
           file_name: string
@@ -782,7 +749,6 @@ export type Database = {
           width: number | null
         }
         Insert: {
-          alt?: string | null
           content_type: string
           created_at?: string
           file_name: string
@@ -796,7 +762,6 @@ export type Database = {
           width?: number | null
         }
         Update: {
-          alt?: string | null
           content_type?: string
           created_at?: string
           file_name?: string
@@ -822,7 +787,6 @@ export type Database = {
       post_reactions: {
         Row: {
           created_at: string
-          id: number
           post_id: number
           reaction_type_id: number
           updated_at: string | null
@@ -830,7 +794,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          id?: number
           post_id: number
           reaction_type_id: number
           updated_at?: string | null
@@ -838,7 +801,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          id?: number
           post_id?: number
           reaction_type_id?: number
           updated_at?: string | null
@@ -878,7 +840,6 @@ export type Database = {
           deleted_by: number | null
           id: number
           is_anonymous: boolean
-          is_pinned: boolean
           pinned_at: string | null
           pinned_by: number | null
           pub_id: string
@@ -896,7 +857,6 @@ export type Database = {
           deleted_by?: number | null
           id?: number
           is_anonymous?: boolean
-          is_pinned?: boolean
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
@@ -914,7 +874,6 @@ export type Database = {
           deleted_by?: number | null
           id?: number
           is_anonymous?: boolean
-          is_pinned?: boolean
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
@@ -954,83 +913,108 @@ export type Database = {
           },
         ]
       }
+      profile_departments: {
+        Row: {
+          name: string
+        }
+        Insert: {
+          name: string
+        }
+        Update: {
+          name?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
-          anonymous_username: string | null
           auth_user_id: string | null
           avatar_url: string | null
           birthday: string | null
           class_no: number | null
           cohort: number | null
+          cover_image_url: string | null
           created_at: string
           deleted_at: string | null
+          department: string | null
           description: string | null
           dorm_room: number | null
           gender: Database["public"]["Enums"]["profile_gender"] | null
           id: number
+          is_reenrolled: boolean
           name: string
           onboarding_completed_at: string | null
           phone_number: string | null
-          pub_id: string
           role: Database["public"]["Enums"]["app_role"]
           status: Database["public"]["Enums"]["profile_status"]
           status_updated_at: string | null
           status_updated_by: number | null
           student_number: string | null
+          track: Database["public"]["Enums"]["profile_track"] | null
           type: Database["public"]["Enums"]["profile_type"]
           updated_at: string | null
         }
         Insert: {
-          anonymous_username?: string | null
           auth_user_id?: string | null
           avatar_url?: string | null
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department?: string | null
           description?: string | null
           dorm_room?: number | null
           gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: number
+          is_reenrolled?: boolean
           name: string
           onboarding_completed_at?: string | null
           phone_number?: string | null
-          pub_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["profile_status"]
           status_updated_at?: string | null
           status_updated_by?: number | null
           student_number?: string | null
+          track?: Database["public"]["Enums"]["profile_track"] | null
           type?: Database["public"]["Enums"]["profile_type"]
           updated_at?: string | null
         }
         Update: {
-          anonymous_username?: string | null
           auth_user_id?: string | null
           avatar_url?: string | null
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
+          department?: string | null
           description?: string | null
           dorm_room?: number | null
           gender?: Database["public"]["Enums"]["profile_gender"] | null
           id?: number
+          is_reenrolled?: boolean
           name?: string
           onboarding_completed_at?: string | null
           phone_number?: string | null
-          pub_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           status?: Database["public"]["Enums"]["profile_status"]
           status_updated_at?: string | null
           status_updated_by?: number | null
           student_number?: string | null
+          track?: Database["public"]["Enums"]["profile_track"] | null
           type?: Database["public"]["Enums"]["profile_type"]
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_department_fkey"
+            columns: ["department"]
+            isOneToOne: false
+            referencedRelation: "profile_departments"
+            referencedColumns: ["name"]
+          },
           {
             foreignKeyName: "profiles_status_updated_by_fkey"
             columns: ["status_updated_by"]
@@ -1096,6 +1080,57 @@ export type Database = {
           },
         ]
       }
+      space_invites: {
+        Row: {
+          created_at: string
+          created_by: number | null
+          expires_at: string | null
+          id: number
+          max_uses: number | null
+          revoked_at: string | null
+          space_id: number
+          token: string
+          use_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          expires_at?: string | null
+          id?: number
+          max_uses?: number | null
+          revoked_at?: string | null
+          space_id: number
+          token: string
+          use_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          expires_at?: string | null
+          id?: number
+          max_uses?: number | null
+          revoked_at?: string | null
+          space_id?: number
+          token?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_invites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_invites_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_members: {
         Row: {
           ban_reason: string | null
@@ -1103,6 +1138,7 @@ export type Database = {
           banned_by: number | null
           joined_at: string
           notification_setting: Database["public"]["Enums"]["notification_setting"]
+          pinned_at: string | null
           role: Database["public"]["Enums"]["member_role"]
           space_id: number
           user_id: number
@@ -1113,6 +1149,7 @@ export type Database = {
           banned_by?: number | null
           joined_at?: string
           notification_setting?: Database["public"]["Enums"]["notification_setting"]
+          pinned_at?: string | null
           role?: Database["public"]["Enums"]["member_role"]
           space_id: number
           user_id: number
@@ -1123,6 +1160,7 @@ export type Database = {
           banned_by?: number | null
           joined_at?: string
           notification_setting?: Database["public"]["Enums"]["notification_setting"]
+          pinned_at?: string | null
           role?: Database["public"]["Enums"]["member_role"]
           space_id?: number
           user_id?: number
@@ -1262,30 +1300,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      add_group_member: {
-        Args: { p_room_id: number; p_user_id: number }
-        Returns: undefined
-      }
-      add_space_member: {
-        Args: { p_space_id: number; p_user_id: number }
-        Returns: undefined
-      }
+      accept_space_invite: { Args: { p_token: string }; Returns: number }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
-        Returns: undefined
-      }
-      change_app_role: {
-        Args: {
-          p_profile_id: number
-          p_role: Database["public"]["Enums"]["app_role"]
-        }
-        Returns: undefined
-      }
-      change_profile_status: {
-        Args: {
-          p_profile_id: number
-          p_status: Database["public"]["Enums"]["profile_status"]
-        }
         Returns: undefined
       }
       claim_storage_cleanup: {
@@ -1296,54 +1313,18 @@ export type Database = {
           storage_path: string
         }[]
       }
-      cleanup_deleted_content: { Args: never; Returns: number }
-      cleanup_direct_chat_room: {
-        Args: { p_room_id: number }
+      cleanup_conversation: {
+        Args: { p_conversation_id: number }
         Returns: undefined
       }
-      cleanup_notifications: { Args: never; Returns: number }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
-      create_club: {
-        Args: {
-          p_description: string
-          p_name: string
-          p_type: Database["public"]["Enums"]["club_type"]
-        }
+      create_direct_conversation: {
+        Args: { p_peer_id: number }
         Returns: number
       }
-      create_club_apply_round: {
-        Args: { p_ends_at: string; p_name: string; p_starts_at: string }
-        Returns: number
-      }
-      create_direct_chat: { Args: { p_other_user_id: number }; Returns: number }
-      create_group_chat: { Args: { p_name: string }; Returns: number }
-      create_notification: {
-        Args: {
-          p_actor_id?: number
-          p_body: string
-          p_comment_id?: number
-          p_level?: Database["public"]["Enums"]["notification_level"]
-          p_message_id?: number
-          p_post_id?: number
-          p_recipient_id: number
-          p_space_id?: number
-          p_title: string
-        }
-        Returns: number
-      }
-      create_space: {
-        Args: {
-          p_description: string
-          p_join_policy: Database["public"]["Enums"]["space_join_policy"]
-          p_name: string
-          p_type: Database["public"]["Enums"]["space_type"]
-        }
-        Returns: number
-      }
-      delete_club: { Args: { p_club_id: number }; Returns: undefined }
-      delete_club_apply_round: {
-        Args: { p_round_id: number }
-        Returns: undefined
+      create_space_invite: {
+        Args: { p_expires_at?: string; p_max_uses?: number; p_space_id: number }
+        Returns: string
       }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
@@ -1351,50 +1332,58 @@ export type Database = {
         Returns: undefined
       }
       finalize_avatar: { Args: { p_storage_path: string }; Returns: undefined }
-      finalize_message_attachment: {
-        Args: {
-          p_content_type: string
-          p_file_name: string
-          p_height: number
-          p_message_id: number
-          p_size_bytes: number
-          p_sort_order: number
-          p_storage_path: string
-          p_width: number
-        }
-        Returns: number
-      }
-      finalize_post_attachment: {
-        Args: {
-          p_alt: string
-          p_content_type: string
-          p_file_name: string
-          p_height: number
-          p_post_id: number
-          p_size_bytes: number
-          p_sort_order: number
-          p_storage_path: string
-          p_width: number
-        }
-        Returns: number
-      }
-      finalize_space_image: {
-        Args: { p_space_id: number; p_storage_path: string }
+      finalize_cover_image: {
+        Args: { p_storage_path: string }
         Returns: undefined
       }
-      grant_user_permission: {
-        Args: { p_permission_key: string; p_user_id: number }
-        Returns: undefined
+      get_chat_messages: {
+        Args: {
+          p_before_id?: number
+          p_conversation_id: number
+          p_limit?: number
+        }
+        Returns: {
+          attachments: Json
+          content: string
+          conversation_id: number
+          created_at: string
+          deleted_at: string
+          edited_at: string
+          is_edited: boolean
+          message_id: number
+          parent_message: Json
+          pinned_at: string
+          pinned_by: Json
+          reactions: Json
+          reads: Json
+          sender: Json
+          sender_id: number
+        }[]
       }
       join_space: { Args: { p_space_id: number }; Returns: undefined }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
-      purge_deleted_content: {
-        Args: { p_entity_id: number; p_entity_type: string }
-        Returns: undefined
+      list_conversations: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          conversation_id: number
+          created_at: string
+          display_initials: string
+          display_name: string
+          last_message_content: string
+          last_message_created_at: string
+          last_message_has_attachment: boolean
+          last_message_id: number
+          last_message_sender_id: number
+          last_message_sender_name: string
+          member_count: number
+          name: string
+          type: Database["public"]["Enums"]["conversation_type"]
+          unread_count: number
+        }[]
       }
-      reconcile_cached_counts: { Args: never; Returns: undefined }
       remove_group_member: {
-        Args: { p_room_id: number; p_user_id: number }
+        Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined
       }
       request_attachment_removal: {
@@ -1408,12 +1397,9 @@ export type Database = {
         }
         Returns: undefined
       }
-      revoke_user_permission: {
-        Args: { p_permission_key: string; p_user_id: number }
-        Returns: undefined
-      }
+      revoke_space_invite: { Args: { p_invite_id: number }; Returns: undefined }
       search_messages: {
-        Args: { p_query: string; p_room_id: number }
+        Args: { p_conversation_id: number; p_query: string }
         Returns: {
           content_snippet: string
           created_at: string
@@ -1421,117 +1407,36 @@ export type Database = {
           sender_name: string
         }[]
       }
-      search_posts: {
+      send_message_with_attachment: {
         Args: {
-          p_query: string
-          p_space_id?: number
-          p_space_type?: Database["public"]["Enums"]["space_type"]
+          p_content?: string
+          p_content_type: string
+          p_conversation_id: number
+          p_file_name: string
+          p_height?: number
+          p_parent_id?: number
+          p_size_bytes: number
+          p_storage_path: string
+          p_width?: number
         }
-        Returns: {
-          author_name: string
-          content_snippet: string
-          created_at: string
-          match_type: string
-          post_id: number
-          space_name: string
-          title: string
-        }[]
+        Returns: number
       }
-      set_anonymous_username: { Args: { p_value: string }; Returns: undefined }
-      set_post_pin: {
-        Args: { p_is_pinned: boolean; p_post_id: number }
-        Returns: undefined
-      }
-      set_space_member_ban: {
-        Args: {
-          p_banned: boolean
-          p_reason?: string
-          p_space_id: number
-          p_user_id: number
-        }
-        Returns: undefined
-      }
-      set_space_member_role: {
-        Args: {
-          p_role: Database["public"]["Enums"]["member_role"]
-          p_space_id: number
-          p_user_id: number
-        }
-        Returns: undefined
-      }
-      soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
-      soft_delete_post: { Args: { p_id: number }; Returns: undefined }
-      soft_delete_space: { Args: { p_id: number }; Returns: undefined }
       submit_onboarding: {
         Args: {
           p_birthday: string
           p_class_no: number
           p_cohort: number
+          p_department: string
           p_description: string
           p_dorm_room: number
           p_gender: Database["public"]["Enums"]["profile_gender"]
+          p_is_reenrolled: boolean
           p_name: string
           p_phone_number: string
           p_student_number: string
+          p_track: Database["public"]["Enums"]["profile_track"]
           p_type: Database["public"]["Enums"]["profile_type"]
-        }
-        Returns: undefined
-      }
-      transfer_space_owner: {
-        Args: { p_new_owner_id: number; p_space_id: number }
-        Returns: undefined
-      }
-      update_club: {
-        Args: {
-          p_club_id: number
-          p_description: string
-          p_name: string
-          p_type: Database["public"]["Enums"]["club_type"]
-        }
-        Returns: undefined
-      }
-      update_club_apply_round: {
-        Args: {
-          p_ends_at: string
-          p_name: string
-          p_round_id: number
-          p_starts_at: string
-        }
-        Returns: undefined
-      }
-      update_space: {
-        Args: {
-          p_description: string
-          p_join_policy: Database["public"]["Enums"]["space_join_policy"]
-          p_name: string
-          p_space_id: number
-          p_type?: Database["public"]["Enums"]["space_type"]
-        }
-        Returns: undefined
-      }
-      update_verified_profile_identity: {
-        Args: {
-          p_class_no: number
-          p_cohort: number
-          p_dorm_room: number
-          p_profile_id: number
-          p_student_number: string
-          p_type: Database["public"]["Enums"]["profile_type"]
-        }
-        Returns: undefined
-      }
-      upsert_permission: {
-        Args: { p_description: string; p_key: string; p_name: string }
-        Returns: undefined
-      }
-      upsert_reaction_type: {
-        Args: {
-          p_icon: string
-          p_id: number
-          p_key: string
-          p_name: string
-          p_sort_order: number
         }
         Returns: undefined
       }
@@ -1540,14 +1445,16 @@ export type Database = {
     Enums: {
       app_role: "user" | "admin"
       club_type: "major" | "general"
+      conversation_type: "direct" | "group"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
       member_role: "owner" | "admin" | "manager" | "member"
       notification_level: "mention" | "all"
       notification_setting: "off" | "mentions" | "all"
       profile_gender: "male" | "female"
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
+      profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
-      space_join_policy: "auto_join" | "invite_only"
+      space_join_policy: "open" | "public" | "invite_only"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -1681,15 +1588,18 @@ export const Constants = {
     Enums: {
       app_role: ["user", "admin"],
       club_type: ["major", "general"],
+      conversation_type: ["direct", "group"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],
       member_role: ["owner", "admin", "manager", "member"],
       notification_level: ["mention", "all"],
       notification_setting: ["off", "mentions", "all"],
       profile_gender: ["male", "female"],
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
+      profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
-      space_join_policy: ["auto_join", "invite_only"],
+      space_join_policy: ["open", "public", "invite_only"],
       space_type: ["group", "community"],
     },
   },
 } as const
+
