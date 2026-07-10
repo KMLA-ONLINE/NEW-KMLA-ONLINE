@@ -2,9 +2,9 @@ create type public.member_role as enum ('owner', 'admin', 'manager', 'member');
 create type public.notification_setting as enum ('off', 'mentions', 'all');
 -- 참여(읽기/쓰기)는 언제나 멤버십이 있어야 한다. 정책은 '어떻게 멤버가 되는가'만 가른다.
 -- public: 검색 노출 O, 즉시 가입(승인 불필요)
+-- request: 검색 노출 O, 가입 요청 후 매니저 승인 필요(승인 전까지는 멤버 아님)
 -- invite_only: 검색 노출 X, 초대장으로만 가입
--- 승인이 필요한 가입(request)은 대기 상태와 승인 RPC가 필요한 별도 기능이라 나중에 추가한다.
-create type public.space_join_policy as enum ('public', 'invite_only');
+create type public.space_join_policy as enum ('public', 'request', 'invite_only');
 create type public.space_type as enum ('group', 'community');
 
 create table public.spaces (
@@ -51,8 +51,19 @@ create table public.space_invites (
   created_at timestamptz not null default now()
 );
 
+-- request 정책 공간의 대기 중인 가입 요청. 승인 전까지는 멤버가 아니므로 space_members가
+-- 아니라 여기에 산다(초대가 space_invites에 따로 사는 것과 같은 이유). 덕분에
+-- is_space_member/member_count/owner 유일성 같은 멤버십 불변식은 전혀 건드리지 않는다.
+create table public.space_join_requests (
+  space_id bigint not null references public.spaces (id) on delete restrict,
+  user_id bigint not null references public.profiles (id) on delete restrict,
+  created_at timestamptz not null default now(),
+  primary key (space_id, user_id)
+);
+
 create index idx_spaces_active_directory on public.spaces (join_policy, member_count)
 where deleted_at is null;
+create index idx_space_join_requests_space on public.space_join_requests (space_id, created_at);
 create index idx_space_members_user_joined_at on public.space_members (user_id, joined_at);
 create index idx_space_members_space_role on public.space_members (space_id, role);
 create index idx_space_members_active_user_space on public.space_members (user_id, space_id)
@@ -142,32 +153,47 @@ revoke execute on function private.validate_space_owner() from public, anon, aut
 alter table public.spaces enable row level security;
 alter table public.space_members enable row level security;
 alter table public.space_invites enable row level security;
+alter table public.space_join_requests enable row level security;
 create policy spaces_select on public.spaces for select to authenticated using (
   deleted_at is null and (
-    (join_policy = 'public' and (select private.is_accepted_user()))
+    (join_policy in ('public','request') and (select private.is_accepted_user()))
     or private.is_space_member(id)
   )
 );
 create policy space_members_select on public.space_members for select to authenticated using (private.is_space_member(space_id));
 create policy space_members_update on public.space_members for update to authenticated using (user_id=private.current_profile_id() and private.is_space_member(space_id)) with check (user_id=private.current_profile_id() and private.is_space_member(space_id));
 create policy space_invites_select on public.space_invites for select to authenticated using (private.can_manage_space(space_id));
+-- 본인 요청 또는 관리하는 공간의 요청만 조회. delete는 요청 취소(본인) 및 거절(매니저)을
+-- 겸한다 -- 승인만 멤버십·member_count를 건드리므로 RPC(approve_join_request)로 간다.
+create policy space_join_requests_select on public.space_join_requests for select to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
+create policy space_join_requests_delete on public.space_join_requests for delete to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
 
 grant select (id,pub_id,type,name,description,image_url,join_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
 grant select on public.space_members to authenticated;
 grant update (notification_setting,pinned_at) on public.space_members to authenticated;
 grant select on public.space_invites to authenticated;
-grant select, insert, update, delete on public.spaces, public.space_members, public.space_invites to service_role;
+grant select, delete on public.space_join_requests to authenticated;
+grant select, insert, update, delete on public.spaces, public.space_members, public.space_invites, public.space_join_requests to service_role;
 grant usage, select on sequence public.spaces_id_seq, public.space_invites_id_seq to service_role;
 
+-- 'joined'(즉시 가입 또는 이미 멤버) 또는 'requested'(승인 대기)를 돌려준다. request
+-- 정책 공간은 멤버가 되는 게 아니라 요청만 쌓이므로, 호출자가 어느 쪽인지 알아야 한다.
 create function public.join_space(p_space_id bigint)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true);
+returns text language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); space_policy public.space_join_policy;
 begin
-  if not exists(select 1 from public.spaces where id=p_space_id and deleted_at is null) then raise exception 'space not found'; end if;
-  if exists(select 1 from public.spaces where id=p_space_id and join_policy='invite_only') then raise exception 'invite required to join this space'; end if;
+  select join_policy into space_policy from public.spaces where id=p_space_id and deleted_at is null;
+  if space_policy is null then raise exception 'space not found'; end if;
+  if space_policy='invite_only' then raise exception 'invite required to join this space'; end if;
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id and banned_at is not null) then raise exception 'banned from this space'; end if;
+  if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id) then return 'joined'; end if;
+  if space_policy='request' then
+    insert into public.space_join_requests(space_id,user_id) values(p_space_id,caller_id) on conflict do nothing;
+    return 'requested';
+  end if;
   insert into public.space_members(space_id,user_id,role) values(p_space_id,caller_id,'member') on conflict do nothing;
   if found then update public.spaces set member_count=member_count+1 where id=p_space_id; end if;
+  return 'joined';
 end;
 $$;
 
@@ -238,5 +264,22 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint) to authenticated;
+-- request 정책 공간의 가입 요청을 승인해 멤버로 올린다(매니저 전용). 거절·요청 취소는
+-- RPC가 아니라 space_join_requests 직접 delete로 처리한다(정책이 본인 또는 매니저로 제한).
+create function public.approve_join_request(p_space_id bigint,p_user_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  delete from public.space_join_requests where space_id=p_space_id and user_id=p_user_id;
+  if not found then raise exception 'join request not found'; end if;
+  -- 요청 후 차단됐거나 탈퇴한 사용자는 요청만 정리하고 승격하지 않는다(member_count 오염 방지).
+  if exists(select 1 from public.space_members where space_id=p_space_id and user_id=p_user_id and banned_at is not null) then return; end if;
+  if not exists(select 1 from public.profiles where id=p_user_id and status='accepted' and deleted_at is null) then return; end if;
+  insert into public.space_members(space_id,user_id,role) values(p_space_id,p_user_id,'member') on conflict do nothing;
+  if found then update public.spaces set member_count=member_count+1 where id=p_space_id; end if;
+end;
+$$;
+
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) to authenticated;

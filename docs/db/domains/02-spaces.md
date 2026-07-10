@@ -10,32 +10,35 @@ Source: [`supabase/schemas/02-spaces.sql`](../../../supabase/schemas/02-spaces.s
 
 | 값 | 검색/디렉토리 | 가입 방식 |
 | --- | --- | --- |
-| `public` (가입) | 노출 | 스스로 즉시 가입(`join_space`), 승인 불필요 |
+| `public` (가입) | 노출 | 스스로 즉시 가입(`join_space` → `'joined'`), 승인 불필요 |
+| `request` (승인가입) | 노출 | 가입 요청(`join_space` → `'requested'`) 후 매니저 승인(`approve_join_request`) |
 | `invite_only` (초대장) | **비노출** | 초대장 토큰으로만(`accept_space_invite`) |
 
-기본값은 `public`. `public`은 accepted 사용자에게 목록 노출(`spaces_select`), `invite_only`는 멤버에게만 노출된다.
+기본값은 `public`. `public`/`request`는 accepted 사용자에게 목록 노출(`spaces_select`), `invite_only`는 멤버에게만 노출된다.
 
 과거 `open`(가입 없이 참여 자유)은 제거했다 — 멤버십이 참여의 유일한 기준이 되어 `member_count`가 모든 공간에서 같은 뜻(참여자 수)을 갖도록 하기 위함이다.
 
-**향후 `request`(승인가입).** 관리자 수락이 필요한 가입은 별도 기능으로 남겨두었다. enum 값 하나가 아니라 대기 상태(`space_members`의 pending status나 요청 테이블) + 승인/거절 RPC + 모든 멤버십 검사가 pending을 제외하도록 하는 수정이 필요하므로, 그 기능을 지을 때 함께 추가한다.
+`request` 공간의 대기 요청은 `space_members`가 아니라 `space_join_requests`에 산다. 승인 전까지는 멤버가 아니므로, `is_space_member`·`member_count`·owner 유일성 같은 멤버십 불변식을 전혀 건드리지 않는다.
 
 ## 테이블
 
 - `spaces` — type(`group`=공식/`community`=비공식), `join_policy`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크용, 소문자·숫자·하이픈 3 ~ 50자, unique, 기본값 자동 12자 hex)
 - `space_members` — `(space_id, user_id)` PK. 역할(`owner`/`admin`/`manager`/`member`), 알림 설정, **개인용 `pinned_at`**(가입한 그룹 상단 고정), ban 상태
 - `space_invites` — 초대장. `token`(unique, 링크에 실리는 비밀값)으로 식별. **`target_user_id`가 null이면 공유 링크**(토큰 아는 사람 누구나), **값이 있으면 그 사람만 수락 가능한 대상 지정 초대**. `expires_at`(만료)·`revoked_at`(폐기)로 무효화한다. `target_user_id`는 `on delete cascade`(대상 삭제 시 초대도 삭제 — set null이면 대상 지정 초대가 공유 링크로 격하되어 위험). 관리자만 조회
+- `space_join_requests` — `(space_id, user_id)` PK. `request` 공간의 대기 중인 가입 요청. 조회·삭제는 본인 또는 매니저(RLS). insert는 `join_space` RPC(정의자 권한)만, 승인은 `approve_join_request`만
 
 ## RPC
 
 | 함수 | 인증 | 쓰기 | 목적 |
 | --- | --- | --- | --- |
-| `join_space(space_id)` | accepted | O | public 공간 자기 가입 (invite_only는 거부). member_count 증가 |
+| `join_space(space_id)` | accepted | O | `'joined'`(public 즉시 가입 또는 이미 멤버) 또는 `'requested'`(request 공간 요청 적재)를 반환. invite_only·밴은 거부. 즉시 가입 시 member_count 증가 |
+| `approve_join_request(space_id, user_id)` | space 매니저 | O | request 공간의 가입 요청 승인 → 멤버 승격 + member_count 증가. 거절·요청취소는 `space_join_requests` 직접 delete(본인/매니저) |
 | `leave_space(space_id)` | accepted 멤버 | O | 본인 탈퇴 (owner는 이양 먼저). member_count 감소 |
 | `create_space_invite(space_id, target_user_id?, expires_at?)` | space 매니저(owner/admin) | O | 초대장 토큰 발급. `target_user_id` 지정 시 그 사람만 수락 가능(실존 accepted 사용자여야). `expires_at` 최대 30일(초과 거부), 미지정 시 30일로 채움 |
 | `accept_space_invite(token)` | accepted | O | 토큰 검증 후 멤버 합류. 대상 지정 초대는 대상 본인만(아니면 일반 무효 메시지로 거부), 이미 멤버면 no-op, 밴이면 거부. member_count 증가 |
 | `revoke_space_invite(invite_id)` | space 매니저 | O | 초대장 폐기 |
 
-space 생성(`create_space`)·소유권 이양 등은 아직 없다. `spaces`/`space_members`/`space_invites` 직접 insert는 service_role만 가능하고, authenticated 쓰기 경로는 위 membership/invite RPC + `space_members`의 `notification_setting`/`pinned_at` update 뿐이다.
+space 생성(`create_space`)·소유권 이양 등은 아직 없다. 테이블 직접 insert는 service_role만 가능하고, authenticated의 쓰기 경로는 위 membership/invite RPC + `space_members`의 `notification_setting`/`pinned_at` update + `space_join_requests` 직접 delete(요청 취소/거절) 뿐이다.
 
 ## Private helper
 

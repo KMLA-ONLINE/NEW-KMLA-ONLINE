@@ -1225,6 +1225,39 @@ export type Database = {
           },
         ]
       }
+      space_join_requests: {
+        Row: {
+          created_at: string
+          space_id: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          space_id: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          space_id?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_join_requests_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_join_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_members: {
         Row: {
           ban_reason: string | null
@@ -1395,6 +1428,10 @@ export type Database = {
     }
     Functions: {
       accept_space_invite: { Args: { p_token: string }; Returns: number }
+      approve_join_request: {
+        Args: { p_space_id: number; p_user_id: number }
+        Returns: undefined
+      }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
@@ -1458,7 +1495,7 @@ export type Database = {
           sender_id: number
         }[]
       }
-      join_space: { Args: { p_space_id: number }; Returns: undefined }
+      join_space: { Args: { p_space_id: number }; Returns: string }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
       list_conversations: {
         Args: never
@@ -1550,7 +1587,7 @@ export type Database = {
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
-      space_join_policy: "public" | "invite_only"
+      space_join_policy: "public" | "request" | "invite_only"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -1694,7 +1731,7 @@ export const Constants = {
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
-      space_join_policy: ["public", "invite_only"],
+      space_join_policy: ["public", "request", "invite_only"],
       space_type: ["group", "community"],
     },
   },
