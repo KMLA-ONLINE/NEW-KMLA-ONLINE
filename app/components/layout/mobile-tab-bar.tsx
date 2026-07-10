@@ -18,9 +18,13 @@ export function MobileTabBar() {
 
           return (
             <li key={item.to} className="min-w-0">
+              {/* Prefetch on touch-down, which buys the tap-to-click delay. Worth
+                  it before any of these routes has a loader, because it also warms
+                  the route's code-split chunk. */}
               <NavLink
                 to={item.to}
                 end={item.end}
+                prefetch="intent"
                 className={cn(
                   "text-muted-foreground flex h-full w-full items-center justify-center px-1",
                   isActive && "text-primary"

@@ -2,11 +2,11 @@
 
 Source: [`supabase/schemas/03-content.sql`](../../../supabase/schemas/03-content.sql)
 
-space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. 익명 표시, soft delete, count 캐시 포함.
+space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. 익명 표시, soft delete 포함.
 
 ## 테이블
 
-- `posts` — space 소속, 작성자, 제목/본문, 익명/고정 여부, `comment_count`/`reaction_count` 캐시, soft delete
+- `posts` — space 소속, 작성자, 제목/본문, 익명/고정 여부, soft delete
 - `post_attachments` — post 첨부 metadata (blob은 Storage `post-files`)
 - `comments` — post 소속, `parent_id` self-reference (임의 깊이 대댓글 허용), soft delete
 
@@ -30,8 +30,8 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 
 ## 주의
 
-- 글 읽기/쓰기 권한은 space의 `join_policy`를 따른다(`can_participate_space`): `open` 공간은 비멤버 accepted 사용자도 읽기·쓰기 가능, `public`/`invite_only`는 멤버만. comments/reactions/attachments도 `can_access_post`를 통해 동일하게 적용된다.
+- 글 읽기/쓰기 권한은 `can_participate_space` = 해당 space의 멤버인지로 판단한다(모든 공간이 멤버십을 요구). comments/reactions/attachments도 `can_access_post`를 통해 동일하게 적용된다.
 - author 자동 스탬핑은 없다. RLS policy가 `author_id = current_profile_id()`를 검사하므로 클라이언트가 author_id를 명시해야 한다.
-- `comment_count`/`reaction_count`는 캐시이며 현재 갱신·재보정 경로가 없다.
+- 댓글 수·리액션 수는 **캐시하지 않는다.** 읽는 쪽에서 `count(*)`로 센다. comments와 post_reactions는 클라이언트가 컬럼 grant로 직접 쓰므로 카운터를 걸 RPC 병목이 없고, 트리거로 캐시하면 댓글 하나마다 post 행에 락이 걸린다. 읽기 계약은 어느 쪽이든 같으니, 측정이 요구하면 그때 컬럼+트리거+backfill로 되돌리면 된다. (`spaces.member_count`는 join/leave가 RPC를 거치므로 캐시한다.)
 - 공백 제거 + `lower()` 기반 trgm 검색 인덱스는 있지만 이를 쓰던 `search_posts` RPC는 제거된 상태다.
 - 첨부 생성 경로(`finalize_post_attachment`)가 제거돼 post 첨부는 현재 만들 수 없다.

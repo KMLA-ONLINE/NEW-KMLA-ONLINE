@@ -8,8 +8,6 @@ create table public.posts (
   is_anonymous boolean not null default false,
   pinned_at timestamptz null,
   pinned_by bigint null references public.profiles (id) on delete set null,
-  comment_count int4 not null default 0,
-  reaction_count int4 not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz null,
   deleted_at timestamptz null,
@@ -60,10 +58,15 @@ create index idx_comments_content_search_gin on public.comments
   using gin (regexp_replace(lower(content), '\s+', '', 'g') extensions.gin_trgm_ops)
   where deleted_at is null;
 
+-- A post's comment and reaction counts are read with count(*), not cached on the
+-- row. Clients write comments and post_reactions straight to the table under
+-- column grants, so there is no RPC to hang a counter on and a cache would need
+-- triggers -- which would take a row lock on the post for every comment, and
+-- serialise the two hundred people answering one announcement. The read contract
+-- is identical either way, so the cache can arrive the day a measurement asks for
+-- it. spaces.member_count is cached because join/leave do go through an RPC.
 alter table public.posts
   add constraint posts_pub_id_key unique (pub_id),
-  add constraint posts_comment_count_check check (comment_count >= 0),
-  add constraint posts_reaction_count_check check (reaction_count >= 0),
   add constraint posts_title_check check (char_length(btrim(title)) between 1 and 200),
   add constraint posts_content_check check (char_length(btrim(content)) between 1 and 50000),
   add constraint posts_deleted_state_check check (deleted_at is not null or deleted_by is null),

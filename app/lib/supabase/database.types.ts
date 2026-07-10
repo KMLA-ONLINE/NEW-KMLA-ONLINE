@@ -929,7 +929,6 @@ export type Database = {
       posts: {
         Row: {
           author_id: number
-          comment_count: number
           content: string
           created_at: string
           deleted_at: string | null
@@ -939,14 +938,12 @@ export type Database = {
           pinned_at: string | null
           pinned_by: number | null
           pub_id: string
-          reaction_count: number
           space_id: number
           title: string
           updated_at: string | null
         }
         Insert: {
           author_id: number
-          comment_count?: number
           content: string
           created_at?: string
           deleted_at?: string | null
@@ -956,14 +953,12 @@ export type Database = {
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
-          reaction_count?: number
           space_id: number
           title: string
           updated_at?: string | null
         }
         Update: {
           author_id?: number
-          comment_count?: number
           content?: string
           created_at?: string
           deleted_at?: string | null
@@ -973,7 +968,6 @@ export type Database = {
           pinned_at?: string | null
           pinned_by?: number | null
           pub_id?: string
-          reaction_count?: number
           space_id?: number
           title?: string
           updated_at?: string | null
@@ -1182,33 +1176,30 @@ export type Database = {
           created_by: number | null
           expires_at: string | null
           id: number
-          max_uses: number | null
           revoked_at: string | null
           space_id: number
+          target_user_id: number | null
           token: string
-          use_count: number
         }
         Insert: {
           created_at?: string
           created_by?: number | null
           expires_at?: string | null
           id?: number
-          max_uses?: number | null
           revoked_at?: string | null
           space_id: number
+          target_user_id?: number | null
           token: string
-          use_count?: number
         }
         Update: {
           created_at?: string
           created_by?: number | null
           expires_at?: string | null
           id?: number
-          max_uses?: number | null
           revoked_at?: string | null
           space_id?: number
+          target_user_id?: number | null
           token?: string
-          use_count?: number
         }
         Relationships: [
           {
@@ -1223,6 +1214,46 @@ export type Database = {
             columns: ["space_id"]
             isOneToOne: false
             referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_invites_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      space_join_requests: {
+        Row: {
+          created_at: string
+          space_id: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          space_id: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          space_id?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_join_requests_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_join_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1397,6 +1428,10 @@ export type Database = {
     }
     Functions: {
       accept_space_invite: { Args: { p_token: string }; Returns: number }
+      approve_join_request: {
+        Args: { p_space_id: number; p_user_id: number }
+        Returns: undefined
+      }
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
@@ -1419,7 +1454,11 @@ export type Database = {
         Returns: number
       }
       create_space_invite: {
-        Args: { p_expires_at?: string; p_max_uses?: number; p_space_id: number }
+        Args: {
+          p_expires_at?: string
+          p_space_id: number
+          p_target_user_id?: number
+        }
         Returns: string
       }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
@@ -1456,7 +1495,7 @@ export type Database = {
           sender_id: number
         }[]
       }
-      join_space: { Args: { p_space_id: number }; Returns: undefined }
+      join_space: { Args: { p_space_id: number }; Returns: string }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
       list_conversations: {
         Args: never
@@ -1548,7 +1587,7 @@ export type Database = {
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
-      space_join_policy: "open" | "public" | "invite_only"
+      space_join_policy: "public" | "request" | "invite_only"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -1692,7 +1731,7 @@ export const Constants = {
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
-      space_join_policy: ["open", "public", "invite_only"],
+      space_join_policy: ["public", "request", "invite_only"],
       space_type: ["group", "community"],
     },
   },
