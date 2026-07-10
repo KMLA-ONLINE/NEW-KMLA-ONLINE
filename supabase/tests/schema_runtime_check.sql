@@ -302,18 +302,20 @@ begin
     raise exception 'service role grant contract failed';
   end if;
 
+  -- 'open' was removed: every space now requires membership to participate. A
+  -- future 'request' (approval-required join) will extend this array.
   if (
     select array_agg(e.enumlabel::text order by e.enumsortorder)
     from pg_enum e join pg_type t on t.oid = e.enumtypid
     where t.typname = 'space_join_policy'
-  ) <> array['open', 'public', 'invite_only'] then
+  ) <> array['public', 'invite_only'] then
     raise exception 'space join policy enum contract failed';
   end if;
 
   if not has_column_privilege('authenticated', 'public.space_members', 'pinned_at', 'UPDATE')
     or to_regprocedure('public.join_space(bigint)') is null
     or to_regprocedure('public.accept_space_invite(text)') is null
-    or to_regprocedure('public.create_space_invite(bigint,integer,timestamp with time zone)') is null
+    or to_regprocedure('public.create_space_invite(bigint,bigint,timestamp with time zone)') is null
     or not has_function_privilege('authenticated', 'public.join_space(bigint)', 'EXECUTE')
   then
     raise exception 'space membership contract failed';

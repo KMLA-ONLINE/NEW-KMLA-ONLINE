@@ -36,9 +36,13 @@ export function AppSidebar() {
                       isActive={isActive}
                       className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground"
                     >
+                      {/* Prefetch on hover or focus. Worth it before any of these
+                          routes has a loader, because it also warms the route's
+                          code-split chunk. */}
                       <NavLink
                         to={item.to}
                         end={item.end}
+                        prefetch="intent"
                         className="text-sidebar-foreground flex items-center"
                       >
                         <item.icon className="ml-0.5 size-5" strokeWidth={2} />
