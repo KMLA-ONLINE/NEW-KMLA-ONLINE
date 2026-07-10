@@ -9,7 +9,7 @@
 
 Uploads and downloads use private Supabase Storage buckets with `storage.objects` RLS policies and client-side Supabase Storage calls. `storage-maintenance` accepts only a Supabase secret key and must never be called from a client.
 
-The Edge Function dependency is pinned in `storage-maintenance/deno.json`. Post and message attachments allow the MIME list defined in `20260612121249_storage_buckets.sql`. File content malware scanning is not performed.
+The Edge Function dependency is pinned in `storage-maintenance/deno.json`. Message attachments allow the MIME types registered in `public.message_attachment_mime_types`, and the `message-files` bucket's allowlist is generated from that table. Post attachments still use the list seeded onto their bucket in the baseline migration. File content malware scanning is not performed.
 
 ## Production
 

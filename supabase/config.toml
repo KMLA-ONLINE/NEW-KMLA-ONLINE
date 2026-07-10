@@ -110,7 +110,9 @@ port = 54724
 [storage]
 enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MB"
+# Ceiling for every bucket. message-files needs it for video; per-kind limits are
+# enforced by public.message_attachment_mime_types.max_bytes.
+file_size_limit = "100MB"
 
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]

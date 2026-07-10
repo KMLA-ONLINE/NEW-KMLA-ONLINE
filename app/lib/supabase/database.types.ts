@@ -34,6 +34,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      chat_notification_settings: {
+        Row: {
+          conversation_id: number
+          created_at: string
+          level: Database["public"]["Enums"]["notification_level"]
+          muted_until: string | null
+          updated_at: string | null
+          user_id: number
+        }
+        Insert: {
+          conversation_id: number
+          created_at?: string
+          level?: Database["public"]["Enums"]["notification_level"]
+          muted_until?: string | null
+          updated_at?: string | null
+          user_id: number
+        }
+        Update: {
+          conversation_id?: number
+          created_at?: string
+          level?: Database["public"]["Enums"]["notification_level"]
+          muted_until?: string | null
+          updated_at?: string | null
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_notification_settings_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_notification_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_read_states: {
         Row: {
           conversation_id: number
@@ -454,10 +496,37 @@ export type Database = {
           },
         ]
       }
+      message_attachment_mime_types: {
+        Row: {
+          content_type: string
+          created_at: string
+          max_bytes: number
+        }
+        Insert: {
+          content_type: string
+          created_at?: string
+          max_bytes: number
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          max_bytes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_attachment_mime_types_content_type_fkey"
+            columns: ["content_type"]
+            isOneToOne: true
+            referencedRelation: "mime_types"
+            referencedColumns: ["content_type"]
+          },
+        ]
+      }
       message_attachments: {
         Row: {
           content_type: string
           created_at: string
+          duration_ms: number | null
           file_name: string
           height: number | null
           id: number
@@ -471,6 +540,7 @@ export type Database = {
         Insert: {
           content_type: string
           created_at?: string
+          duration_ms?: number | null
           file_name: string
           height?: number | null
           id?: number
@@ -484,6 +554,7 @@ export type Database = {
         Update: {
           content_type?: string
           created_at?: string
+          duration_ms?: number | null
           file_name?: string
           height?: number | null
           id?: number
@@ -495,6 +566,13 @@ export type Database = {
           width?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "message_attachments_content_type_fkey"
+            columns: ["content_type"]
+            isOneToOne: false
+            referencedRelation: "message_attachment_mime_types"
+            referencedColumns: ["content_type"]
+          },
           {
             foreignKeyName: "message_attachments_message_id_fkey"
             columns: ["message_id"]
@@ -627,6 +705,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mime_types: {
+        Row: {
+          content_type: string
+          created_at: string
+          kind: Database["public"]["Enums"]["attachment_kind"]
+        }
+        Insert: {
+          content_type: string
+          created_at?: string
+          kind: Database["public"]["Enums"]["attachment_kind"]
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          kind?: Database["public"]["Enums"]["attachment_kind"]
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -1377,7 +1473,9 @@ export type Database = {
           last_message_sender_id: number
           last_message_sender_name: string
           member_count: number
+          muted_until: string
           name: string
+          notification_level: Database["public"]["Enums"]["notification_level"]
           type: Database["public"]["Enums"]["conversation_type"]
           unread_count: number
         }[]
@@ -1387,7 +1485,7 @@ export type Database = {
         Returns: undefined
       }
       request_attachment_removal: {
-        Args: { p_attachment_id: number; p_attachment_kind: string }
+        Args: { p_attachment_id: number; p_owner_type: string }
         Returns: undefined
       }
       review_profile: {
@@ -1407,17 +1505,12 @@ export type Database = {
           sender_name: string
         }[]
       }
-      send_message_with_attachment: {
+      send_message_with_attachments: {
         Args: {
+          p_attachments: Json
           p_content?: string
-          p_content_type: string
           p_conversation_id: number
-          p_file_name: string
-          p_height?: number
           p_parent_id?: number
-          p_size_bytes: number
-          p_storage_path: string
-          p_width?: number
         }
         Returns: number
       }
@@ -1444,6 +1537,7 @@ export type Database = {
     }
     Enums: {
       app_role: "user" | "admin"
+      attachment_kind: "image" | "audio" | "video" | "file"
       club_type: "major" | "general"
       conversation_type: "direct" | "group"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
@@ -1587,6 +1681,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["user", "admin"],
+      attachment_kind: ["image", "audio", "video", "file"],
       club_type: ["major", "general"],
       conversation_type: ["direct", "group"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],

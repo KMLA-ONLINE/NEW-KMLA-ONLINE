@@ -37,17 +37,31 @@ create table public.messages (
   created_at timestamptz not null default now()
 );
 
+-- Which MIME types a message accepts, and how large each may be. The kind of each
+-- one is universal and lives in public.mime_types.
+--
+-- message_attachments has a foreign key onto this table, so a type a message does
+-- not accept cannot be stored at all, and the message-files bucket's
+-- allowed_mime_types array is generated from these rows. Rows are seed data, so
+-- they live in a migration.
+create table public.message_attachment_mime_types (
+  content_type text primary key references public.mime_types (content_type) on update cascade on delete restrict,
+  max_bytes int8 not null,
+  created_at timestamptz not null default now()
+);
+
 create table public.message_attachments (
   id bigserial primary key,
   message_id bigint not null references public.messages (id) on delete restrict,
   storage_bucket text not null,
   storage_path text not null,
   file_name text not null,
-  content_type text not null,
+  content_type text not null references public.message_attachment_mime_types (content_type) on update cascade on delete restrict,
   size_bytes int8 null,
   sort_order int4 not null default 0,
   width int4 null,
   height int4 null,
+  duration_ms int4 null,
   created_at timestamptz not null default now()
 );
 
@@ -68,6 +82,25 @@ create table public.chat_read_states (
   primary key (conversation_id, user_id)
 );
 
+-- Muting is a user's preference about a conversation, not a property of it, and
+-- not a boolean either: `muted_until` carries "for 8 hours" and "until I say
+-- otherwise" ('infinity') in one column. `level` is orthogonal -- a loud group
+-- chat can stay unmuted while only notifying on a mention.
+--
+-- Its own table rather than a column on chat_read_states, whose insert policy
+-- demands a last_read_message_id: you must be able to mute a conversation you
+-- have never opened. And not on conversation_members, which direct conversations
+-- have no rows in.
+create table public.chat_notification_settings (
+  conversation_id bigint not null references public.conversations (id) on delete restrict,
+  user_id bigint not null references public.profiles (id) on delete restrict,
+  muted_until timestamptz null,
+  level public.notification_level not null default 'all',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz null,
+  primary key (conversation_id, user_id)
+);
+
 create index idx_direct_conversations_user1 on public.direct_conversations (user1_id);
 create index idx_direct_conversations_user2 on public.direct_conversations (user2_id);
 create index idx_conversation_members_user on public.conversation_members (user_id, conversation_id);
@@ -80,6 +113,7 @@ where pinned_at is not null and deleted_at is null;
 create index idx_message_reactions_type_count on public.message_reactions (message_id, reaction_type_id);
 create index idx_message_reactions_user_created_at on public.message_reactions (user_id, created_at);
 create index idx_chat_read_states_user_last_read_at on public.chat_read_states (user_id, last_read_at);
+create index idx_chat_notification_settings_user on public.chat_notification_settings (user_id, conversation_id);
 create index idx_messages_content_search_gin on public.messages
   using gin (regexp_replace(lower(content), '\s+', '', 'g') extensions.gin_trgm_ops)
   where deleted_at is null;
@@ -100,6 +134,10 @@ alter table public.messages
   add constraint messages_deleted_state_check check (deleted_at is not null or deleted_by is null),
   add constraint messages_pinned_state_check check (pinned_at is not null or pinned_by is null);
 
+alter table public.message_attachment_mime_types
+  add constraint message_attachment_mime_types_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
+  add constraint message_attachment_mime_types_max_bytes_check check (max_bytes > 0);
+
 alter table public.message_attachments
   add constraint message_attachments_message_sort_key unique (message_id, sort_order),
   add constraint message_attachments_storage_key unique (storage_bucket, storage_path),
@@ -111,7 +149,8 @@ alter table public.message_attachments
   add constraint message_attachments_file_name_check check (char_length(btrim(file_name)) between 1 and 255),
   add constraint message_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint message_attachments_size_check check (size_bytes is null or size_bytes >= 0),
-  add constraint message_attachments_sort_order_check check (sort_order >= 0);
+  add constraint message_attachments_sort_order_check check (sort_order >= 0),
+  add constraint message_attachments_duration_check check (duration_ms is null or duration_ms >= 0);
 
 create function private.is_conversation_member(p_conversation_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
@@ -136,12 +175,15 @@ returns boolean language sql stable security definer set search_path = '' as $$
       and private.is_conversation_member(m.conversation_id)
   )
 $$;
+-- A reply quotes exactly one message; it does not open a thread. So a reply may
+-- itself be quoted, to any depth: C shows B, B shows A, and following the
+-- previews walks the chain back. Nothing renders more than one level at a time,
+-- so nothing needs the depth bounded.
 create function private.is_valid_message_parent(p_parent_id bigint,p_conversation_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select p_parent_id is null or exists(
     select 1 from public.messages m
     where m.id=p_parent_id
-      and m.parent_id is null
       and m.deleted_at is null
       and m.conversation_id=p_conversation_id
   )
@@ -150,19 +192,12 @@ create function private.has_active_message_reply(p_message_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.messages where parent_id=p_message_id and deleted_at is null)
 $$;
-create function private.is_allowed_message_mime(p_content_type text)
-returns boolean language sql immutable set search_path = '' as $$
-  select p_content_type in (
-    'image/jpeg','image/png','image/webp','application/pdf','text/plain','text/markdown','text/csv','application/rtf',
-    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/x-hwp','application/x-hwpx','application/haansofthwp','application/haansofthwpx',
-    'application/vnd.hancom.hwp','application/vnd.hancom.hwpx',
-    'application/vnd.oasis.opendocument.text','application/vnd.oasis.opendocument.spreadsheet','application/vnd.oasis.opendocument.presentation'
-  )
-$$;
-revoke execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.is_allowed_message_mime(text) from public, anon, service_role;
+-- Which MIME types are allowed is answered by message_attachment_mime_types and
+-- enforced by message_attachments' foreign key onto it. Only the ceiling on how
+-- many attachments one message may carry needs a home of its own.
+create function private.max_message_attachments()
+returns int4 language sql immutable set search_path = '' as $$ select 10 $$;
+revoke execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.max_message_attachments() from public, anon, service_role;
 grant execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint) to authenticated;
 
 create function private.validate_message_parent()
@@ -254,6 +289,22 @@ create trigger trg_mark_message_reaction_updated
 before update of reaction_type_id on public.message_reactions
 for each row execute function private.mark_message_reaction_updated();
 
+create function private.mark_chat_notification_settings_updated()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger trg_mark_chat_notification_settings_updated
+before update of muted_until, level on public.chat_notification_settings
+for each row execute function private.mark_chat_notification_settings_updated();
+
 create function private.validate_chat_read_state()
 returns trigger
 language plpgsql
@@ -339,6 +390,43 @@ create trigger trg_mark_sender_chat_read
 after insert on public.messages
 for each row execute function private.mark_sender_chat_read();
 
+-- Grouping is an images-only affordance: a photo grid reads as one moment, while
+-- a pdf and an mp3 sharing a bubble have neither a shared meaning nor a shared
+-- renderer. Enforced on the table rather than only inside the send RPC, because
+-- service_role writes never pass through that RPC.
+create function private.enforce_message_attachment_shape()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (
+    select 1
+    from (select distinct message_id from new_rows) touched
+    cross join lateral (
+      select
+        count(*) as total,
+        count(*) filter (where mime.kind <> 'image') as non_image_count
+      from public.message_attachments a
+      join public.mime_types mime on mime.content_type = a.content_type
+      where a.message_id = touched.message_id
+    ) shape
+    where shape.total > private.max_message_attachments()
+      or (shape.total > 1 and shape.non_image_count > 0)
+  ) then
+    raise exception 'a message carries at most % attachments, and only images may share one', private.max_message_attachments();
+  end if;
+
+  return null;
+end;
+$$;
+
+create trigger trg_enforce_message_attachment_shape
+after insert on public.message_attachments
+referencing new table as new_rows
+for each statement execute function private.enforce_message_attachment_shape();
+
 revoke execute on function private.validate_message_parent() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_message_edited() from public, anon, authenticated, service_role;
 revoke execute on function private.stamp_message_pinned_by() from public, anon, authenticated, service_role;
@@ -346,14 +434,18 @@ revoke execute on function private.mark_message_reaction_updated() from public, 
 revoke execute on function private.validate_chat_read_state() from public, anon, authenticated, service_role;
 revoke execute on function private.add_conversation_creator_member() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_sender_chat_read() from public, anon, authenticated, service_role;
+revoke execute on function private.enforce_message_attachment_shape() from public, anon, authenticated, service_role;
+revoke execute on function private.mark_chat_notification_settings_updated() from public, anon, authenticated, service_role;
 
 alter table public.conversations enable row level security;
 alter table public.direct_conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.messages enable row level security;
+alter table public.message_attachment_mime_types enable row level security;
 alter table public.message_attachments enable row level security;
 alter table public.message_reactions enable row level security;
 alter table public.chat_read_states enable row level security;
+alter table public.chat_notification_settings enable row level security;
 create policy conversations_select on public.conversations for select to authenticated using (private.is_conversation_member(id));
 create policy conversations_insert on public.conversations for insert to authenticated with check (type='group' and created_by=private.current_profile_id() and private.is_accepted_user());
 create policy direct_conversations_select on public.direct_conversations for select to authenticated using (private.is_conversation_member(conversation_id));
@@ -366,6 +458,9 @@ create policy messages_update on public.messages for update to authenticated usi
 -- content edits above. private.mark_message_edited() independently guards
 -- content against this broader row-level visibility.
 create policy messages_pin_update on public.messages for update to authenticated using (deleted_at is null and private.is_conversation_member(conversation_id)) with check (deleted_at is null and private.is_conversation_member(conversation_id));
+-- Readable by clients on purpose: the composer builds its accept filter, its size
+-- guard and its renderer choice from these rows instead of hardcoding a copy.
+create policy message_attachment_mime_types_select on public.message_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy message_attachments_select on public.message_attachments for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_select on public.message_reactions for select to authenticated using (private.can_access_message(message_id));
 create policy message_reactions_insert on public.message_reactions for insert to authenticated with check (user_id=private.current_profile_id() and private.can_access_message(message_id));
@@ -374,8 +469,13 @@ create policy message_reactions_delete on public.message_reactions for delete to
 create policy chat_read_states_select on public.chat_read_states for select to authenticated using (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
 create policy chat_read_states_insert on public.chat_read_states for insert to authenticated with check (user_id=private.current_profile_id() and last_read_message_id is not null and private.is_conversation_member(conversation_id));
 create policy chat_read_states_update on public.chat_read_states for update to authenticated using (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id)) with check (user_id=private.current_profile_id() and last_read_message_id is not null and private.is_conversation_member(conversation_id));
+-- Own row only, and only for a conversation you are in. Unmuting is muted_until
+-- back to null, so there is no delete.
+create policy chat_notification_settings_select on public.chat_notification_settings for select to authenticated using (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
+create policy chat_notification_settings_insert on public.chat_notification_settings for insert to authenticated with check (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
+create policy chat_notification_settings_update on public.chat_notification_settings for update to authenticated using (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id)) with check (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
 
-grant select on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachments, public.message_reactions, public.chat_read_states to authenticated;
+grant select on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to authenticated;
 grant insert (type,name,created_by) on public.conversations to authenticated;
 grant insert (conversation_id,user_id) on public.conversation_members to authenticated;
 grant insert (conversation_id,sender_id,parent_id,content) on public.messages to authenticated;
@@ -386,9 +486,11 @@ grant update (reaction_type_id) on public.message_reactions to authenticated;
 grant delete on public.message_reactions to authenticated;
 grant insert (conversation_id,user_id,last_read_message_id) on public.chat_read_states to authenticated;
 grant update (last_read_message_id) on public.chat_read_states to authenticated;
+grant insert (conversation_id,user_id,muted_until,level) on public.chat_notification_settings to authenticated;
+grant update (muted_until,level) on public.chat_notification_settings to authenticated;
 grant usage, select on sequence public.conversations_id_seq, public.messages_id_seq to authenticated;
 
-grant select, insert, update, delete on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachments, public.message_reactions, public.chat_read_states to service_role;
+grant select, insert, update, delete on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to service_role;
 grant usage, select on sequence public.conversations_id_seq, public.messages_id_seq, public.message_attachments_id_seq to service_role;
 
 create function public.create_direct_conversation(p_peer_id bigint)
@@ -430,6 +532,8 @@ returns table(
   last_message_created_at timestamptz,
   unread_count bigint,
   member_count bigint,
+  muted_until timestamptz,
+  notification_level public.notification_level,
   created_at timestamptz
 ) language plpgsql stable security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(true);
@@ -459,6 +563,10 @@ begin
     last_message.created_at as last_message_created_at,
     coalesce(unread.unread_count,0) as unread_count,
     case when c.type='direct' then 2::bigint else coalesce(member_counts.member_count,0) end as member_count,
+    -- Raw, not `muted_until > now()`: this function is stable, and the caller has
+    -- to re-evaluate the deadline as it passes anyway.
+    settings.muted_until,
+    coalesce(settings.level,'all') as notification_level,
     c.created_at
   from my_conversations mc
   join public.conversations c on c.id=mc.conversation_id
@@ -473,6 +581,7 @@ begin
   ) last_message on true
   left join public.profiles last_sender on last_sender.id=last_message.sender_id
   left join public.chat_read_states read_state on read_state.conversation_id=c.id and read_state.user_id=caller_id
+  left join public.chat_notification_settings settings on settings.conversation_id=c.id and settings.user_id=caller_id
   left join lateral (
     select count(*)::bigint as unread_count
     from public.messages m
@@ -542,8 +651,10 @@ begin
   left join public.profiles parent_sender on parent_sender.id=parent.sender_id
   left join public.profiles pinner on pinner.id=page.pinned_by
   left join lateral (
-    select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'content_type',a.content_type,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'created_at',a.created_at) order by a.sort_order,a.id) as items
-    from public.message_attachments a where a.message_id=page.id
+    select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'duration_ms',a.duration_ms,'created_at',a.created_at) order by a.sort_order,a.id) as items
+    from public.message_attachments a
+    join public.mime_types mime on mime.content_type=a.content_type
+    where a.message_id=page.id
   ) attachments on true
   left join lateral (
     select jsonb_agg(jsonb_build_object('user_id',mr.user_id,'user_name',rp.name,'reaction_type_id',rt.id,'reaction_key',rt.key,'reaction_name',rt.name,'reaction_icon',rt.icon,'created_at',mr.created_at,'updated_at',mr.updated_at) order by mr.created_at,mr.user_id) as items
@@ -604,25 +715,75 @@ begin
 end;
 $$;
 
-create function public.send_message_with_attachment(p_conversation_id bigint,p_storage_path text,p_file_name text,p_content_type text,p_size_bytes int8,p_parent_id bigint default null,p_content text default null,p_width int4 default null,p_height int4 default null)
+-- p_attachments is a json array, ordered as the sender arranged them; the array
+-- index becomes sort_order. Each element:
+--   {storage_path, file_name, content_type, size_bytes, width?, height?, duration_ms?}
+--
+-- Every element is re-checked against the object actually sitting in storage,
+-- because the upload happened client-side and nothing about it is trusted.
+create function public.send_message_with_attachments(p_conversation_id bigint,p_attachments jsonb,p_parent_id bigint default null,p_content text default null)
 returns bigint language plpgsql security definer set search_path='' as $$
-declare caller_id bigint:=private.require_current_profile(true); message_id bigint; expected_prefix text:=p_conversation_id::text||'/'||(select auth.uid())::text||'/'; normalized_content text;
+declare caller_id bigint:=private.require_current_profile(true); message_id bigint; expected_prefix text:=p_conversation_id::text||'/'||(select auth.uid())::text||'/'; normalized_content text; attachment_count int4;
 begin
   if not private.is_conversation_member(p_conversation_id) then raise exception 'conversation membership required'; end if;
   if not private.is_valid_message_parent(p_parent_id,p_conversation_id) then raise exception 'active parent message in chat required'; end if;
   normalized_content:=nullif(btrim(p_content),'');
   if normalized_content is not null and char_length(normalized_content)>10000 then raise exception 'message content must be 1 to 10000 characters'; end if;
-  if p_storage_path is null or not private.has_uuid_object_suffix(p_storage_path,expected_prefix)
-    or not private.is_allowed_message_mime(p_content_type) or p_size_bytes>25000000
-    or not exists(select 1 from storage.objects where bucket_id='message-files' and name=p_storage_path and created_at>=now()-interval '24 hours' and metadata->>'mimetype'=p_content_type and (metadata->>'size')::int8=p_size_bytes)
-  then raise exception 'invalid message attachment'; end if;
+
+  if p_attachments is null or jsonb_typeof(p_attachments)<>'array' then raise exception 'attachments must be a json array'; end if;
+  attachment_count:=jsonb_array_length(p_attachments);
+  if attachment_count<1 or attachment_count>private.max_message_attachments() then
+    raise exception 'a message carries 1 to % attachments', private.max_message_attachments();
+  end if;
+
+  -- A content_type a message does not accept joins to nothing, so
+  -- `allowed.content_type is null` is also how a disallowed MIME type is rejected.
+  if exists(
+    select 1
+    from jsonb_array_elements(p_attachments) as item(value)
+    left join public.message_attachment_mime_types allowed on allowed.content_type=item.value->>'content_type'
+    where allowed.content_type is null
+      or item.value->>'storage_path' is null
+      or not private.has_uuid_object_suffix(item.value->>'storage_path',expected_prefix)
+      or char_length(btrim(coalesce(item.value->>'file_name','')))=0
+      or (item.value->>'size_bytes')::int8 is null
+      or (item.value->>'size_bytes')::int8<0
+      or (item.value->>'size_bytes')::int8>allowed.max_bytes
+      or not exists(
+        select 1 from storage.objects o
+        where o.bucket_id='message-files'
+          and o.name=item.value->>'storage_path'
+          and o.created_at>=now()-interval '24 hours'
+          and o.metadata->>'mimetype'=item.value->>'content_type'
+          and (o.metadata->>'size')::int8=(item.value->>'size_bytes')::int8
+      )
+  ) then raise exception 'invalid message attachment'; end if;
+
+  -- trg_enforce_message_attachment_shape re-checks this on the table. Checked
+  -- here too so the caller gets the reason rather than a trigger's error.
+  if attachment_count>1 and exists(
+    select 1
+    from jsonb_array_elements(p_attachments) as item(value)
+    join public.mime_types mime on mime.content_type=item.value->>'content_type'
+    where mime.kind<>'image'
+  ) then raise exception 'only image attachments may share one message'; end if;
 
   insert into public.messages(conversation_id,sender_id,parent_id,content)
   values(p_conversation_id,caller_id,p_parent_id,normalized_content)
   returning id into message_id;
 
-  insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
-  values(message_id,'message-files',p_storage_path,p_file_name,p_content_type,p_size_bytes,0,p_width,p_height);
+  insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height,duration_ms)
+  select
+    message_id,'message-files',
+    item.value->>'storage_path',
+    btrim(item.value->>'file_name'),
+    item.value->>'content_type',
+    (item.value->>'size_bytes')::int8,
+    (item.position-1)::int4,
+    (item.value->>'width')::int4,
+    (item.value->>'height')::int4,
+    (item.value->>'duration_ms')::int4
+  from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
 
   return message_id;
 end $$;
@@ -637,16 +798,17 @@ begin
     and not exists(select 1 from public.profiles where id=caller_id and role='admin')
     then raise exception 'not allowed to remove member'; end if;
   delete from public.chat_read_states where conversation_id=p_conversation_id and user_id=p_user_id;
+  delete from public.chat_notification_settings where conversation_id=p_conversation_id and user_id=p_user_id;
   delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.conversation_id=p_conversation_id and mr.user_id=p_user_id;
   delete from public.conversation_members where conversation_id=p_conversation_id and user_id=p_user_id;
 end;
 $$;
 
-revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
+revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
 grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
 grant execute on function public.search_messages(text,bigint) to authenticated;
-grant execute on function public.send_message_with_attachment(bigint,text,text,text,int8,bigint,text,int4,int4) to authenticated;
+grant execute on function public.send_message_with_attachments(bigint,jsonb,bigint,text) to authenticated;
 grant execute on function public.remove_group_member(bigint,bigint) to authenticated;
 
 create function public.cleanup_conversation(p_conversation_id bigint)
@@ -658,8 +820,17 @@ begin
   end if;
   delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.conversation_id=p_conversation_id;
   delete from public.chat_read_states where conversation_id=p_conversation_id;
-  delete from public.messages where conversation_id=p_conversation_id and parent_id is not null;
-  delete from public.messages where conversation_id=p_conversation_id;
+  delete from public.chat_notification_settings where conversation_id=p_conversation_id;
+
+  -- Replies nest to any depth and messages.parent_id restricts deletes, so peel
+  -- the leaves off until none are left. Deleting replies then roots would only
+  -- ever work for a single level.
+  loop
+    delete from public.messages m
+    where m.conversation_id=p_conversation_id
+      and not exists(select 1 from public.messages child where child.parent_id=m.id);
+    exit when not found;
+  end loop;
   delete from public.direct_conversations where conversation_id=p_conversation_id;
   delete from public.conversation_members where conversation_id=p_conversation_id;
   delete from public.conversations where id=p_conversation_id;
