@@ -1,15 +1,19 @@
 import { Separator } from "~/components/ui/separator"
+import type { FeedPostCardProps } from "~/components/layout/feed-post-card"
 import { FeedPostList } from "~/components/layout/feed-post-list"
 import { Button } from "~/components/ui/button"
 
-const feedItems = [
+// Stand-in rows until a loader reads posts across the spaces the viewer belongs
+// to. Timestamps are ISO, as posts.created_at will be; the card decides how to
+// say "2시간전".
+const feedItems: FeedPostCardProps[] = [
   {
     source: "Group: Academic Office",
     title: "Academic schedule updates for next week",
     description:
       "Midterm preparation sessions and advisory room allocations were finalized. Check your group space for detailed time slots.",
     author: "Academic Office",
-    time: "2h ago",
+    createdAt: "2026-07-10T07:00:00.000Z",
     comments: 3,
     likes: 14,
     isFeatured: true,
@@ -20,7 +24,7 @@ const feedItems = [
     description:
       "Please register by 6 PM. Team assignments will be shared in each committee space.",
     author: "Student Council",
-    time: "15m ago",
+    createdAt: "2026-07-10T08:45:00.000Z",
     comments: 8,
     likes: 21,
   },
@@ -29,7 +33,7 @@ const feedItems = [
     title: "Found wireless earbuds near the library entrance",
     description: "If these are yours, send a message with the case color to verify ownership.",
     author: "2-3 J. Kim",
-    time: "43m ago",
+    createdAt: "2026-07-10T08:17:00.000Z",
     comments: 11,
     likes: 9,
   },
@@ -38,7 +42,7 @@ const feedItems = [
     title: "Selling TI graphing calculator in good condition",
     description: "Includes cover and extra batteries. Available for pickup after study hall.",
     author: "3-2 H. Lee",
-    time: "1h ago",
+    createdAt: "2026-07-10T08:00:00.000Z",
     comments: 5,
     likes: 6,
   },
@@ -47,7 +51,7 @@ const feedItems = [
     title: "Selling TI graphing calculator in good condition",
     description: "Includes cover and extra batteries. Available for pickup after study hall.",
     author: "3-2 H. Lee",
-    time: "1h ago",
+    createdAt: "2026-07-10T07:55:00.000Z",
     comments: 5,
     likes: 6,
   },

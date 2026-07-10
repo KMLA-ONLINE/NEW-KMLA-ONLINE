@@ -70,9 +70,12 @@ alter table public.profiles
     or type <> 'student'
     or (student_number is not null and cohort is not null)
   ),
+  -- Track is the student's 국내반/국제반 stream, so only students carry one.
+  -- Same exemption as profiles_student_identity_check above.
   add constraint profiles_track_required_check check (
     deleted_at is not null
     or status = 'none'
+    or type <> 'student'
     or track is not null
   ),
   add constraint profiles_name_check check (char_length(btrim(name)) between 1 and 50),

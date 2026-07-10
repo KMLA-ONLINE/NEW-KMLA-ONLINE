@@ -12,6 +12,5 @@ export async function loader({ request }: ActionFunctionArgs) {
     return { success: false, error: error.message }
   }
 
-  // Redirect to dashboard or home page after successful sign-in
   return redirect("/", { headers })
 }

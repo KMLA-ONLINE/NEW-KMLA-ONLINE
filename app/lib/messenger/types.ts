@@ -17,7 +17,7 @@ export type MessageAttachment = {
   /** Images and video. */
   width?: number
   height?: number
-  /** Audio and video. Not persisted yet — message_attachments has no duration column. */
+  /** Audio and video. Persisted as message_attachments.duration_ms. */
   durationSeconds?: number
 }
 

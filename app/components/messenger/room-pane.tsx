@@ -13,10 +13,12 @@ import {
   getRoomSubtitle,
   isDeletedMessage,
 } from "~/lib/messenger/utils"
+import type { ReactionType } from "~/lib/reactions"
 import type { Message, ReplyPreview, Room } from "~/lib/messenger/types"
 
 export function RoomPane({
   room,
+  reactionTypes,
   replyTo,
   showBackButton = false,
   onBack,
@@ -33,6 +35,7 @@ export function RoomPane({
   onFocusedMessageHandled,
 }: {
   room: Room
+  reactionTypes: ReactionType[]
   replyTo: ReplyPreview | null
   showBackButton?: boolean
   onBack?: () => void
@@ -207,6 +210,7 @@ export function RoomPane({
             {isMessageListReady ? (
               <MessageList
                 room={room}
+                reactionTypes={reactionTypes}
                 onReply={onReply}
                 onReact={onReact}
                 onDelete={onDelete}

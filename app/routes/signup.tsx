@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link, useFetcher, useNavigate, type ActionFunctionArgs } from "react-router"
+import { Link, redirect, useFetcher, type ActionFunctionArgs } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -9,7 +9,7 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { supabase } = createClient(request)
+  const { supabase, headers } = createClient(request)
 
   const formData = await request.formData()
   const email = String(formData.get("email") ?? "")
@@ -25,12 +25,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "회원가입 중 오류가 발생했습니다. 입력한 정보를 확인해 주세요." }
   }
 
-  return { success: true }
+  // Email confirmation is off, so signUp already returned a session, and
+  // on_auth_user_created has already inserted a profile sitting at status
+  // 'none'. Onboarding is the only thing left before an admin can review it.
+  // `headers` carries the session cookie; dropping it would land /setup logged out.
+  return redirect("/setup", { headers })
 }
 
 export default function Signup() {
   const fetcher = useFetcher<typeof action>()
-  const navigate = useNavigate()
 
   const [showPw, setShowPw] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -39,13 +42,6 @@ export default function Signup() {
   useEffect(() => {
     emailRef.current?.focus()
   }, [])
-
-  useEffect(() => {
-    if (fetcher.data?.success) {
-      toast.success("회원가입이 완료되었습니다.")
-      setTimeout(() => navigate("/login"), 1500)
-    }
-  }, [fetcher.data, navigate])
 
   const error = fetcher.data?.error
   const loading = fetcher.state === "submitting"

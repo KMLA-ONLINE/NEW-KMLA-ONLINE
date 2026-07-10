@@ -9,7 +9,7 @@ import { BubbleOverflowMenu } from "~/components/messenger/message-actions"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { useMessageBubbleGestures } from "~/components/messenger/use-message-bubble-gestures"
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
-import { QUICK_REACTIONS } from "~/lib/reactions"
+import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import {
   formatMessageTime,
   getBubbleShapeClass,
@@ -62,6 +62,7 @@ function LinkedMessageText({ text }: { text: string }) {
 export function MessageBubble({
   message,
   author,
+  reactionTypes,
   replyPreviewText,
   readReceipts,
   groupPosition,
@@ -80,6 +81,7 @@ export function MessageBubble({
 }: {
   message: Message
   author: Participant
+  reactionTypes: ReactionType[]
   replyPreviewText?: string
   readReceipts: Participant[]
   groupPosition: MessageGroupPosition
@@ -124,18 +126,15 @@ export function MessageBubble({
       onReply,
     })
   const reactionValues = message.reactions?.map((reaction) => reaction.value) ?? []
+  // Chips read in the picker's order, so the same set of reactions always looks
+  // the same. A reaction the picker no longer offers sinks to the end.
+  const reactionOrder = new Map(
+    reactionTypes.map((reactionType, index) => [getReactionGlyph(reactionType), index])
+  )
   const uniqueReactionValues = [...new Set(reactionValues)].sort(
-    (firstReaction, secondReaction) => {
-      const firstIndex = QUICK_REACTIONS.indexOf(firstReaction as (typeof QUICK_REACTIONS)[number])
-      const secondIndex = QUICK_REACTIONS.indexOf(
-        secondReaction as (typeof QUICK_REACTIONS)[number]
-      )
-
-      return (
-        (firstIndex === -1 ? QUICK_REACTIONS.length : firstIndex) -
-        (secondIndex === -1 ? QUICK_REACTIONS.length : secondIndex)
-      )
-    }
+    (firstReaction, secondReaction) =>
+      (reactionOrder.get(firstReaction) ?? reactionTypes.length) -
+      (reactionOrder.get(secondReaction) ?? reactionTypes.length)
   )
   const reactionCount = reactionValues.length
 
@@ -373,8 +372,9 @@ export function MessageBubble({
               >
                 <QuickReactionList
                   className="messenger-scrollbar"
-                  onSelect={(reaction) => {
-                    onReact(message, reaction)
+                  reactionTypes={reactionTypes}
+                  onSelect={(reactionType) => {
+                    onReact(message, getReactionGlyph(reactionType))
                     setIsReactionPickerOpen(false)
                     if (isMobileActionActive) {
                       onCloseActions()
@@ -384,9 +384,13 @@ export function MessageBubble({
               </div>
             ) : null}
             {message.replyTo ? (
+              // Jumping to the original scrolls to a mounted bubble and silently
+              // does nothing when there isn't one. Once messages are paginated
+              // from the DB the quoted message may sit outside the loaded window,
+              // so this has to fetch around it rather than no-op.
               <button
                 type="button"
-                aria-label="원본 메시지로 이동" //db 연동 후에는 원본 메시지가 현재 리스트에 없을 수 있어서 주변 fetch 필요.
+                aria-label="원본 메시지로 이동"
                 className={cn(
                   "flex w-fit flex-col gap-1 text-left transition-opacity hover:opacity-80",
                   isMine

@@ -71,6 +71,17 @@
 - **Reads:** direct table access with RLS. Message search uses the `search_messages` RPC; there is no post search RPC.
 - Denormalized counters such as `posts.comment_count`, `posts.reaction_count`, and `spaces.member_count` are cached values with no reconciliation job (`reconcile_cached_counts` was removed). Do not treat them as authoritative when exact counts are required.
 
+## Wiring the Backend
+
+Much of the app still renders module-level mock arrays (feed, spaces, profile, messenger). When replacing one with real data:
+
+- Read and write from a route `loader` / `action` using `createClient(request)` from `app/lib/supabase/server.ts`. Do not call Supabase from a component body or a `useEffect`.
+- Any route module that touches `supabase.auth` must return the `headers` from `createClient(request)` on **every** response (`redirect(to, { headers })`, `data(value, { headers })`). Dropping them silently discards the refreshed session cookie, and the next request arrives logged out.
+- `app/lib/supabase/client.ts` is for browser-only concerns — realtime subscriptions and direct-to-storage uploads. Everything else belongs on the server.
+- Keep components data-agnostic: they take rows as props and the route supplies them. A component that imports a constant standing in for a table (see `PLACEHOLDER_REACTION_TYPES` in `app/lib/reactions.ts`) has to be rewritten when the loader lands; one that takes props does not.
+- Shape mock data like the query that will replace it — ISO timestamps rather than `"2h ago"`, real column names, nullable fields actually nullable. Formatting is the renderer's job.
+- Every RLS policy gates on `private.is_accepted_user()`. A signed-in user whose `profiles.status` is not `accepted` sees empty results rather than an error, so route on `status` (`none`/`rejected` → `/setup`, `pending` → `/pending`) instead of on the session alone.
+
 ## DB Types
 
 - Shared enums live in `app/lib/supabase/database.types.ts`.
