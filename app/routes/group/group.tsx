@@ -7,6 +7,9 @@ import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
 import { cn } from "~/lib/utils"
 
+// 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
+export const handle = { mobileContentPadding: "bleed" as const }
+
 const TABS = [
   { label: "게시물", active: true },
   { label: "멤버", active: false },
@@ -22,7 +25,7 @@ export default function GroupPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <GroupHeader group={mockGroup} />
+      <GroupHeader group={mockGroup} className="border-0 sm:rounded-xl sm:border" />
 
       <nav className="mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
         {TABS.map((tab) => (
@@ -45,7 +48,7 @@ export default function GroupPage() {
         <div className="flex min-w-0 flex-col gap-4">
           <button
             type="button"
-            className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors"
+            className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none border-b px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
           >
             <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />
             <span className="text-muted-foreground text-sm">
@@ -54,7 +57,7 @@ export default function GroupPage() {
             <PenSquareIcon className="text-muted-foreground ml-auto size-4" aria-hidden="true" />
           </button>
 
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end px-4 sm:px-0">
             <PostViewToggle value={viewMode} onChange={setViewMode} />
           </div>
 

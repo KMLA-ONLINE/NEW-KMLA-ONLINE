@@ -11,7 +11,9 @@ type AppShellProps = {
 }
 
 type AppLayoutHandle = {
-  mobileContentPadding?: "default" | "none"
+  // "none": 상하좌우 패딩 제거 + 자체 스크롤(messenger). "bleed": 상·좌·우 패딩을 없애
+  // 콘텐츠가 화면 가장자리까지 차게 하되 하단 패딩·스크롤은 유지(모바일 full-bleed 피드).
+  mobileContentPadding?: "default" | "none" | "bleed"
   showMobileHeader?: boolean
   showMobileTabBar?: boolean
 }
@@ -40,7 +42,9 @@ export function AppShell({ email }: AppShellProps) {
               className={
                 mobileContentPadding === "none"
                   ? "flex flex-1 flex-col overflow-hidden p-0 md:overflow-y-auto md:p-6 md:pb-6"
-                  : "flex flex-1 flex-col overflow-y-auto p-4 pb-24 sm:p-6 md:pb-6"
+                  : mobileContentPadding === "bleed"
+                    ? "flex flex-1 flex-col overflow-y-auto p-0 pb-24 sm:p-6 md:pb-6"
+                    : "flex flex-1 flex-col overflow-y-auto p-4 pb-24 sm:p-6 md:pb-6"
               }
             >
               <Outlet />

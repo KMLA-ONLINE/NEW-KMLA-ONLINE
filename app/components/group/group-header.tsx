@@ -2,7 +2,14 @@ import { MoreHorizontalIcon, UsersIcon } from "lucide-react"
 
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu"
 import type { GroupSpace } from "~/lib/group/types"
+import { cn } from "~/lib/utils"
 
 const JOIN_POLICY_LABELS: Record<GroupSpace["joinPolicy"], string> = {
   public: "가입",
@@ -11,9 +18,10 @@ const JOIN_POLICY_LABELS: Record<GroupSpace["joinPolicy"], string> = {
 }
 
 // 커버 배너 + 그 위로 겹친 그룹 아이콘. 설명은 여기 두지 않고 "그룹 정보" aside에 둔다.
-export function GroupHeader({ group }: { group: GroupSpace }) {
+// 프레임(마진·모서리·테두리)은 호출부가 className으로 정한다 -- 모바일 full-bleed 때문.
+export function GroupHeader({ group, className }: { group: GroupSpace; className?: string }) {
   return (
-    <section className="bg-card overflow-hidden rounded-xl border">
+    <section className={cn("bg-card overflow-hidden", className)}>
       <div className="from-primary/30 to-primary/5 h-32 w-full bg-linear-to-br sm:h-44" />
       <div className="flex items-start gap-3 p-4">
         <div className="bg-muted ring-card -mt-12 flex size-16 shrink-0 items-center justify-center rounded-xl text-2xl font-semibold ring-4 sm:-mt-14 sm:size-20">
@@ -33,14 +41,22 @@ export function GroupHeader({ group }: { group: GroupSpace }) {
           <Button size="sm" variant={group.isMember ? "outline" : "default"}>
             {group.isMember ? "가입됨" : "가입"}
           </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-muted-foreground"
-            aria-label="그룹 옵션"
-          >
-            <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                aria-label="그룹 옵션"
+              >
+                <MoreHorizontalIcon className="size-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>알림 설정</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive">그룹 나가기</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </section>

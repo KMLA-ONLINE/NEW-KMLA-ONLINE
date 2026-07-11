@@ -17,8 +17,10 @@ export function GroupPostFeed({ posts, viewMode }: { posts: GroupPost[]; viewMod
     )
   }
 
+  // 모바일에선 카드가 화면 옆까지 full-bleed로 채워지고 라디우스 없이 divider 선으로
+  // 나뉜다. sm+에선 라디우스·테두리를 갖춘 카드가 간격을 두고 놓인다.
   return (
-    <div className="flex flex-col gap-3">
+    <div className="divide-border flex flex-col divide-y sm:gap-3 sm:divide-y-0">
       {posts.map((post) => (
         <GroupPostCard key={post.id} post={post} />
       ))}

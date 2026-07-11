@@ -5,6 +5,12 @@ import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu"
 import { Separator } from "~/components/ui/separator"
 import type { GroupPost } from "~/lib/group/types"
 
@@ -15,27 +21,35 @@ export function GroupPostCard({ post }: { post: GroupPost }) {
   const authorName = post.author?.name ?? "익명"
 
   return (
-    <article className="bg-card overflow-hidden rounded-xl border shadow-sm">
+    <article className="bg-card overflow-hidden border-0 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
       <header className="flex items-start gap-3 p-4 pb-3">
         <Avatar>
           <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center">
             <span className="truncate text-sm font-semibold">{authorName}</span>
             {post.isPinned ? <Badge variant="secondary">고정</Badge> : null}
           </div>
           <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
         </div>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          className="text-muted-foreground"
-          aria-label="게시물 옵션"
-        >
-          <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              aria-label="게시물 옵션"
+            >
+              <MoreHorizontalIcon className="size-4" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem>숨기기</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive">신고하기</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <div className="px-4">
