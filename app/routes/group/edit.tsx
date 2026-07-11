@@ -4,7 +4,9 @@ import { useParams } from "react-router"
 
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
+import { GroupDropOverlay } from "~/components/group/group-drop-overlay"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
+import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
@@ -29,6 +31,7 @@ export default function GroupEditPostPage() {
   const [images, setImages] = useState(post?.images ?? [])
   const [files, setFiles] = useState(post?.files ?? [])
   const { attachments: newAttachments, add: addNew, remove: removeNew } = useFileAttachments()
+  const { isDragging, dropHandlers } = useFileDrop(addNew)
 
   const previewImages = [
     ...images.map((image, index) => ({
@@ -68,6 +71,7 @@ export default function GroupEditPostPage() {
       <DialogContent
         showCloseButton={false}
         className="flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-xl"
+        {...dropHandlers}
       >
         <DialogHeader className="flex-row items-center gap-2 border-b p-3 text-left">
           <Button variant="ghost" size="icon-sm" onClick={close} aria-label="닫기">
@@ -113,6 +117,8 @@ export default function GroupEditPostPage() {
             게시물을 찾을 수 없습니다.
           </div>
         )}
+
+        {isDragging ? <GroupDropOverlay /> : null}
       </DialogContent>
     </Dialog>
   )
