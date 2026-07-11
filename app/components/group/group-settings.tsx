@@ -136,6 +136,11 @@ function JoinPolicySection({ group }: { group: GroupSpace }) {
     setEditing(true)
   }
   const save = () => {
+    // TODO(backend): spaces엔 아직 update 경로가 없다. 매니저 게이트 RPC(set_join_policy 등)로
+    // 정책을 바꾸고, request에서 벗어날 때 대기 중인 space_join_requests를 정리한다:
+    //   - invite_only(비공개)로 전환 → 대기 요청 전부 거절(delete)
+    //   - public(공개·즉시가입)으로 전환 → 대기 요청 전부 수락(멤버 승격 + member_count)
+    // request 유지면 그대로 둔다. 지금은 로컬 상태만 갱신(mock).
     setPolicy(draft)
     setEditing(false)
   }
