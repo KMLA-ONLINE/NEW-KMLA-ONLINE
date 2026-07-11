@@ -25,7 +25,17 @@ export function GroupCommentList({
   comments: GroupComment[]
   reactionTypes: ReactionType[]
 }) {
+  const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const roots = comments.filter((comment) => comment.parentId === null)
+
+  // @이름 클릭 시 부모 댓글로 스크롤하고 잠깐 강조한다.
+  const navigateToComment = (id: number) => {
+    setHighlightedId(id)
+    document
+      .getElementById(`comment-${id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" })
+    window.setTimeout(() => setHighlightedId((current) => (current === id ? null : current)), 1600)
+  }
 
   return (
     <ul className="flex flex-col gap-3">
@@ -35,6 +45,8 @@ export function GroupCommentList({
           comment={comment}
           all={comments}
           reactionTypes={reactionTypes}
+          highlightedId={highlightedId}
+          onNavigate={navigateToComment}
         />
       ))}
     </ul>
@@ -45,11 +57,15 @@ function GroupCommentItem({
   comment,
   all,
   reactionTypes,
+  highlightedId,
+  onNavigate,
   depth = 0,
 }: {
   comment: GroupComment
   all: GroupComment[]
   reactionTypes: ReactionType[]
+  highlightedId: number | null
+  onNavigate: (id: number) => void
   depth?: number
 }) {
   const name = comment.author?.name ?? "익명"
@@ -69,13 +85,23 @@ function GroupCommentItem({
         </Avatar>
         <div className="flex min-w-0 flex-1 items-start gap-1">
           <div className="min-w-0">
-            <div className="bg-muted w-fit rounded-2xl px-3 py-2">
+            <div
+              id={`comment-${comment.id}`}
+              className={cn(
+                "bg-muted w-fit rounded-2xl px-3 py-2 transition-shadow",
+                highlightedId === comment.id && "ring-2 ring-blue-400"
+              )}
+            >
               <p className="text-xs font-semibold">{name}</p>
               <p className="text-sm">
                 {parentName ? (
-                  <span className="mr-1 font-medium text-blue-600 dark:text-blue-400">
+                  <button
+                    type="button"
+                    className="mr-1 font-medium text-blue-600 hover:underline dark:text-blue-400"
+                    onClick={() => comment.parentId !== null && onNavigate(comment.parentId)}
+                  >
                     @{parentName}
-                  </span>
+                  </button>
                 ) : null}
                 {comment.content}
               </p>
@@ -156,6 +182,8 @@ function GroupCommentItem({
               comment={reply}
               all={all}
               reactionTypes={reactionTypes}
+              highlightedId={highlightedId}
+              onNavigate={onNavigate}
               depth={depth + 1}
             />
           ))}
