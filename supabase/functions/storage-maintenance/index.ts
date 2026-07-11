@@ -3,7 +3,7 @@ import { withSupabase } from "@supabase/server";
 
 export default {
   fetch: withSupabase({ auth: "secret" }, async (_req, ctx) => {
-    const summary = { enqueued: 0, claimed: 0, completed: 0, failed: 0, notifications: 0, purged: 0 }
+    const summary = { enqueued: 0, claimed: 0, completed: 0, failed: 0 }
 
     const { data: enqueued, error: enqueueError } = await ctx.supabaseAdmin.rpc("enqueue_due_storage_cleanup")
     if (enqueueError) return Response.json({ error: enqueueError.message }, { status: 500 })
@@ -29,16 +29,6 @@ export default {
       }
     }
 
-    const { data: notifications, error: notificationError } = await ctx.supabaseAdmin.rpc("cleanup_notifications")
-    if (notificationError) return Response.json({ error: notificationError.message, summary }, { status: 500 })
-    summary.notifications = notifications ?? 0
-
-    const { error: reconcileError } = await ctx.supabaseAdmin.rpc("reconcile_cached_counts")
-    if (reconcileError) return Response.json({ error: reconcileError.message, summary }, { status: 500 })
-
-    const { data: purged, error: purgeError } = await ctx.supabaseAdmin.rpc("cleanup_deleted_content")
-    if (purgeError) return Response.json({ error: purgeError.message, summary }, { status: 500 })
-    summary.purged = purged ?? 0
     return Response.json(summary)
   })
 };
