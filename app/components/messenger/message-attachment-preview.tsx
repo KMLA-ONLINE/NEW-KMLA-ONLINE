@@ -19,11 +19,16 @@ const IMAGE_GRID_SIZE = MESSAGE_IMAGE_BOUNDS.maxWidth
 const IMAGE_GRID_MAX_TILES = 4
 const MEDIA_BOX_CLASS = "bg-muted max-w-full overflow-hidden rounded-3xl border"
 
-/** A fixed pixel box; object-cover crops the photo into it. */
+// A preferred width + the photo's aspect ratio (not a fixed height): with
+// max-w-full the box shrinks to the bubble column on narrow screens and its
+// height follows the ratio, so nothing distorts or over-crops. object-cover
+// still crops the extreme ratios that getBoundedImageSize clamped.
 function getImageBoxStyle(attachment: MessageAttachment): CSSProperties {
-  return attachment.width && attachment.height
-    ? getBoundedImageSize(attachment.width, attachment.height)
-    : DEFAULT_IMAGE_SIZE
+  const { width, height } =
+    attachment.width && attachment.height
+      ? getBoundedImageSize(attachment.width, attachment.height)
+      : DEFAULT_IMAGE_SIZE
+  return { width, aspectRatio: `${width} / ${height}` }
 }
 
 /** A width and a ratio, so a narrowed bubble shortens the clip instead of letterboxing it. */
@@ -149,7 +154,7 @@ function MessageImageGrid({ attachments }: { attachments: MessageAttachment[] })
 
   return (
     <div
-      style={{ width: IMAGE_GRID_SIZE, height: IMAGE_GRID_SIZE }}
+      style={{ width: IMAGE_GRID_SIZE, aspectRatio: "1 / 1" }}
       className="grid max-w-full grid-cols-2 grid-rows-2 gap-1 overflow-hidden rounded-3xl border"
     >
       {visibleAttachments.map((attachment, index) => {
