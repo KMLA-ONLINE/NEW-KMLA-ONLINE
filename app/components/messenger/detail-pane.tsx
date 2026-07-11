@@ -63,7 +63,7 @@ export function DetailPane({
         ) : null}
       </header>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
         <section className="bg-muted/50 rounded-[1.5rem] p-5 text-center">
           <Avatar size="lg" className="mx-auto">
             <AvatarFallback>{room.initials}</AvatarFallback>

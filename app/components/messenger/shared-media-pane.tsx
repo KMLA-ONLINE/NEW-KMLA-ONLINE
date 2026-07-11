@@ -74,7 +74,7 @@ export function SharedMediaPane({
       </header>
 
       <Tabs defaultValue="images" className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
-        <div className="messenger-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4">
           <TabsContent value="images">
             {images.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">

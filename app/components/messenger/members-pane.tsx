@@ -30,7 +30,7 @@ export function MembersPane({
         <p className="min-w-0 truncate text-sm font-semibold">멤버 {room.participants.length}</p>
       </header>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="flex flex-col">
           {room.type === "group" && onInviteMembers ? (
             <button

@@ -20,15 +20,15 @@ import {
 import { cn } from "~/lib/utils"
 import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
 
-// The message viewport (RoomPane) clips overflow via .messenger-scrollbar;
-// popovers anchored "above" a bubble near the top of that scroll area would
-// otherwise get cut off, so flip them below when there isn't enough room.
+// The message viewport (RoomPane) is marked with data-scroll-container; popovers
+// anchored "above" a bubble near the top of that scroll area would otherwise get
+// cut off, so flip them below when there isn't enough room.
 function getPopoverPlacement(anchor: HTMLElement | null, requiredSpace: number): "top" | "bottom" {
   if (!anchor) {
     return "top"
   }
 
-  const scrollContainer = anchor.closest<HTMLElement>(".messenger-scrollbar")
+  const scrollContainer = anchor.closest<HTMLElement>("[data-scroll-container]")
   const containerTop = scrollContainer?.getBoundingClientRect().top ?? 0
   const anchorTop = anchor.getBoundingClientRect().top
 
@@ -371,7 +371,6 @@ export function MessageBubble({
                 )}
               >
                 <QuickReactionList
-                  className="messenger-scrollbar"
                   reactionTypes={reactionTypes}
                   onSelect={(reactionType) => {
                     onReact(message, getReactionGlyph(reactionType))

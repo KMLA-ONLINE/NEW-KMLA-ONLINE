@@ -205,7 +205,8 @@ export function RoomPane({
         <div className="relative min-h-0 flex-1">
           <div
             ref={messagesViewportRef}
-            className="messenger-scrollbar h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
+            data-scroll-container
+            className="h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
           >
             {isMessageListReady ? (
               <MessageList

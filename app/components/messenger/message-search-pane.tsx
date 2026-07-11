@@ -101,7 +101,7 @@ export function MessageSearchPane({
         ) : null}
       </div>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {!normalizedQuery ? (
           <div className="text-muted-foreground flex h-full items-center justify-center rounded-2xl border border-dashed p-8 text-center text-sm">
             검색어를 입력하고 Enter를 누르세요.

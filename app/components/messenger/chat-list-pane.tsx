@@ -40,7 +40,7 @@ export function ChatListPane({
         </div>
       </div>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(0.75rem+4rem+env(safe-area-inset-bottom))] md:p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(0.75rem+4rem+env(safe-area-inset-bottom))] md:p-2">
         {rooms.length > 0 ? (
           <div className="flex flex-col gap-1" aria-label="Conversation list">
             {rooms.map((room) => {
