@@ -199,4 +199,58 @@ export const mockGroupPosts: GroupPost[] = [
     topReactions: ["👍"],
     comments: [],
   },
+  {
+    id: 7,
+    pubId: "a1f0c3e2-0007-4aaa-9aaa-000000000007",
+    title: "체육대회 현장 사진 공유합니다",
+    content:
+      "어제 열린 체육대회 사진 몇 장 올려요. 다들 정말 열심히 했고 응원 열기도 대단했어요! 나머지 사진은 정리해서 앨범으로 따로 공유할게요.",
+    author: { name: "박서연" },
+    isPinned: false,
+    createdAt: "2026-07-11T01:00:00.000Z",
+    images: [
+      { src: mockImage("#dc2626", "#fb923c"), alt: "sports-day-relay.jpg" },
+      { src: mockImage("#0891b2", "#67e8f9"), alt: "sports-day-tug-of-war.jpg" },
+      { src: mockImage("#4f46e5", "#a5b4fc"), alt: "sports-day-cheering.jpg" },
+    ],
+    reactionCount: 34,
+    topReactions: ["❤️", "👍"],
+    comments: [
+      {
+        id: 9,
+        parentId: null,
+        author: { name: "정하늘" },
+        content: "사진 너무 잘 나왔네요! 앨범도 기대할게요.",
+        createdAt: "2026-07-11T02:00:00.000Z",
+      },
+    ],
+  },
+  {
+    id: 8,
+    pubId: "a1f0c3e2-0008-4aaa-9aaa-000000000008",
+    title: "수학여행 3일차 사진 모음",
+    content:
+      "수학여행 마지막 날 사진들이에요. 바다도 가고 야경도 보고 알찬 하루였습니다. 다섯 장 골라 올려요!",
+    author: { name: "김지원" },
+    isPinned: false,
+    createdAt: "2026-07-10T12:00:00.000Z",
+    images: [
+      { src: mockImage("#0284c7", "#7dd3fc"), alt: "trip-beach.jpg" },
+      { src: mockImage("#be185d", "#fda4af"), alt: "trip-sunset.jpg" },
+      { src: mockImage("#166534", "#86efac"), alt: "trip-hiking.jpg" },
+      { src: mockImage("#7c2d12", "#fdba74"), alt: "trip-market.jpg" },
+      { src: mockImage("#1e293b", "#94a3b8"), alt: "trip-nightview.jpg" },
+    ],
+    reactionCount: 41,
+    topReactions: ["❤️", "😆"],
+    comments: [
+      {
+        id: 10,
+        parentId: null,
+        author: { name: "이민서" },
+        content: "야경 사진 진짜 멋있어요!",
+        createdAt: "2026-07-10T13:00:00.000Z",
+      },
+    ],
+  },
 ]
