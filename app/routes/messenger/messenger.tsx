@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router"
 
+import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { ImageViewer } from "~/components/media/image-viewer"
 import { ChatListPane } from "~/components/messenger/chat-list-pane"
 import { DetailPane } from "~/components/messenger/detail-pane"
@@ -10,6 +11,7 @@ import { MessageSearchPane } from "~/components/messenger/message-search-pane"
 import { PinnedMessagesPane } from "~/components/messenger/pinned-messages-pane"
 import { RoomPane } from "~/components/messenger/room-pane"
 import { SharedMediaPane } from "~/components/messenger/shared-media-pane"
+import { useFileDrop } from "~/hooks/use-file-drop"
 import { useIsMobile } from "~/hooks/use-mobile"
 import {
   CURRENT_USER,
@@ -368,10 +370,8 @@ export default function MessengerPage() {
     return true
   }
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    event.currentTarget.value = ""
-
+  // 파일 선택(input)과 드래그드롭이 공유하는 전송 코어. 답장 중이거나 방이 없으면 무시.
+  const sendFiles = async (files: File[]) => {
     if (!selectedRoom || replyTo || files.length === 0) {
       return
     }
@@ -422,6 +422,17 @@ export default function MessengerPage() {
     setSelectedRoomMessages(targetRoomId, [...selectedRoom.messages, ...nextMessages])
   }
 
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    // input.value를 비우면 FileList가 초기화되므로, 리셋 전에 배열로 복사해 넘긴다.
+    const files = Array.from(event.target.files ?? [])
+    event.currentTarget.value = ""
+    void sendFiles(files)
+  }
+
+  // 데스크톱에서 대화 영역으로 파일을 끌어다 놓으면 현재 방에 바로 전송한다.
+  const { isDragging, dropHandlers } = useFileDrop((list) => void sendFiles(Array.from(list ?? [])))
+  const showDropOverlay = isDragging && Boolean(selectedRoom) && !replyTo
+
   if (roomSummaries.length === 0) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center border border-dashed md:rounded-[1.75rem]">
@@ -431,7 +442,12 @@ export default function MessengerPage() {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border">
+    <div
+      className="relative h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border"
+      {...dropHandlers}
+    >
+      {showDropOverlay ? <FileDropOverlay label="여기에 놓아 전송하기" /> : null}
+
       {/* 사진과 파일 첨부를 분리한다 -- accept="image/*"는 모바일에서 갤러리·카메라를,
           일반 입력은 파일 브라우저를 연다. 선택 후 처리는 handleFileChange가 공통으로. */}
       <input

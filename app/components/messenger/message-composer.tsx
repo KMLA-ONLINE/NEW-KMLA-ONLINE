@@ -66,15 +66,7 @@ export function MessageComposer({
           )}
         >
           {/* 사진(갤러리)과 파일(브라우저)을 분리 -- 모바일에서 각자 맞는 피커가 열린다. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="사진 첨부"
-            disabled={!canAttach}
-            onClick={onAttachImage}
-          >
-            <ImageIcon className="size-5" />
-          </Button>
+
           <Button
             variant="ghost"
             size="icon"
@@ -83,6 +75,15 @@ export function MessageComposer({
             onClick={onAttachFile}
           >
             <PaperclipIcon className="size-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="사진 첨부"
+            disabled={!canAttach}
+            onClick={onAttachImage}
+          >
+            <ImageIcon className="size-5" />
           </Button>
         </div>
 

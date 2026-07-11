@@ -2,9 +2,9 @@ import { XIcon } from "lucide-react"
 import { useState } from "react"
 import { useParams } from "react-router"
 
+import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
-import { GroupDropOverlay } from "~/components/group/group-drop-overlay"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
@@ -118,7 +118,7 @@ export default function GroupEditPostPage() {
           </div>
         )}
 
-        {isDragging ? <GroupDropOverlay /> : null}
+        {isDragging ? <FileDropOverlay /> : null}
       </DialogContent>
     </Dialog>
   )

@@ -1,8 +1,8 @@
 import { XIcon } from "lucide-react"
 
+import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
-import { GroupDropOverlay } from "~/components/group/group-drop-overlay"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
@@ -91,7 +91,7 @@ export default function GroupNewPostPage() {
           <GroupAttachmentButtons onAdd={add} className="mt-3 flex gap-2" />
         </div>
 
-        {isDragging ? <GroupDropOverlay /> : null}
+        {isDragging ? <FileDropOverlay /> : null}
       </DialogContent>
     </Dialog>
   )
