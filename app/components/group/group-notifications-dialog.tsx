@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { useModalClose } from "~/hooks/use-modal-close"
 
 // 단일 알림 설정 -- schema space_members.notification_setting(off/mentions/all)과 1:1.
 // "mentions"는 나와 관련된 활동(내 글·댓글에 달린 반응 + 멘션)을 뜻하고, 기본값도 스키마와
@@ -26,14 +25,19 @@ const OPTIONS: { value: NotificationSetting; label: string; description: string 
   { value: "off", label: "없음", description: "이 그룹의 알림을 받지 않습니다" },
 ]
 
-// /groups/:pubId/noti. 데스크톱 모달 / 모바일 풀스크린(다른 그룹 모달과 같은 패턴).
+// 딥링크·뒤로가기가 필요 없는 단순 설정이라 라우트가 아니라 상태로 여는 모달로 둔다.
 // 선택은 즉시 반영(로컬 상태). 저장은 백엔드 붙일 때 space_members.notification_setting으로.
-export default function GroupNotificationsPage() {
-  const close = useModalClose()
+export function GroupNotificationsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const [setting, setSetting] = useState<NotificationSetting>("mentions")
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className="flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-md"
@@ -46,7 +50,7 @@ export default function GroupNotificationsPage() {
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={close}
+            onClick={() => onOpenChange(false)}
             aria-label="닫기"
             className="text-muted-foreground absolute top-1/2 right-3 -translate-y-1/2"
           >

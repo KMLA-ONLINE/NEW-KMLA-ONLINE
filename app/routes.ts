@@ -8,7 +8,6 @@ export default [
       route("new", "./routes/group/new.tsx"),
       route("posts/:postId", "./routes/group/post.tsx"),
       route("posts/:postId/edit", "./routes/group/edit.tsx"),
-      route("noti", "./routes/group/noti.tsx"),
     ]),
     route("community", "./routes/_app.community.tsx"),
     route("messenger", "./routes/messenger/messenger.tsx", [

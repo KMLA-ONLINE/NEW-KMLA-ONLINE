@@ -1,6 +1,7 @@
 import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
-import { Link } from "react-router"
+import { useState } from "react"
 
+import { GroupNotificationsDialog } from "~/components/group/group-notifications-dialog"
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { Button } from "~/components/ui/button"
 import {
@@ -39,6 +40,7 @@ export function GroupHeader({
   const visibilityLabel = isPrivate ? "비공개 그룹" : "공개 그룹"
   // space_type: group=공식, community=비공식. 공식이면 제목 옆에 인증 표시.
   const isOfficial = group.type === "group"
+  const [notiOpen, setNotiOpen] = useState(false)
 
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
@@ -101,14 +103,14 @@ export function GroupHeader({
                 <DropdownMenuRadioItem value="list">목록</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to="noti">알림 설정</Link>
-              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setNotiOpen(true)}>알림 설정</DropdownMenuItem>
               <DropdownMenuItem variant="destructive">그룹 나가기</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
+
+      <GroupNotificationsDialog open={notiOpen} onOpenChange={setNotiOpen} />
     </section>
   )
 }
