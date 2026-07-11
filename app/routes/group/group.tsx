@@ -48,7 +48,7 @@ export default function GroupPage() {
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-w-0 flex-col gap-4">
           <Link
-            to="compose"
+            to="new"
             className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
           >
             <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />

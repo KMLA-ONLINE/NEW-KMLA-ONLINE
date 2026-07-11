@@ -12,9 +12,9 @@ import {
 } from "~/components/ui/dialog"
 import { mockGroup } from "~/lib/group/mock-data"
 
-// /groups/:pubId/compose. 데스크톱은 모달, 모바일은 풀스크린(같은 Dialog를 반응형으로).
+// /groups/:pubId/new. 데스크톱은 모달, 모바일은 풀스크린(같은 Dialog를 반응형으로).
 // 부모 group 라우트의 <Outlet/>에 얹혀 그 위에 뜬다. 저장은 백엔드 붙일 때.
-export default function GroupComposePage() {
+export default function GroupNewPostPage() {
   const navigate = useNavigate()
   // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 그룹으로 되돌아간다.
   const close = () => navigate("..")
@@ -54,7 +54,7 @@ export default function GroupComposePage() {
           <input
             type="text"
             placeholder="제목"
-            className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:text-base"
+            className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
           />
           <textarea
             placeholder="내용을 입력하세요…"
