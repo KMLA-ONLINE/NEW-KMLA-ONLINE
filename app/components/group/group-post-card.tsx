@@ -31,6 +31,15 @@ export function GroupPostCard({
     if (node) setClampable(node.scrollHeight > node.clientHeight + 1)
   }, [])
 
+  // 본문을 눌러도 "더 보기/접기"와 똑같이 토글한다. 단 텍스트를 드래그해 선택 중이면
+  // 무시해서 본문을 긁다가 접히는 오작동을 막고, 접거나 펼칠 게 있을 때만 반응한다.
+  const toggleFromContent = () => {
+    if (!clampable && !expanded) return
+    const selection = window.getSelection()
+    if (selection && !selection.isCollapsed) return
+    setExpanded((value) => !value)
+  }
+
   return (
     <article className="bg-card border-foreground/20 sm:border-border overflow-hidden border-b-2 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
       <header className="flex items-start gap-3 p-4 pb-3">
@@ -52,16 +61,18 @@ export function GroupPostCard({
       </header>
 
       <div className="px-4">
-        <h3 className="font-semibold">
+        <p className="mb-2 text-xl font-semibold">
           <Link to={`posts/${post.pubId}`} className="hover:underline">
             {post.title}
           </Link>
-        </h3>
+        </p>
         <p
           ref={measureContent}
+          onClick={toggleFromContent}
           className={cn(
-            "text-muted-foreground mt-1 text-sm leading-6 whitespace-pre-line",
-            !expanded && "line-clamp-3"
+            "mt-1 text-sm leading-6 whitespace-pre-line",
+            !expanded && "line-clamp-3",
+            (clampable || expanded) && "cursor-pointer"
           )}
         >
           {post.content}
