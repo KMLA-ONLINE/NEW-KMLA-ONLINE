@@ -1,4 +1,5 @@
 import { PostActionBar } from "~/components/post-action-bar"
+import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
 import { useIsMobile } from "~/hooks/use-mobile"
@@ -8,7 +9,8 @@ export type FeedPostCardProps = {
   title: string
   description: string
   author: string
-  time: string
+  /** ISO 8601, as posts.created_at arrives. Formatted at render, not upstream. */
+  createdAt: string
   comments: number
   likes: number
   isFeatured?: boolean
@@ -19,7 +21,7 @@ export function FeedPostCard({
   title,
   description,
   author,
-  time,
+  createdAt,
   comments,
   likes,
   isFeatured = false,
@@ -36,7 +38,7 @@ export function FeedPostCard({
             {isFeatured ? <Badge>Featured</Badge> : null}
             <Badge variant="secondary">{source}</Badge>
           </div>
-          <p className="text-muted-foreground text-xs">{time}</p>
+          <RelativeTime value={createdAt} className="text-muted-foreground text-xs" />
         </div>
         <CardTitle className="text-xs sm:text-base">{title}</CardTitle>
         <CardDescription className="line-clamp-2 text-xs sm:text-sm">{description}</CardDescription>

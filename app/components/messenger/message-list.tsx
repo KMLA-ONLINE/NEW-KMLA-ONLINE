@@ -12,10 +12,12 @@ import {
   shouldShowMessageTime,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
+import type { ReactionType } from "~/lib/reactions"
 import type { Message, Participant, Room } from "~/lib/messenger/types"
 
 export function MessageList({
   room,
+  reactionTypes,
   onReply,
   onReact,
   onDelete,
@@ -27,6 +29,7 @@ export function MessageList({
   onFocusedMessageHandled,
 }: {
   room: Room
+  reactionTypes: ReactionType[]
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
@@ -182,6 +185,7 @@ export function MessageList({
             <MessageBubble
               message={viewModel.message}
               author={viewModel.author}
+              reactionTypes={reactionTypes}
               replyPreviewText={viewModel.replyPreviewText}
               readReceipts={viewModel.readReceipts}
               groupPosition={viewModel.groupPosition}

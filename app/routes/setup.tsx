@@ -1,7 +1,9 @@
 import { useEffect, useState, type ChangeEvent } from "react"
-import { useNavigate } from "react-router"
-import { Camera, ChevronLeft, Upload } from "lucide-react"
+import { useFetcher, useNavigate, type ActionFunctionArgs } from "react-router"
+import { Camera, ChevronLeft, Loader2, Upload } from "lucide-react"
 
+import { createClient } from "~/lib/supabase/server"
+import type { Database } from "~/lib/supabase/database.types"
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -15,12 +17,74 @@ import {
   SelectValue,
 } from "~/components/ui/select"
 
-type ProfileType = "student" | "teacher" | "alumni"
+type ProfileType = Database["public"]["Enums"]["profile_type"]
+type ProfileTrack = Database["public"]["Enums"]["profile_track"]
+type OnboardingArgs = Database["public"]["Functions"]["submit_onboarding"]["Args"]
+
+/**
+ * submit_onboarding declares no SQL defaults, so every parameter is generated as
+ * non-null even though most of the columns behind them are nullable. A teacher
+ * has no student number and no track.
+ */
+type OnboardingInput = { [Key in keyof OnboardingArgs]: OnboardingArgs[Key] | null }
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { supabase } = createClient(request)
+  const formData = await request.formData()
+
+  const readText = (field: string) => {
+    const value = formData.get(field)
+    const text = typeof value === "string" ? value.trim() : ""
+    return text === "" ? null : text
+  }
+
+  const readNumber = (field: string) => {
+    const text = readText(field)
+    return text === null ? null : Number(text)
+  }
+
+  const name = readText("name")
+  const profileType = readText("type") as ProfileType | null
+  const gender = readText("gender") as OnboardingArgs["p_gender"] | null
+
+  if (!name || !profileType || !gender) {
+    return { error: "이름, 구분, 성별을 모두 입력해 주세요." }
+  }
+
+  const input: OnboardingInput = {
+    p_name: name,
+    p_type: profileType,
+    p_gender: gender,
+    p_track: readText("track") as ProfileTrack | null,
+    p_student_number: readText("studentNumber"),
+    p_cohort: readNumber("cohort"),
+    p_class_no: readNumber("classNo"),
+    p_dorm_room: readNumber("dormRoom"),
+    p_phone_number: readText("phoneNumber"),
+    p_birthday: readText("birthday"),
+    p_is_reenrolled: false,
+    // `description` stays editable on the profile page. `department` is not the
+    // user's to choose -- profiles grants update only on (name, gender,
+    // phone_number, birthday, description), so only service_role can ever set
+    // it. Null here is deliberate; do not add a field for it.
+    p_department: null,
+    p_description: null,
+  }
+
+  const { error } = await supabase.rpc("submit_onboarding", input as OnboardingArgs)
+
+  if (error) {
+    return { error: "프로필 저장에 실패했습니다. 입력한 정보를 확인해 주세요." }
+  }
+
+  return { success: true as const, name }
+}
 
 type SetupFormData = {
   name: string
   type: ProfileType | ""
   gender: string
+  track: ProfileTrack | ""
   studentNumber: string
   cohort: string
   classNo: string
@@ -35,6 +99,7 @@ const initialFormData: SetupFormData = {
   name: "",
   type: "",
   gender: "",
+  track: "",
   studentNumber: "",
   cohort: "",
   classNo: "",
@@ -43,6 +108,11 @@ const initialFormData: SetupFormData = {
   birthDay: "",
   phoneNumber: "",
   dormRoom: "",
+}
+
+/** `submit_onboarding` takes a `date`, and Postgres wants it zero-padded. */
+function toIsoDate(year: string, month: string, day: string) {
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`
 }
 
 function RequiredMark() {
@@ -138,6 +208,7 @@ function BirthdayFields({
 
 export default function Setup() {
   const navigate = useNavigate()
+  const fetcher = useFetcher<typeof action>()
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<SetupFormData>(initialFormData)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
@@ -152,6 +223,12 @@ export default function Setup() {
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
     }
   }, [avatarPreview])
+
+  useEffect(() => {
+    if (fetcher.data && "success" in fetcher.data) {
+      navigate("/pending", { state: { name: fetcher.data.name } })
+    }
+  }, [fetcher.data, navigate])
 
   const updateField = <Field extends keyof SetupFormData>(
     field: Field,
@@ -174,7 +251,12 @@ export default function Setup() {
     formData.birthMonth,
     formData.birthDay
   )
+  // profiles_track_required_check demands a track of every student. Teachers are
+  // exempt, and an alumnus is asked for the same reason they are asked for a
+  // cohort: it is the class they were in.
+  const needsTrack = isStudent || isAlumni
   const canProceedFromDetails =
+    (!needsTrack || Boolean(formData.track)) &&
     (!isStudent ||
       Boolean(
         /^\d{6}$/.test(formData.studentNumber) &&
@@ -200,9 +282,29 @@ export default function Setup() {
   }
 
   const profileInitial = formData.name.trim().charAt(0).toUpperCase() || "K"
+  const submitError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null
+  const isSubmitting = fetcher.state !== "idle"
 
-  const submitMockProfile = () => {
-    navigate("/pending", { state: { name: formData.name.trim() } })
+  // Fields the chosen profile type never showed are sent empty, and the action
+  // turns those into the nulls the columns expect.
+  const submitOnboarding = () => {
+    fetcher.submit(
+      {
+        name: formData.name.trim(),
+        type: formData.type,
+        gender: formData.gender,
+        track: needsTrack ? formData.track : "",
+        studentNumber: isStudent ? formData.studentNumber : "",
+        cohort: needsTrack ? formData.cohort : "",
+        classNo: isStudent ? formData.classNo : "",
+        dormRoom: isStudent ? formData.dormRoom : "",
+        phoneNumber: isAlumni ? "" : formData.phoneNumber,
+        birthday: hasValidBirthday
+          ? toIsoDate(formData.birthYear, formData.birthMonth, formData.birthDay)
+          : "",
+      },
+      { method: "post" }
+    )
   }
 
   return (
@@ -384,6 +486,28 @@ export default function Setup() {
                   </div>
                 )}
 
+                {needsTrack && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="track">
+                      계열 <RequiredMark />
+                    </Label>
+                    <Select
+                      value={formData.track}
+                      onValueChange={(value) => updateField("track", value as ProfileTrack)}
+                    >
+                      <SelectTrigger id="track" className="w-full">
+                        <SelectValue placeholder="계열을 선택하세요" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="domestic">국내반</SelectItem>
+                          <SelectItem value="international">국제반</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 {isAlumni && (
                   <>
                     <BirthdayFields
@@ -480,7 +604,7 @@ export default function Setup() {
                 className="flex flex-col gap-6"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  submitMockProfile()
+                  submitOnboarding()
                 }}
               >
                 <button
@@ -536,8 +660,19 @@ export default function Setup() {
                   ) : null}
                 </div>
 
-                <Button type="submit" className="w-full">
-                  승인 요청하기
+                {submitError && (
+                  <p
+                    role="alert"
+                    aria-live="polite"
+                    className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium"
+                  >
+                    {submitError}
+                  </p>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+                  {isSubmitting ? "제출 중..." : "승인 요청하기"}
                 </Button>
               </form>
             )}

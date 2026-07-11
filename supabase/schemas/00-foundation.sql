@@ -48,9 +48,9 @@ grant usage on schema public, private to authenticated, service_role;
 -- What an attachment is, as opposed to what its MIME string happens to say.
 create type public.attachment_kind as enum ('image', 'audio', 'video', 'file');
 
--- How much a user wants to hear about a given target. Shared by the notification
--- feed (06-notifications) and per-conversation settings (05-chat), both of which
--- are applied after this file. Muting is not a level: see chat_notification_settings.
+-- How much a user wants to hear about a given conversation. Used by the
+-- per-conversation settings in 05-chat, which is applied after this file.
+-- Muting is not a level: see chat_notification_settings.
 create type public.notification_level as enum ('mention', 'all');
 
 -- Classification is universal: image/png is an image in a chat bubble and in a
@@ -58,7 +58,7 @@ create type public.notification_level as enum ('mention', 'all');
 -- and how large it lets them be, is a separate and per-surface decision that
 -- lives with that surface (public.message_attachment_mime_types).
 --
--- This has to precede 03-content and 05-chat, hence its home in foundation.
+-- This has to precede 05-chat, which references it, hence its home in foundation.
 create table public.mime_types (
   content_type text primary key,
   kind public.attachment_kind not null,

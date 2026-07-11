@@ -29,9 +29,11 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending` 이상인 profile은 다음 값이 필요하다.
 
-- 공통 필수: `name`, `type`, `track`
-- 학생(`type = 'student'`) 필수: `student_number`, `cohort`
+- 공통 필수: `name`, `type`
+- 학생(`type = 'student'`) 필수: `student_number`, `cohort`, `track`
 - `department`, `gender`, `class_no`, `phone_number`, `birthday`, `description`, `dorm_room`, `is_reenrolled`는 DB상 선택값이다. 단, `is_reenrolled`는 값이 없으면 `false`로 저장된다.
+
+`track`은 국내반/국제반 배정이라 학생에게만 요구한다. 선생님·졸업생은 `track` 없이 온보딩할 수 있다.
 
 ## Private helper
 

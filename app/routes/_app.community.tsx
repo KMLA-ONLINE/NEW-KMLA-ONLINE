@@ -1,30 +1,38 @@
-import { SpaceDirectoryCard } from "~/components/layout/space-directory-card"
+import {
+  SpaceDirectoryCard,
+  type SpaceDirectoryCardProps,
+} from "~/components/layout/space-directory-card"
 import { Input } from "~/components/ui/input"
 
-const communitySpaces = [
+// Stand-in rows of public.spaces, until a loader selects them.
+const communitySpaces: SpaceDirectoryCardProps[] = [
   {
     name: "Anon Talk",
-    category: "General",
+    type: "community",
+    joinPolicy: "open",
     description: "Open discussions about daily campus life and student experiences.",
-    latestActivity: "5m ago",
+    memberCount: 412,
   },
   {
     name: "Lost Gadgets",
-    category: "Help",
+    type: "community",
+    joinPolicy: "open",
     description: "Post and recover misplaced electronics, accessories, and devices.",
-    latestActivity: "21m ago",
+    memberCount: 268,
   },
   {
     name: "Secondhand Transactions",
-    category: "Marketplace",
+    type: "community",
+    joinPolicy: "public",
     description: "Buy, sell, and exchange student-owned items with comments and updates.",
-    latestActivity: "48m ago",
+    memberCount: 197,
   },
   {
     name: "Study Tips",
-    category: "Academics",
+    type: "community",
+    joinPolicy: "public",
     description: "Share resources, exam prep methods, and productivity practices.",
-    latestActivity: "1h ago",
+    memberCount: 83,
   },
 ]
 

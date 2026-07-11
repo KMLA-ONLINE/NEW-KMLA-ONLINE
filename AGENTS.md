@@ -77,6 +77,17 @@ The policy below is settled. Build each piece when the wait it covers becomes re
 - Comment and reaction counts are not cached. Read them with `count(*)`; `posts` has no counter columns. A cache would need a trigger, since clients write `comments` and `post_reactions` directly under column grants rather than through an RPC.
 - `spaces.member_count` **is** cached, maintained by the `join_space` / `leave_space` / `accept_space_invite` RPCs. There is no reconciliation job (`reconcile_cached_counts` was removed), so treat it as approximate where an exact count matters.
 
+## Wiring the Backend
+
+Much of the app still renders module-level mock arrays (feed, spaces, profile, messenger). When replacing one with real data:
+
+- Read and write from a route `loader` / `action` using `createClient(request)` from `app/lib/supabase/server.ts`. Do not call Supabase from a component body or a `useEffect`.
+- Any route module that touches `supabase.auth` must return the `headers` from `createClient(request)` on **every** response (`redirect(to, { headers })`, `data(value, { headers })`). Dropping them silently discards the refreshed session cookie, and the next request arrives logged out.
+- `app/lib/supabase/client.ts` is for browser-only concerns — realtime subscriptions and direct-to-storage uploads. Everything else belongs on the server.
+- Keep components data-agnostic: they take rows as props and the route supplies them. A component that imports a constant standing in for a table (see `PLACEHOLDER_REACTION_TYPES` in `app/lib/reactions.ts`) has to be rewritten when the loader lands; one that takes props does not.
+- Shape mock data like the query that will replace it — ISO timestamps rather than `"2h ago"`, real column names, nullable fields actually nullable. Formatting is the renderer's job.
+- Every RLS policy gates on `private.is_accepted_user()`. A signed-in user whose `profiles.status` is not `accepted` sees empty results rather than an error, so route on `status` (`none`/`rejected` → `/setup`, `pending` → `/pending`) instead of on the session alone.
+
 ## DB Types
 
 - `app/lib/supabase/database.types.ts` is committed and holds the full generated surface: every table, view, function and enum. Derive row and RPC argument types from it instead of re-declaring shapes by hand.

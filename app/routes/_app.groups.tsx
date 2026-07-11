@@ -1,30 +1,38 @@
-import { SpaceDirectoryCard } from "~/components/layout/space-directory-card"
+import {
+  SpaceDirectoryCard,
+  type SpaceDirectoryCardProps,
+} from "~/components/layout/space-directory-card"
 import { Input } from "~/components/ui/input"
 
-const groupSpaces = [
+// Stand-in rows of public.spaces, until a loader selects them.
+const groupSpaces: SpaceDirectoryCardProps[] = [
   {
     name: "Student Council",
-    category: "School Office",
+    type: "group",
+    joinPolicy: "public",
     description: "Official notices for events, campaigns, and student body operations.",
-    latestActivity: "12m ago",
+    memberCount: 1204,
   },
   {
     name: "Academic Office",
-    category: "Administration",
+    type: "group",
+    joinPolicy: "public",
     description: "Academic calendar updates, exam notices, and curriculum guidance.",
-    latestActivity: "35m ago",
+    memberCount: 1187,
   },
   {
     name: "Dormitory Management",
-    category: "Residential",
+    type: "group",
+    joinPolicy: "public",
     description: "Dorm policies, maintenance alerts, and residential life announcements.",
-    latestActivity: "1h ago",
+    memberCount: 940,
   },
   {
     name: "Debate Club",
-    category: "Club",
+    type: "group",
+    joinPolicy: "invite_only",
     description: "Meeting schedules, tournament preparations, and member coordination.",
-    latestActivity: "2h ago",
+    memberCount: 24,
   },
 ]
 

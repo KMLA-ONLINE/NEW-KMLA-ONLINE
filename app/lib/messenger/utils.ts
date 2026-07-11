@@ -1,4 +1,5 @@
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
+import { formatRelativeTime } from "~/lib/time"
 import type { Message, MessageAttachment, MessageGroupPosition, Room } from "~/lib/messenger/types"
 
 export type LinkedTextSegment =
@@ -332,27 +333,7 @@ export function formatMessageDateLabel(value: string) {
 }
 
 export function formatRoomTime(value: string | undefined) {
-  if (!value) {
-    return ""
-  }
-
-  const date = new Date(value)
-  const now = new Date()
-  const diffMs = Math.max(0, now.getTime() - date.getTime())
-
-  if (diffMs < 60_000) {
-    return "방금"
-  }
-
-  if (diffMs < 60 * 60_000) {
-    return `${Math.floor(diffMs / 60_000)}분전`
-  }
-
-  if (diffMs < 24 * 60 * 60_000) {
-    return `${Math.floor(diffMs / (60 * 60_000))}시간전`
-  }
-
-  return `${Math.floor(diffMs / (24 * 60 * 60_000))}일전`
+  return value ? formatRelativeTime(value, Date.now()) : ""
 }
 
 export function getReplyText(message: Message) {

@@ -17,6 +17,7 @@ import {
   type PhotoViewerLocationState,
 } from "~/lib/messenger/constants"
 import { seedRooms } from "~/lib/messenger/mock-data"
+import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import {
   getAttachmentKind,
   getLastMessage,
@@ -454,6 +455,7 @@ export default function MessengerPage() {
             <RoomPane
               key={selectedRoom.id}
               room={selectedRoom}
+              reactionTypes={PLACEHOLDER_REACTION_TYPES}
               replyTo={replyTo}
               showBackButton={true}
               onBack={() => navigate("/messenger")}
@@ -551,6 +553,7 @@ export default function MessengerPage() {
               <RoomPane
                 key={selectedRoom.id}
                 room={selectedRoom}
+                reactionTypes={PLACEHOLDER_REACTION_TYPES}
                 replyTo={replyTo}
                 onOpenDetail={() =>
                   navigate(
@@ -628,5 +631,3 @@ export default function MessengerPage() {
     </div>
   )
 }
-
-// TODO: 방 알림기능 스키마 추가

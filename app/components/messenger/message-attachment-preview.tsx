@@ -43,7 +43,6 @@ function getImageGridTileSpanClassName(tileCount: number, index: number) {
   return ""
 }
 
-/** Stands in for an attachment whose source has not been resolved yet. */
 function MediaPlaceholder({
   name,
   icon: Icon = ImageIcon,

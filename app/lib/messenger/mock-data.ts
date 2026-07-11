@@ -37,8 +37,7 @@ export const seedRooms: Room[] = [
         createdAt: "2026-07-03T20:43:00.000Z",
       },
       {
-        // A reply to a reply: this quotes minji-3, which itself quotes minji-2.
-        // Only one level renders at a time; tapping a preview walks the chain.
+        // Nested reply on purpose: the viewer renders only one level, so tapping the preview walks the chain.
         id: "minji-3-reply",
         senderId: "me",
         replyTo: {
