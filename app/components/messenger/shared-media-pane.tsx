@@ -1,8 +1,10 @@
 import { ArrowLeftIcon, FileIcon, ImageIcon, MusicIcon, VideoIcon } from "lucide-react"
+import { useState } from "react"
 
 import { PhotoLink } from "~/components/messenger/photo-link"
 import { Button } from "~/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs"
+import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import {
   formatFileSize,
   getAttachmentKind,
@@ -11,6 +13,8 @@ import {
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { MessageAttachment, Room } from "~/lib/messenger/types"
+
+const SHARED_MEDIA_PAGE_SIZE = 24
 
 function EmptyState({ label }: { label: string }) {
   return (
@@ -59,6 +63,22 @@ export function SharedMediaPane({
   const images = attachments.filter((attachment) => isImageAttachment(attachment))
   const files = attachments.filter((attachment) => !isImageAttachment(attachment))
 
+  // 공유 미디어도 한 번에 다 그리지 않고 스크롤하며 페이지 단위로 부른다(탭별로 따로).
+  const [imagesVisible, setImagesVisible] = useState(SHARED_MEDIA_PAGE_SIZE)
+  const [filesVisible, setFilesVisible] = useState(SHARED_MEDIA_PAGE_SIZE)
+  const shownImages = images.slice(0, imagesVisible)
+  const shownFiles = files.slice(0, filesVisible)
+  const imagesHasMore = imagesVisible < images.length
+  const filesHasMore = filesVisible < files.length
+  const imagesSentinelRef = useInfiniteScroll(
+    () => setImagesVisible((count) => count + SHARED_MEDIA_PAGE_SIZE),
+    imagesHasMore
+  )
+  const filesSentinelRef = useInfiniteScroll(
+    () => setFilesVisible((count) => count + SHARED_MEDIA_PAGE_SIZE),
+    filesHasMore
+  )
+
   return (
     <aside
       className={cn(
@@ -78,7 +98,7 @@ export function SharedMediaPane({
           <TabsContent value="images">
             {images.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {images.map((attachment) =>
+                {shownImages.map((attachment) =>
                   attachment.src ? (
                     <PhotoLink
                       key={attachment.id}
@@ -106,18 +126,34 @@ export function SharedMediaPane({
             ) : (
               <EmptyState label="공유된 이미지가 없습니다." />
             )}
+            {imagesHasMore ? (
+              <div
+                ref={imagesSentinelRef}
+                className="text-muted-foreground py-3 text-center text-xs"
+              >
+                불러오는 중…
+              </div>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="files">
             {files.length > 0 ? (
               <div className="flex flex-col divide-y">
-                {files.map((attachment) => (
+                {shownFiles.map((attachment) => (
                   <FileRow key={attachment.id} attachment={attachment} />
                 ))}
               </div>
             ) : (
               <EmptyState label="공유된 파일이 없습니다." />
             )}
+            {filesHasMore ? (
+              <div
+                ref={filesSentinelRef}
+                className="text-muted-foreground py-3 text-center text-xs"
+              >
+                불러오는 중…
+              </div>
+            ) : null}
           </TabsContent>
         </div>
 
