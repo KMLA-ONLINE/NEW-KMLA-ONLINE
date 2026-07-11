@@ -1,5 +1,5 @@
 import { ThumbsUpIcon } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
@@ -28,6 +28,9 @@ export function GroupReactionButton({
     }
   }
 
+  // 롱프레스 대기 중 언마운트되면(예: 보기 모드 전환으로 카드 제거) 남은 타이머를 정리한다.
+  useEffect(() => () => clearTimer(), [])
+
   const handlePointerDown = () => {
     longPressed.current = false
     clearTimer()
@@ -53,6 +56,8 @@ export function GroupReactionButton({
   return (
     <div className="relative">
       {open ? (
+        // TODO(a11y): 지금은 fixed 백드롭 바깥클릭으로만 닫힌다. Radix Popover로 바꿔 Escape·
+        // 포커스 트랩·바깥클릭·stacking을 일괄 처리하는 게 좋다(댓글 반응 피커도 동일 패턴).
         <>
           <button
             type="button"

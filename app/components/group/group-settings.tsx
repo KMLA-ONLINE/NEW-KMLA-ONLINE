@@ -8,6 +8,10 @@ import type { GroupCategory, GroupSpace } from "~/lib/group/types"
 // 관리자 전용 그룹 설정. 실수로 바꾸기 쉽지 않게 각 섹션은 읽기 모드가 기본이고, "편집"을
 // 누른 뒤에만 수정할 수 있다(저장/취소). 백엔드 전이라 저장은 로컬 상태만 갱신한다 --
 // 이름/설명/가입정책은 spaces, 카테고리는 space_categories 컬럼으로 갈 자리.
+//
+// TODO(backend): 지금 이름/설명/카테고리 편집은 각 섹션 로컬 state에만 커밋돼(joinPolicy만 부모로
+// 리프팅됨) 헤더·사이드바·칩과 어긋나고 탭 전환 시 사라진다. 붙일 때는 action으로 저장 후 loader
+// revalidate가 단일 소스를 갱신하게 해 이 로컬-only 편집을 대체한다(그때 UI 불일치도 자연 해소).
 
 const JOIN_POLICY_OPTIONS: {
   value: GroupSpace["joinPolicy"]
@@ -199,21 +203,29 @@ function CategoryEditor({
 }) {
   const [newName, setNewName] = useState("")
 
+  // sort_order는 배열 순서에서 파생한다 -- 변경 결과를 항상 index로 재계산해 배열 순서와
+  // space_categories.sort_order가 어긋나지 않게 한다(그냥 onChange로 넘기면 move가 값을 안 고쳐 어긋남).
+  const commit = (next: GroupCategory[]) =>
+    onChange(next.map((category, index) => ({ ...category, sortOrder: index })))
+
   const rename = (id: number, name: string) =>
-    onChange(categories.map((c) => (c.id === id ? { ...c, name } : c)))
-  const remove = (id: number) => onChange(categories.filter((c) => c.id !== id))
+    commit(categories.map((c) => (c.id === id ? { ...c, name } : c)))
+  const remove = (id: number) => commit(categories.filter((c) => c.id !== id))
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction
     if (target < 0 || target >= categories.length) return
     const next = [...categories]
     ;[next[index], next[target]] = [next[target], next[index]]
-    onChange(next)
+    commit(next)
   }
   const add = () => {
     const name = newName.trim()
     if (!name) return
-    const nextId = Math.max(0, ...categories.map((c) => c.id)) + 1
-    onChange([...categories, { id: nextId, name, sortOrder: categories.length }])
+    // TODO(backend): id는 space_categories.id(bigserial). 지금은 임시 음수 id -- 서버 insert 응답의
+    // 실제 id로 교체(또는 revalidate)해야 하고, 그 전엔 posts.category_id로 참조하면 안 된다.
+    // 또 lower(btrim(name)) 유니크 인덱스가 있으니 저장 시 중복 이름은 서버에서 거부될 수 있다.
+    const tempId = Math.min(0, ...categories.map((c) => c.id)) - 1
+    commit([...categories, { id: tempId, name, sortOrder: categories.length }])
     setNewName("")
   }
 

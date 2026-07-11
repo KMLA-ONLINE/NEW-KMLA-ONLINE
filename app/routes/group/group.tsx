@@ -104,6 +104,8 @@ export default function GroupPage() {
         name: request.name,
         avatarUrl: request.avatarUrl,
         role: "member" as const,
+        // TODO(backend): joined_at은 서버 default now()가 채운다. 승인은 approve_join_request RPC로
+        // 가고 revalidate로 서버 시각을 받아야 하며, 이 프론트 new Date()는 그때 사라진다(mock 전용).
         joinedAt: new Date().toISOString(),
       })),
     ])

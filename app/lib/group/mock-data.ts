@@ -39,9 +39,9 @@ export const mockGroupCategories: GroupCategory[] = [
 const cat = (id: number): GroupCategory | null =>
   mockGroupCategories.find((category) => category.id === id) ?? null
 
-// 댓글은 각 글에 들고 있고 개수는 comments.length로 파생한다(대댓글 포함 -- count(*)와
-// 동일). parentId로 스레드를 이룬다. 4번 글은 빈 상태 확인용으로 댓글이 없다.
-export const mockGroupPosts: GroupPost[] = [
+// 댓글은 각 글에 트리로 들고 있다(parentId 스레드). 4번 글은 빈 상태 확인용으로 댓글이 없다.
+// commentCount는 아래에서 comments.length로 채운다 -- 실제 피드 로더는 트리 대신 count(*)만 내려준다.
+const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
   {
     id: 1,
     pubId: "a1f0c3e2-0001-4aaa-9aaa-000000000001",
@@ -329,6 +329,11 @@ export const mockGroupPosts: GroupPost[] = [
     comments: [],
   },
 ]
+
+export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => ({
+  ...post,
+  commentCount: post.comments?.length ?? 0,
+}))
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
 // 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.

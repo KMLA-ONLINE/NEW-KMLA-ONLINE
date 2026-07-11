@@ -1,5 +1,5 @@
 import { MoreHorizontalIcon, SmilePlusIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { QuickReactionList } from "~/components/quick-reaction-list"
@@ -26,16 +26,30 @@ export function GroupCommentList({
   reactionTypes: ReactionType[]
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // TODO(scale): 댓글은 전부 렌더 + parentId 조회가 O(n²)이고 @부모 스크롤이 렌더를 전제한다.
+  // 실제로는 상세 로더가 댓글을 페이지네이션(스레드 단위)해 내려줄 자리 -- 그때 창 밖 부모 처리도.
   const roots = comments.filter((comment) => comment.parentId === null)
 
-  // @이름 클릭 시 부모 댓글로 스크롤하고 잠깐 강조한다.
+  // @이름 클릭 시 부모 댓글로 스크롤하고 잠깐 강조한다. 타이머는 언마운트/재호출 시 정리.
   const navigateToComment = (id: number) => {
     setHighlightedId(id)
     document
       .getElementById(`comment-${id}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" })
-    window.setTimeout(() => setHighlightedId((current) => (current === id ? null : current)), 1600)
+    if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    highlightTimer.current = setTimeout(
+      () => setHighlightedId((current) => (current === id ? null : current)),
+      1600
+    )
   }
+
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current)
+    },
+    []
+  )
 
   return (
     <ul className="flex flex-col gap-3">

@@ -6,14 +6,12 @@ import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
 import { useDebouncedValue } from "~/hooks/use-debounced-value"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
+import { normalizeSearch } from "~/lib/group/format"
 import type { GroupMember, GroupMemberRole } from "~/lib/group/types"
 
 // 일반 멤버는 한 번에 다 그리지 않고 페이지 단위로만 보여준다 -- 실제로는 로더가 space_
 // members를 keyset(role, joined_at)로 페이지네이션해 스크롤 바닥에서 다음 페이지를 부른다.
 const MEMBER_PAGE_SIZE = 10
-
-// 이름 검색은 공백 제거 + 소문자로 정규화해 부분 일치(게시물 검색과 같은 계약).
-const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, "")
 
 const ROLE_LABEL: Record<GroupMemberRole, string> = {
   owner: "소유자",
@@ -57,8 +55,9 @@ function MemberRow({ member }: { member: GroupMember }) {
 // 걸러지며(디바운스 -- 백엔드에선 키 입력마다 쿼리 방지), 일반 멤버는 스크롤로 페이지네이션.
 export function GroupMemberList({ members }: { members: GroupMember[] }) {
   const [query, setQuery] = useState("")
-  const needle = normalize(useDebouncedValue(query.trim(), 300))
-  const matches = (member: GroupMember) => needle === "" || normalize(member.name).includes(needle)
+  const needle = normalizeSearch(useDebouncedValue(query.trim(), 300))
+  const matches = (member: GroupMember) =>
+    needle === "" || normalizeSearch(member.name).includes(needle)
 
   const staff = members
     .filter((member) => member.role !== "member" && matches(member))

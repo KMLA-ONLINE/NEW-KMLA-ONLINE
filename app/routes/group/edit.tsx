@@ -23,9 +23,11 @@ import { mockGroup, mockGroupCategories, mockGroupPosts } from "~/lib/group/mock
 // /groups/:pubId/posts/:postId/edit. 작성(new)과 같은 폼을 기존 값으로 채운 수정 화면.
 // 제목/본문은 uncontrolled(defaultValue)라 타이핑엔 리렌더 없음. 저장은 백엔드 붙일 때.
 export default function GroupEditPostPage() {
-  const { postId } = useParams()
-  // 닫으면 히스토리를 pop한다(뒤로가기로 수정 화면이 되살아나지 않게). 딥링크면 게시물 상세로.
-  const close = useModalClose()
+  const { pubId, postId } = useParams()
+  // 닫으면 히스토리를 pop한다(뒤로가기로 수정 화면이 되살아나지 않게). 딥링크(직접 진입)면
+  // ".."가 그룹으로 가버리므로 게시물 상세를 명시적 fallback으로 준다(edit는 posts/:postId의
+  // 형제 라우트라 route-relative ".."로는 상세에 못 간다).
+  const close = useModalClose(`/groups/${pubId}/posts/${postId}`)
   const post = mockGroupPosts.find((item) => item.pubId === postId)
 
   // 기존 첨부는 삭제 가능하도록 로컬 상태로, 새로 고른 파일은 훅이 관리한다.
@@ -41,9 +43,9 @@ export default function GroupEditPostPage() {
       src: image.src,
       onRemove: () => setImages((prev) => prev.filter((_, i) => i !== index)),
     })),
-    ...newAttachments.flatMap((item, index) =>
+    ...newAttachments.flatMap((item) =>
       item.url
-        ? [{ key: `new-image-${index}`, src: item.url, onRemove: () => removeNew(index) }]
+        ? [{ key: `new-image-${item.id}`, src: item.url, onRemove: () => removeNew(item.id) }]
         : []
     ),
   ]
@@ -54,15 +56,15 @@ export default function GroupEditPostPage() {
       sizeBytes: file.sizeBytes,
       onRemove: () => setFiles((prev) => prev.filter((_, i) => i !== index)),
     })),
-    ...newAttachments.flatMap((item, index) =>
+    ...newAttachments.flatMap((item) =>
       item.url
         ? []
         : [
             {
-              key: `new-file-${index}`,
+              key: `new-file-${item.id}`,
               name: item.file.name,
               sizeBytes: item.file.size,
-              onRemove: () => removeNew(index),
+              onRemove: () => removeNew(item.id),
             },
           ]
     ),

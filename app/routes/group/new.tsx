@@ -30,18 +30,18 @@ export default function GroupNewPostPage() {
   const { isDragging, dropHandlers } = useFileDrop(add)
   const [categoryId, setCategoryId] = useState<number | null>(null)
 
-  const previewImages = attachments.flatMap((item, index) =>
-    item.url ? [{ key: String(index), src: item.url, onRemove: () => remove(index) }] : []
+  const previewImages = attachments.flatMap((item) =>
+    item.url ? [{ key: String(item.id), src: item.url, onRemove: () => remove(item.id) }] : []
   )
-  const previewFiles = attachments.flatMap((item, index) =>
+  const previewFiles = attachments.flatMap((item) =>
     item.url
       ? []
       : [
           {
-            key: String(index),
+            key: String(item.id),
             name: item.file.name,
             sizeBytes: item.file.size,
-            onRemove: () => remove(index),
+            onRemove: () => remove(item.id),
           },
         ]
   )

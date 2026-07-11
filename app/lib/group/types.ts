@@ -103,8 +103,13 @@ export type GroupPost = {
   images: GroupPostImage[]
   /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
   files?: GroupPostFile[]
-  /** 이 글의 댓글. 개수는 comments.length로 파생 -- 별도 카운트를 두면 어긋난다. */
-  comments: GroupComment[]
+  /**
+   * 댓글 수. reactionCount와 같이 count(*)로 읽는 파생 스칼라(캐시 컬럼 아님, 03-content.sql).
+   * 피드 로더는 글마다 이 개수만 내려주지 트리 전체를 싣지 않는다 -- 그래서 comments와 분리한다.
+   */
+  commentCount: number
+  /** 이 글의 댓글 트리(parentId 스레드). 상세 로더만 조인해 채우는 상세 전용 필드. */
+  comments?: GroupComment[]
   /** count(*)로 읽는 파생값(캐시 컬럼 아님). */
   reactionCount: number
   /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */

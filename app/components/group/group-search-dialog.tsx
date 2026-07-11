@@ -14,11 +14,11 @@ import {
 } from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import { useDebouncedValue } from "~/hooks/use-debounced-value"
+import { normalizeSearch } from "~/lib/group/format"
 import type { GroupPost } from "~/lib/group/types"
 
-// 게시물 검색: 제목·본문을 공백 제거 + 소문자로 정규화해 부분 일치시킨다. DB의 검색 인덱스가
-// regexp_replace(lower(x), '\s+', '')로 정규화하는 것과 같은 계약(원격 검색은 백엔드 붙일 때).
-const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, "")
+// 제목·본문을 정규화해 부분 일치(normalizeSearch = 공백 제거 + 소문자, DB trgm 인덱스와 같은 계약).
+// 원격 검색은 백엔드 붙일 때.
 
 export function GroupSearchDialog({
   open,
@@ -32,10 +32,12 @@ export function GroupSearchDialog({
   const [query, setQuery] = useState("")
   // 입력은 즉시 반영하되 실제 검색은 타이핑이 멈춘 뒤에만(백엔드에 붙으면 키 입력마다 쿼리 방지).
   const trimmed = useDebouncedValue(query.trim(), 400)
-  const needle = normalize(trimmed)
+  const needle = normalizeSearch(trimmed)
   const results = needle
     ? posts.filter(
-        (post) => normalize(post.title).includes(needle) || normalize(post.content).includes(needle)
+        (post) =>
+          normalizeSearch(post.title).includes(needle) ||
+          normalizeSearch(post.content).includes(needle)
       )
     : []
 

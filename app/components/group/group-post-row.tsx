@@ -40,7 +40,7 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
           </span>
           <span className="flex items-center gap-1">
             <MessageSquareIcon className="size-3.5" aria-hidden="true" />
-            {post.comments.length}
+            {post.commentCount}
           </span>
         </span>
       </div>

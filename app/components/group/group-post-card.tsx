@@ -107,7 +107,7 @@ export function GroupPostCard({
 
       <GroupPostActionBar
         reactionCount={post.reactionCount}
-        commentCount={post.comments.length}
+        commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
         commentHref={`posts/${post.pubId}`}

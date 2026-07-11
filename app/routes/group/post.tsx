@@ -30,6 +30,8 @@ export default function GroupPostDetailPage() {
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
   const post = mockGroupPosts.find((item) => item.pubId === postId)
   const authorName = post?.author?.name ?? "익명"
+  // comments는 상세 전용 optional(피드엔 없음). 상세는 트리를 조인해 받는다.
+  const comments = post?.comments ?? []
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
@@ -98,18 +100,15 @@ export default function GroupPostDetailPage() {
 
               <GroupPostActionBar
                 reactionCount={post.reactionCount}
-                commentCount={post.comments.length}
+                commentCount={post.commentCount}
                 topReactions={post.topReactions}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
               />
             </article>
 
             <section className="border-t p-4">
-              {post.comments.length > 0 ? (
-                <GroupCommentList
-                  comments={post.comments}
-                  reactionTypes={PLACEHOLDER_REACTION_TYPES}
-                />
+              {comments.length > 0 ? (
+                <GroupCommentList comments={comments} reactionTypes={PLACEHOLDER_REACTION_TYPES} />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
                   <p className="text-foreground font-semibold">아직 댓글이 없습니다</p>
