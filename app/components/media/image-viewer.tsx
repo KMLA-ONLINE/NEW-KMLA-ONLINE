@@ -383,6 +383,7 @@ export function ImageViewer({
               <ControlButton
                 aria-label="이전 이미지"
                 disabled={index === 0}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => goTo(index - 1)}
                 className="bg-black/40 backdrop-blur-xs"
               >
@@ -393,6 +394,7 @@ export function ImageViewer({
               <ControlButton
                 aria-label="다음 이미지"
                 disabled={index === images.length - 1}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => goTo(index + 1)}
                 className="bg-black/40 backdrop-blur-xs"
               >
