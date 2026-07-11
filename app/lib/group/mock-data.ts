@@ -1,4 +1,4 @@
-import type { GroupMember, GroupPost, GroupSpace } from "~/lib/group/types"
+import type { GroupJoinRequest, GroupMember, GroupPost, GroupSpace } from "~/lib/group/types"
 
 // 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
 // 내려줄 로더가 붙으면 사라진다. alt는 스키마에 캡션 컬럼이 없어 file_name에서 온다.
@@ -16,6 +16,9 @@ export const mockGroup: GroupSpace = {
   joinPolicy: "request",
   memberCount: 128,
   isMember: true,
+  // mock상 현재 사용자는 일반 멤버(mockGroupMembers의 id:1 "나" = member). 관리자 화면은
+  // 개발용으로 group 라우트에서 ?as=admin 파라미터로 미리 볼 수 있다.
+  viewerRole: "member",
 }
 
 // 댓글은 각 글에 들고 있고 개수는 comments.length로 파생한다(대댓글 포함 -- count(*)와
@@ -353,4 +356,12 @@ export const mockGroupMembers: GroupMember[] = [
     role: "member",
     joinedAt: "2026-03-28T00:00:00.000Z",
   },
+]
+
+// space_join_requests 목데이터. request 정책 그룹에서 승인 대기 중인 가입 요청 -- 관리자
+// (owner/admin)만 본다. 승인 전까지는 멤버가 아니므로 space_members가 아닌 별도 테이블.
+export const mockJoinRequests: GroupJoinRequest[] = [
+  { id: 201, name: "서준혁", avatarUrl: null, createdAt: "2026-07-11T22:00:00.000Z" },
+  { id: 202, name: "윤가은", avatarUrl: null, createdAt: "2026-07-12T01:30:00.000Z" },
+  { id: 203, name: "장민재", avatarUrl: null, createdAt: "2026-07-12T06:45:00.000Z" },
 ]

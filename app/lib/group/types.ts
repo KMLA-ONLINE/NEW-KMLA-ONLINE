@@ -14,6 +14,12 @@ export type GroupSpace = {
   memberCount: number
   /** 현재 사용자가 이 space의 멤버인지(space_members). */
   isMember: boolean
+  /**
+   * 현재 사용자의 이 space에서의 역할(space_members.role 중 내 행). null이면 비멤버.
+   * isMember처럼 컬럼이 아니라 로더가 파생한다. owner/admin이면 관리 UI가 열린다
+   * (can_manage_space 기본셋 = owner/admin).
+   */
+  viewerRole: GroupMemberRole | null
 }
 
 export type GroupPostAuthor = {
@@ -22,6 +28,18 @@ export type GroupPostAuthor = {
 
 /** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
 export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
+
+/** space_join_requests 한 행 + 표시용 profiles 필드. request 정책 그룹의 승인 대기 가입 요청. */
+export type GroupJoinRequest = {
+  /** profiles.id (= space_join_requests.user_id) */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  avatarUrl: string | null
+  /** space_join_requests.created_at (ISO 8601). */
+  createdAt: string
+}
 
 /** space_members 한 행 + 표시에 필요한 profiles 필드. */
 export type GroupMember = {

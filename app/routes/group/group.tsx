@@ -1,12 +1,19 @@
 import { Globe2Icon, LandmarkIcon, LockIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
-import { Link, Outlet } from "react-router"
+import { Link, Outlet, useSearchParams } from "react-router"
 
 import { GroupHeader } from "~/components/group/group-header"
+import { GroupJoinRequests } from "~/components/group/group-join-requests"
 import { GroupMemberList } from "~/components/group/group-member-list"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
-import { mockGroup, mockGroupMembers, mockGroupPosts } from "~/lib/group/mock-data"
+import {
+  mockGroup,
+  mockGroupMembers,
+  mockGroupPosts,
+  mockJoinRequests,
+} from "~/lib/group/mock-data"
+import { Badge } from "~/components/ui/badge"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -34,9 +41,17 @@ function sortForFeed(posts: typeof mockGroupPosts) {
 export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
   const [tab, setTab] = useState<GroupTab>("posts")
+  const [searchParams] = useSearchParams()
   const isPrivate = mockGroup.joinPolicy === "invite_only"
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
   const feedPosts = sortForFeed(mockGroupPosts)
+
+  // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
+  // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
+  const viewerRole = searchParams.get("as") === "admin" ? "admin" : mockGroup.viewerRole
+  const canManage = viewerRole === "owner" || viewerRole === "admin"
+  // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
+  const showJoinRequests = canManage && mockGroup.joinPolicy === "request"
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -55,13 +70,17 @@ export default function GroupPage() {
             onClick={() => setTab(item.id)}
             aria-current={tab === item.id ? "page" : undefined}
             className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
               tab === item.id
                 ? "border-foreground text-foreground"
                 : "text-muted-foreground hover:text-foreground border-transparent"
             )}
           >
             {item.label}
+            {/* 관리자는 멤버 탭에 대기 중인 가입 요청 수를 배지로 봐서 알아챈다. */}
+            {item.id === "members" && showJoinRequests && mockJoinRequests.length > 0 ? (
+              <Badge variant="secondary">{mockJoinRequests.length}</Badge>
+            ) : null}
           </button>
         ))}
       </nav>
@@ -89,8 +108,11 @@ export default function GroupPage() {
               />
             </>
           ) : (
-            <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
-              <GroupMemberList members={mockGroupMembers} />
+            <div className="flex flex-col gap-4">
+              {showJoinRequests ? <GroupJoinRequests requests={mockJoinRequests} /> : null}
+              <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
+                <GroupMemberList members={mockGroupMembers} />
+              </div>
             </div>
           )}
         </div>
