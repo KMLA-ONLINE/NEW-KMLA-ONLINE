@@ -63,6 +63,11 @@ export function GroupPostCard({
       </header>
 
       <div className="px-4">
+        {post.category ? (
+          <Badge variant="secondary" className="mb-2">
+            {post.category.name}
+          </Badge>
+        ) : null}
         <p className="mb-2 text-xl font-semibold">
           <Link to={`posts/${post.pubId}`} className="hover:underline">
             {post.title}

@@ -20,6 +20,11 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
             고정
           </Badge>
         ) : null}
+        {post.category ? (
+          <Badge variant="outline" className="text-muted-foreground shrink-0 font-normal">
+            {post.category.name}
+          </Badge>
+        ) : null}
         <p className="line-clamp-1 text-sm font-medium sm:text-base">{post.title}</p>
       </div>
       <div className="text-muted-foreground flex items-center gap-2 text-xs">

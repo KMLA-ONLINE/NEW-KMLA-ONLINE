@@ -75,6 +75,11 @@ export default function GroupPostDetailPage() {
                 </header>
 
                 <div>
+                  {post.category ? (
+                    <Badge variant="secondary" className="mb-1.5">
+                      {post.category.name}
+                    </Badge>
+                  ) : null}
                   <h2 className="font-semibold">{post.title}</h2>
                   <p className="mt-1 text-sm leading-6 whitespace-pre-line">{post.content}</p>
                 </div>

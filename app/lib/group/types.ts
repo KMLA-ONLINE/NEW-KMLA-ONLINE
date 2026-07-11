@@ -26,6 +26,16 @@ export type GroupPostAuthor = {
   name: string
 }
 
+/** space_categories 한 행. 그룹이 정의하는 게시판/말머리(정보·공식·잡담 등). */
+export type GroupCategory = {
+  /** space_categories.id */
+  id: number
+  /** space_categories.name */
+  name: string
+  /** space_categories.sort_order (탭·칩 표시 순서) */
+  sortOrder: number
+}
+
 /** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
 export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
 
@@ -88,6 +98,8 @@ export type GroupPost = {
   isPinned: boolean
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
   createdAt: string
+  /** posts.category_id가 가리키는 그룹 카테고리(로더가 조인해 내려줌, author처럼 비정규화). null=미분류. */
+  category: GroupCategory | null
   images: GroupPostImage[]
   /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
   files?: GroupPostFile[]

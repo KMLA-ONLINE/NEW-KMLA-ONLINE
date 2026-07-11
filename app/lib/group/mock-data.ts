@@ -1,4 +1,10 @@
-import type { GroupJoinRequest, GroupMember, GroupPost, GroupSpace } from "~/lib/group/types"
+import type {
+  GroupCategory,
+  GroupJoinRequest,
+  GroupMember,
+  GroupPost,
+  GroupSpace,
+} from "~/lib/group/types"
 
 // 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
 // 내려줄 로더가 붙으면 사라진다. alt는 스키마에 캡션 컬럼이 없어 file_name에서 온다.
@@ -21,12 +27,25 @@ export const mockGroup: GroupSpace = {
   viewerRole: "member",
 }
 
+// 이 그룹이 정의한 카테고리(게시판/말머리). sort_order로 칩 순서를 정한다.
+export const mockGroupCategories: GroupCategory[] = [
+  { id: 1, name: "공지", sortOrder: 0 },
+  { id: 2, name: "행사", sortOrder: 1 },
+  { id: 3, name: "건의", sortOrder: 2 },
+  { id: 4, name: "자유", sortOrder: 3 },
+]
+
+// 글의 category_id → 카테고리 객체(로더가 조인할 자리). 못 찾으면 미분류(null).
+const cat = (id: number): GroupCategory | null =>
+  mockGroupCategories.find((category) => category.id === id) ?? null
+
 // 댓글은 각 글에 들고 있고 개수는 comments.length로 파생한다(대댓글 포함 -- count(*)와
 // 동일). parentId로 스레드를 이룬다. 4번 글은 빈 상태 확인용으로 댓글이 없다.
 export const mockGroupPosts: GroupPost[] = [
   {
     id: 1,
     pubId: "a1f0c3e2-0001-4aaa-9aaa-000000000001",
+    category: cat(2),
     title: "5월 축제 자원봉사자 모집",
     content:
       "부스 운영과 안전 관리를 도와줄 자원봉사자를 모집합니다. 이번 축제는 예년보다 규모가 커져 많은 인원이 필요합니다. 활동 시간은 오전·오후 교대로 배정되며, 봉사 시간 인증서도 발급됩니다. 관심 있는 분은 이번 주 금요일까지 댓글로 신청해 주세요. 문의는 학생회 인스타 DM으로 받습니다.",
@@ -89,6 +108,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 2,
     pubId: "a1f0c3e2-0002-4aaa-9aaa-000000000002",
+    category: cat(1),
     title: "기말고사 기간 열람실 연장 운영 안내",
     content:
       "다음 주부터 2주간 열람실을 밤 12시까지 연장 운영합니다. 쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용. 쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용.쓸데없이 긴 문장 만들기 용. 자리는 선착순입니다.",
@@ -111,6 +131,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 3,
     pubId: "a1f0c3e2-0003-4aaa-9aaa-000000000003",
+    category: cat(3),
     title: "매점 메뉴에 건강한 간식도 추가해 주세요",
     content: "샐러드나 과일 같은 간식도 있으면 좋겠어요. 다들 어떻게 생각하시나요?",
     author: null,
@@ -139,6 +160,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 4,
     pubId: "a1f0c3e2-0004-4aaa-9aaa-000000000004",
+    category: cat(2),
     title: "동아리 발표회 일정 확정",
     content: "동아리 발표회는 7월 25일 대강당에서 진행됩니다. 많은 참여 부탁드려요.",
     author: { name: "박서연" },
@@ -152,6 +174,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 5,
     pubId: "a1f0c3e2-0005-4aaa-9aaa-000000000005",
+    category: cat(1),
     title: "3분기 학생회 정기회의 회의록 모음",
     content: "지난 분기 정기회의 회의록과 예산 내역을 첨부합니다. 안건별로 나눠 올렸어요.",
     author: { name: "이현우" },
@@ -191,6 +214,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 6,
     pubId: "a1f0c3e2-0006-4aaa-9aaa-000000000006",
+    category: cat(4),
     title: "코딩 동아리 부원 모집합니다",
     content:
       "이번 학기 코딩 동아리에서 새 부원을 모집해요. 웹/앱 프로젝트를 함께 만들 사람 환영합니다. 관심 있으면 댓글이나 DM 주세요!",
@@ -206,6 +230,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 7,
     pubId: "a1f0c3e2-0007-4aaa-9aaa-000000000007",
+    category: cat(2),
     title: "체육대회 현장 사진 공유합니다",
     content:
       "어제 열린 체육대회 사진 몇 장 올려요. 다들 정말 열심히 했고 응원 열기도 대단했어요! 나머지 사진은 정리해서 앨범으로 따로 공유할게요.",
@@ -232,6 +257,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 8,
     pubId: "a1f0c3e2-0008-4aaa-9aaa-000000000008",
+    category: cat(4),
     title: "수학여행 3일차 사진 모음",
     content:
       "수학여행 마지막 날 사진들이에요. 바다도 가고 야경도 보고 알찬 하루였습니다. 다섯 장 골라 올려요!",
@@ -260,6 +286,7 @@ export const mockGroupPosts: GroupPost[] = [
   {
     id: 9,
     pubId: "a1f0c3e2-0009-4aaa-9aaa-000000000009",
+    category: cat(2),
     title: "학교 축제 부스 전체 사진 아카이브",
     content:
       "축제 때 운영한 부스들 사진을 모아봤어요. 다섯 장까지만 미리 보이고 나머지는 눌러서 넘겨보세요. 총 일곱 장이에요!",

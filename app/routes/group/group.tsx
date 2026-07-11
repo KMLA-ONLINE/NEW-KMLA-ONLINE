@@ -2,6 +2,7 @@ import { Globe2Icon, LandmarkIcon, LockIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 import { Link, Outlet, useSearchParams } from "react-router"
 
+import { GroupCategoryChips } from "~/components/group/group-category-chips"
 import { GroupHeader } from "~/components/group/group-header"
 import { GroupJoinRequests } from "~/components/group/group-join-requests"
 import { GroupMemberList } from "~/components/group/group-member-list"
@@ -9,6 +10,7 @@ import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import {
   mockGroup,
+  mockGroupCategories,
   mockGroupMembers,
   mockGroupPosts,
   mockJoinRequests,
@@ -41,10 +43,14 @@ function sortForFeed(posts: typeof mockGroupPosts) {
 export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
   const [tab, setTab] = useState<GroupTab>("posts")
+  const [categoryId, setCategoryId] = useState<number | null>(null)
   const [searchParams] = useSearchParams()
   const isPrivate = mockGroup.joinPolicy === "invite_only"
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
-  const feedPosts = sortForFeed(mockGroupPosts)
+  // 카테고리 필터(null=전체) 적용 후 정렬. 필터가 정렬보다 먼저라 고정 글도 카테고리에 걸린다.
+  const feedPosts = sortForFeed(
+    mockGroupPosts.filter((post) => categoryId === null || post.category?.id === categoryId)
+  )
 
   // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
   // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
@@ -101,6 +107,16 @@ export default function GroupPage() {
                   글쓰기…
                 </span>
               </Link>
+
+              {mockGroupCategories.length > 0 ? (
+                <div className="py-3 sm:py-0">
+                  <GroupCategoryChips
+                    categories={mockGroupCategories}
+                    selected={categoryId}
+                    onSelect={setCategoryId}
+                  />
+                </div>
+              ) : null}
 
               <GroupPostFeed
                 posts={feedPosts}
