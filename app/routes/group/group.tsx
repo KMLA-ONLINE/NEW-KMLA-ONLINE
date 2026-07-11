@@ -1,4 +1,5 @@
 import { Globe2Icon, LockIcon, PenSquareIcon, UsersIcon } from "lucide-react"
+import { Link, Outlet } from "react-router"
 
 import { GroupHeader } from "~/components/group/group-header"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
@@ -27,7 +28,7 @@ export default function GroupPage() {
     <div className="mx-auto w-full max-w-5xl">
       <GroupHeader group={mockGroup} className="border-0 sm:rounded-xl sm:border" />
 
-      <nav className="mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
+      <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
         {TABS.map((tab) => (
           <button
             key={tab.label}
@@ -46,16 +47,16 @@ export default function GroupPage() {
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-w-0 flex-col gap-4">
-          <button
-            type="button"
-            className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none border-b px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
+          <Link
+            to="compose"
+            className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
           >
             <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />
             <span className="text-muted-foreground text-sm">
               {mockGroup.name}에 글을 남겨보세요…
             </span>
             <PenSquareIcon className="text-muted-foreground ml-auto size-4" aria-hidden="true" />
-          </button>
+          </Link>
 
           <div className="flex items-center justify-end px-4 sm:px-0">
             <PostViewToggle value={viewMode} onChange={setViewMode} />
@@ -79,6 +80,8 @@ export default function GroupPage() {
           </div>
         </aside>
       </div>
+
+      <Outlet />
     </div>
   )
 }
