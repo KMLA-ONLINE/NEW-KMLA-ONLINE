@@ -1,0 +1,55 @@
+import type { GroupPost, GroupSpace } from "~/lib/group/types"
+
+// 로더가 space와 글을 읽어올 때까지의 대역. 값은 스키마가 실제로 담는 것만 쓴다.
+export const mockGroup: GroupSpace = {
+  name: "학생회",
+  description: "학생 자치 활동, 행사 공지, 건의사항을 나누는 공간입니다.",
+  pubId: "student-council",
+  joinPolicy: "request",
+  memberCount: 128,
+  isMember: true,
+}
+
+export const mockGroupPosts: GroupPost[] = [
+  {
+    id: 1,
+    title: "5월 축제 자원봉사자 모집",
+    content:
+      "부스 운영과 안전 관리를 도와줄 자원봉사자를 모집합니다. 관심 있는 분은 이번 주 금요일까지 댓글로 신청해 주세요.",
+    author: { name: "김지원" },
+    isPinned: true,
+    createdAt: "2026-07-11T05:00:00.000Z",
+    commentCount: 8,
+    reactionCount: 21,
+  },
+  {
+    id: 2,
+    title: "기말고사 기간 열람실 연장 운영 안내",
+    content: "다음 주부터 2주간 열람실을 밤 12시까지 연장 운영합니다. 자리는 선착순입니다.",
+    author: { name: "이현우" },
+    isPinned: false,
+    createdAt: "2026-07-11T02:00:00.000Z",
+    commentCount: 3,
+    reactionCount: 14,
+  },
+  {
+    id: 3,
+    title: "매점 메뉴에 건강한 간식도 추가해 주세요",
+    content: "샐러드나 과일 같은 간식도 있으면 좋겠어요. 다들 어떻게 생각하시나요?",
+    author: null,
+    isPinned: false,
+    createdAt: "2026-07-10T07:00:00.000Z",
+    commentCount: 12,
+    reactionCount: 9,
+  },
+  {
+    id: 4,
+    title: "동아리 발표회 일정 확정",
+    content: "동아리 발표회는 7월 25일 대강당에서 진행됩니다. 많은 참여 부탁드려요.",
+    author: { name: "박서연" },
+    isPinned: false,
+    createdAt: "2026-07-09T07:00:00.000Z",
+    commentCount: 5,
+    reactionCount: 12,
+  },
+]
