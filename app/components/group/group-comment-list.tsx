@@ -54,6 +54,9 @@ function GroupCommentItem({
 }) {
   const name = comment.author?.name ?? "익명"
   const replies = all.filter((item) => item.parentId === comment.id)
+  // 답글이면 부모 댓글 작성자를 본문 앞 @이름 칩으로 붙인다(평탄화돼도 누구 답글인지 보이게).
+  const parent = comment.parentId !== null ? all.find((item) => item.id === comment.parentId) : null
+  const parentName = parent ? (parent.author?.name ?? "익명") : null
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
@@ -68,7 +71,14 @@ function GroupCommentItem({
           <div className="min-w-0">
             <div className="bg-muted w-fit rounded-2xl px-3 py-2">
               <p className="text-xs font-semibold">{name}</p>
-              <p className="text-sm">{comment.content}</p>
+              <p className="text-sm">
+                {parentName ? (
+                  <span className="mr-1 font-medium text-blue-600 dark:text-blue-400">
+                    @{parentName}
+                  </span>
+                ) : null}
+                {comment.content}
+              </p>
             </div>
             <div className="text-muted-foreground mt-1 ml-3 flex items-center gap-3 text-xs">
               {/* 반응: 클릭하면 위로 quick reaction 피커, 이미 눌렀으면 클릭으로 해제 */}
