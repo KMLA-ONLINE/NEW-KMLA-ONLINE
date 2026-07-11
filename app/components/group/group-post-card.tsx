@@ -38,9 +38,13 @@ export function GroupPostCard({
           <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{authorName}</span>
-            {post.isPinned ? <Badge variant="secondary">고정</Badge> : null}
+            {post.isPinned ? (
+              <Badge variant="secondary" className="shrink-0">
+                고정
+              </Badge>
+            ) : null}
           </div>
           <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
         </div>
