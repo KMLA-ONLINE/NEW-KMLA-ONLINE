@@ -83,7 +83,7 @@ export function GroupPostCard({
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="text-muted-foreground mt-0.5 text-sm font-medium hover:underline"
+            className="text-muted-foreground pointer-fine:text-foreground mt-0.5 text-sm font-medium hover:underline pointer-fine:font-semibold pointer-fine:underline"
           >
             {expanded ? "접기" : "더 보기"}
           </button>
