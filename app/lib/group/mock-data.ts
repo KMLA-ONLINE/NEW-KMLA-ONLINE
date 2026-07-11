@@ -34,6 +34,14 @@ export const mockGroupPosts: GroupPost[] = [
       { src: mockImage("#2563eb", "#38bdf8"), alt: "festival-booths-2025.jpg" },
       { src: mockImage("#7c3aed", "#f472b6"), alt: "volunteer-poster.png" },
     ],
+    files: [
+      {
+        name: "자원봉사_신청_안내.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 248000,
+        url: "#",
+      },
+    ],
     reactionCount: 21,
     topReactions: ["👍", "❤️"],
     comments: [

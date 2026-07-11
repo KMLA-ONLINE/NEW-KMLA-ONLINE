@@ -26,6 +26,18 @@ export type GroupPostImage = {
   alt: string
 }
 
+/** 이미지가 아닌 첨부(post_attachments 중 kind가 image가 아닌 것). 이미지는 images로 나눈다. */
+export type GroupPostFile = {
+  /** file_name */
+  name: string
+  /** content_type */
+  contentType: string
+  /** size_bytes */
+  sizeBytes: number
+  /** storage_path 기반 서명 URL. 로더가 채운다. */
+  url: string
+}
+
 export type GroupPost = {
   id: number
   /** posts.pub_id (uuid). 외부/공유용 식별자 -- 상세 URL은 id가 아니라 이걸로 주소한다. */
@@ -39,6 +51,8 @@ export type GroupPost = {
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
   createdAt: string
   images: GroupPostImage[]
+  /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
+  files?: GroupPostFile[]
   /** 이 글의 댓글. 개수는 comments.length로 파생 -- 별도 카운트를 두면 어긋난다. */
   comments: GroupComment[]
   /** count(*)로 읽는 파생값(캐시 컬럼 아님). */

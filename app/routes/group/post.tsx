@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupCommentList } from "~/components/group/group-comment-list"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
+import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
@@ -87,6 +88,8 @@ export default function GroupPostDetailPage() {
                 {post.images.length > 0 ? (
                   <GroupPostImageGrid images={post.images} className="overflow-hidden rounded-lg" />
                 ) : null}
+
+                {post.files?.length ? <GroupPostFiles files={post.files} /> : null}
               </div>
 
               <GroupPostActionBar

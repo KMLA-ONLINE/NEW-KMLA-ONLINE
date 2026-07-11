@@ -3,6 +3,7 @@ import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
+import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
@@ -96,6 +97,12 @@ export function GroupPostCard({
       </div>
 
       {post.images.length > 0 ? <GroupPostImageGrid images={post.images} className="mt-3" /> : null}
+
+      {post.files?.length ? (
+        <div className="mt-3 px-4">
+          <GroupPostFiles files={post.files} />
+        </div>
+      ) : null}
 
       <GroupPostActionBar
         reactionCount={post.reactionCount}
