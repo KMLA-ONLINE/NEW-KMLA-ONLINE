@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { mockComments, mockGroupPosts } from "~/lib/group/mock-data"
+import { mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
 // /groups/:pubId/posts/:postId. 데스크톱은 모달, 모바일은 풀스크린(compose와 같은 패턴).
@@ -88,16 +88,16 @@ export default function GroupPostDetailPage() {
 
               <GroupPostActionBar
                 reactionCount={post.reactionCount}
-                commentCount={post.commentCount}
+                commentCount={post.comments.length}
                 topReactions={post.topReactions}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
               />
             </article>
 
             <section className="border-t p-4">
-              {mockComments.length > 0 ? (
+              {post.comments.length > 0 ? (
                 <ul className="flex flex-col gap-3">
-                  {mockComments.map((comment) => {
+                  {post.comments.map((comment) => {
                     const name = comment.author?.name ?? "익명"
                     return (
                       <li key={comment.id} className="flex gap-2">

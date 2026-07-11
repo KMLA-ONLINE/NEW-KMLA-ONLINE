@@ -35,8 +35,9 @@ export type GroupPost = {
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
   createdAt: string
   images: GroupPostImage[]
+  /** 이 글의 댓글. 개수는 comments.length로 파생 -- 별도 카운트를 두면 어긋난다. */
+  comments: GroupComment[]
   /** count(*)로 읽는 파생값(캐시 컬럼 아님). */
-  commentCount: number
   reactionCount: number
   /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
   topReactions: string[]

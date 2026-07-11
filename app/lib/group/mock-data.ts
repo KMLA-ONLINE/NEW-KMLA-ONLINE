@@ -1,4 +1,4 @@
-import type { GroupComment, GroupPost, GroupSpace } from "~/lib/group/types"
+import type { GroupPost, GroupSpace } from "~/lib/group/types"
 
 // 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
 // 내려줄 로더가 붙으면 사라진다.
@@ -17,6 +17,8 @@ export const mockGroup: GroupSpace = {
   isMember: true,
 }
 
+// 댓글은 각 글에 들고 있고, 개수는 comments.length로 파생한다 -- 카운트가 UI와 어긋나지
+// 않도록. 4번 글은 빈 상태 확인용으로 댓글이 없다.
 export const mockGroupPosts: GroupPost[] = [
   {
     id: 1,
@@ -30,9 +32,28 @@ export const mockGroupPosts: GroupPost[] = [
       { src: mockImage("#2563eb", "#38bdf8"), alt: "작년 축제 부스 전경" },
       { src: mockImage("#7c3aed", "#f472b6"), alt: "자원봉사 안내 포스터" },
     ],
-    commentCount: 8,
     reactionCount: 21,
     topReactions: ["👍", "❤️"],
+    comments: [
+      {
+        id: 1,
+        author: { name: "이민서" },
+        content: "저 참여할게요! 신청은 언제까지 받나요?",
+        createdAt: "2026-07-11T06:00:00.000Z",
+      },
+      {
+        id: 2,
+        author: null,
+        content: "봉사 시간 인증서는 어디서 받을 수 있나요?",
+        createdAt: "2026-07-11T06:30:00.000Z",
+      },
+      {
+        id: 3,
+        author: { name: "박서연" },
+        content: "좋은 기획이네요 👍",
+        createdAt: "2026-07-11T07:00:00.000Z",
+      },
+    ],
   },
   {
     id: 2,
@@ -42,9 +63,16 @@ export const mockGroupPosts: GroupPost[] = [
     isPinned: false,
     createdAt: "2026-07-11T02:00:00.000Z",
     images: [],
-    commentCount: 3,
     reactionCount: 14,
     topReactions: ["👍"],
+    comments: [
+      {
+        id: 4,
+        author: { name: "정하늘" },
+        content: "감사합니다! 자리 넉넉했으면 좋겠어요.",
+        createdAt: "2026-07-11T03:00:00.000Z",
+      },
+    ],
   },
   {
     id: 3,
@@ -54,9 +82,22 @@ export const mockGroupPosts: GroupPost[] = [
     isPinned: false,
     createdAt: "2026-07-10T07:00:00.000Z",
     images: [],
-    commentCount: 12,
     reactionCount: 9,
     topReactions: ["😆", "👍"],
+    comments: [
+      {
+        id: 5,
+        author: { name: "김도윤" },
+        content: "완전 찬성이에요.",
+        createdAt: "2026-07-10T08:00:00.000Z",
+      },
+      {
+        id: 6,
+        author: null,
+        content: "저도요! 요거트도 있으면 좋겠어요.",
+        createdAt: "2026-07-10T09:00:00.000Z",
+      },
+    ],
   },
   {
     id: 4,
@@ -66,30 +107,8 @@ export const mockGroupPosts: GroupPost[] = [
     isPinned: false,
     createdAt: "2026-07-09T07:00:00.000Z",
     images: [{ src: mockImage("#15803d", "#5eead4"), alt: "대강당 무대" }],
-    commentCount: 5,
     reactionCount: 12,
     topReactions: ["👍", "❤️"],
-  },
-]
-
-// 상세 화면 댓글 대역. 로더가 글별 댓글을 읽어올 때까지 공용으로 쓴다.
-export const mockComments: GroupComment[] = [
-  {
-    id: 1,
-    author: { name: "이민서" },
-    content: "저 참여할게요! 신청은 언제까지 받나요?",
-    createdAt: "2026-07-11T06:00:00.000Z",
-  },
-  {
-    id: 2,
-    author: null,
-    content: "봉사 시간 인증서는 어디서 받을 수 있나요?",
-    createdAt: "2026-07-11T06:30:00.000Z",
-  },
-  {
-    id: 3,
-    author: { name: "박서연" },
-    content: "좋은 기획이네요 👍",
-    createdAt: "2026-07-11T07:00:00.000Z",
+    comments: [],
   },
 ]
