@@ -1,4 +1,5 @@
 import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
+import { Link } from "react-router"
 
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { Button } from "~/components/ui/button"
@@ -100,7 +101,9 @@ export function GroupHeader({
                 <DropdownMenuRadioItem value="list">목록</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>알림 설정</DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="noti">알림 설정</Link>
+              </DropdownMenuItem>
               <DropdownMenuItem variant="destructive">그룹 나가기</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
