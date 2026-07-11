@@ -60,6 +60,7 @@ export default function GroupPage() {
         className="border-0 sm:rounded-xl sm:border"
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onViewMembers={() => setTab("members")}
       />
 
       <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">

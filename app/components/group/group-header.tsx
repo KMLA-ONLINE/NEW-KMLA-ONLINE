@@ -23,11 +23,14 @@ export function GroupHeader({
   className,
   viewMode,
   onViewModeChange,
+  onViewMembers,
 }: {
   group: GroupSpace
   className?: string
   viewMode: PostViewMode
   onViewModeChange: (mode: PostViewMode) => void
+  /** "멤버 N명"을 누르면 멤버 탭으로. 탭은 부모(group 라우트)의 로컬 상태라 콜백으로 올린다. */
+  onViewMembers: () => void
 }) {
   // invite_only만 비공개(검색 노출 X). public·request(승인가입)는 검색에 노출되니 공개로 묶는다.
   const isPrivate = group.joinPolicy === "invite_only"
@@ -64,7 +67,12 @@ export function GroupHeader({
           </div>
           <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-sm">
             <VisibilityIcon className="size-3.5 shrink-0" aria-hidden="true" />
-            {visibilityLabel} · 멤버 {group.memberCount}명
+            <span>
+              {visibilityLabel} ·{" "}
+              <button type="button" onClick={onViewMembers} className="hover:underline">
+                멤버 {group.memberCount}명
+              </button>
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-1 pt-1">
