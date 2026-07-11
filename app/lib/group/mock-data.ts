@@ -397,6 +397,92 @@ export const mockGroupMembers: GroupMember[] = [
     role: "member",
     joinedAt: "2026-03-28T00:00:00.000Z",
   },
+  // 페이지네이션(더 보기) 확인용 일반 멤버 -- 실제로는 memberCount(128)만큼 있고 로더가
+  // keyset(space_members: role, joined_at)로 페이지 단위로 내려준다. 여기선 대표 일부.
+  {
+    id: 109,
+    name: "강서윤",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-04-02T00:00:00.000Z",
+  },
+  {
+    id: 110,
+    name: "조은우",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-04-11T00:00:00.000Z",
+  },
+  {
+    id: 111,
+    name: "임채원",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-04-19T00:00:00.000Z",
+  },
+  {
+    id: 112,
+    name: "신도현",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-05-03T00:00:00.000Z",
+  },
+  {
+    id: 113,
+    name: "오지안",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-05-15T00:00:00.000Z",
+  },
+  {
+    id: 114,
+    name: "배준서",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-05-27T00:00:00.000Z",
+  },
+  {
+    id: 115,
+    name: "홍시우",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-06-08T00:00:00.000Z",
+  },
+  {
+    id: 116,
+    name: "문가람",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-06-20T00:00:00.000Z",
+  },
+  {
+    id: 117,
+    name: "안예린",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-06-30T00:00:00.000Z",
+  },
+  {
+    id: 118,
+    name: "유하준",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-07-04T00:00:00.000Z",
+  },
+  {
+    id: 119,
+    name: "곽민준",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-07-08T00:00:00.000Z",
+  },
+  {
+    id: 120,
+    name: "남서아",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-07-11T00:00:00.000Z",
+  },
 ]
 
 // space_join_requests 목데이터. request 정책 그룹에서 승인 대기 중인 가입 요청 -- 관리자
