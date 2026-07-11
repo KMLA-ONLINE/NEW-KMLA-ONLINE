@@ -1,4 +1,4 @@
-import { Globe2Icon, LandmarkIcon, LockIcon, PenSquareIcon, UsersIcon } from "lucide-react"
+import { Globe2Icon, LandmarkIcon, LockIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 import { Link, Outlet } from "react-router"
 
@@ -72,16 +72,12 @@ export default function GroupPage() {
             <>
               <Link
                 to="new"
-                className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
+                className="group bg-card flex items-center gap-3 rounded-none px-4 py-3 sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
               >
-                <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />
-                <span className="text-muted-foreground text-sm">
-                  {mockGroup.name}에 글을 남겨보세요…
+                <div className="bg-muted size-9 shrink-0 rounded-full border" aria-hidden="true" />
+                <span className="bg-muted text-muted-foreground flex-1 rounded-full px-4 py-2 text-sm transition-[filter] group-hover:brightness-95">
+                  글쓰기…
                 </span>
-                <PenSquareIcon
-                  className="text-muted-foreground ml-auto size-4"
-                  aria-hidden="true"
-                />
               </Link>
 
               <GroupPostFeed
