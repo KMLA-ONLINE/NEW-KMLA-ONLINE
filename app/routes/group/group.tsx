@@ -67,12 +67,14 @@ export default function GroupPage() {
       </nav>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col sm:gap-4">
           {tab === "posts" ? (
             <>
+              {/* 모바일에선 카드 스택과 같은 언어로 -- flush + border-b-2 구분선. sm+에선
+                  다른 카드처럼 라운드·테두리 카드가 되고 위 컨테이너 gap이 사이를 벌린다. */}
               <Link
                 to="new"
-                className="group bg-card flex items-center gap-3 rounded-none px-4 py-3 sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
+                className="group bg-card border-foreground/20 sm:border-border flex items-center gap-3 overflow-hidden rounded-none border-b-2 px-4 py-3 sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
               >
                 <div className="bg-muted size-9 shrink-0 rounded-full border" aria-hidden="true" />
                 <span className="bg-muted text-muted-foreground flex-1 rounded-full px-4 py-2 text-sm transition-[filter] group-hover:brightness-95">
