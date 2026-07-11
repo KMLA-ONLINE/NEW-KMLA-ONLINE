@@ -253,4 +253,34 @@ export const mockGroupPosts: GroupPost[] = [
       },
     ],
   },
+  {
+    id: 9,
+    pubId: "a1f0c3e2-0009-4aaa-9aaa-000000000009",
+    title: "학교 축제 부스 전체 사진 아카이브",
+    content:
+      "축제 때 운영한 부스들 사진을 모아봤어요. 다섯 장까지만 미리 보이고 나머지는 눌러서 넘겨보세요. 총 일곱 장이에요!",
+    author: { name: "박서연" },
+    isPinned: false,
+    createdAt: "2026-07-09T12:00:00.000Z",
+    images: [
+      { src: mockImage("#9333ea", "#d8b4fe"), alt: "festival-food-booth.jpg" },
+      { src: mockImage("#c2410c", "#fdba74"), alt: "festival-game-booth.jpg" },
+      { src: mockImage("#0d9488", "#5eead4"), alt: "festival-craft-booth.jpg" },
+      { src: mockImage("#b91c1c", "#fca5a5"), alt: "festival-photo-booth.jpg" },
+      { src: mockImage("#1d4ed8", "#93c5fd"), alt: "festival-band-stage.jpg" },
+      { src: mockImage("#4d7c0f", "#bef264"), alt: "festival-flea-market.jpg" },
+      { src: mockImage("#7e22ce", "#f0abfc"), alt: "festival-closing.jpg" },
+    ],
+    reactionCount: 27,
+    topReactions: ["👍", "❤️"],
+    comments: [
+      {
+        id: 11,
+        parentId: null,
+        author: { name: "김도윤" },
+        content: "부스 다 돌았는데 사진으로 보니 또 새롭네요!",
+        createdAt: "2026-07-09T13:00:00.000Z",
+      },
+    ],
+  },
 ]
