@@ -1,4 +1,5 @@
-import { HeartIcon, MessageSquareIcon, MoreHorizontalIcon, Share2Icon } from "lucide-react"
+import { MessageCircleIcon, MoreHorizontalIcon, SendIcon, ThumbsUpIcon } from "lucide-react"
+import { useCallback, useState } from "react"
 
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { RelativeTime } from "~/components/relative-time"
@@ -11,19 +12,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
-import { Separator } from "~/components/ui/separator"
 import type { GroupPost } from "~/lib/group/types"
+import { cn } from "~/lib/utils"
 
-// 페북식 "카드" 렌즈: 아바타 헤더·제목·본문·이미지 그리드·반응 요약·액션 바.
-// 제목은 스키마상 필수라 본문 위 굵은 헤딩으로 둔다(페북엔 제목이 없지만 posts엔 있음).
-// 더보기(⋯)는 아직 정적 -- 드롭다운 메뉴는 다음 단계.
+// 페북식 "카드" 렌즈: 아바타 헤더·제목·본문(3줄 클램프 + 더 보기)·이미지 그리드,
+// 그리고 좋아요/댓글/공유를 아이콘+개수로 왼쪽에, 반응 요약 이모지를 오른쪽에.
 export function GroupPostCard({ post }: { post: GroupPost }) {
   const authorName = post.author?.name ?? "익명"
+  const [expanded, setExpanded] = useState(false)
+  const [clampable, setClampable] = useState(false)
+
+  // 3줄 클램프 상태에서 실제로 잘렸는지 마운트 시 측정해 "더 보기"를 필요할 때만 띄운다.
+  // effect가 아니라 ref 콜백이라 set-state-in-effect 린트에 걸리지 않는다.
+  const measureContent = useCallback((node: HTMLParagraphElement | null) => {
+    if (node) setClampable(node.scrollHeight > node.clientHeight + 1)
+  }, [])
 
   return (
-    <article className="bg-card overflow-hidden border-0 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
+    <article className="bg-card border-foreground/20 sm:border-border overflow-hidden border-b-2 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
       <header className="flex items-start gap-3 p-4 pb-3">
-        <Avatar>
+        <Avatar size="lg">
           <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
@@ -54,35 +62,61 @@ export function GroupPostCard({ post }: { post: GroupPost }) {
 
       <div className="px-4">
         <h3 className="font-semibold">{post.title}</h3>
-        <p className="text-muted-foreground mt-1 text-sm leading-6 whitespace-pre-line">
+        <p
+          ref={measureContent}
+          className={cn(
+            "text-muted-foreground mt-1 text-sm leading-6 whitespace-pre-line",
+            !expanded && "line-clamp-3"
+          )}
+        >
           {post.content}
         </p>
+        {clampable || expanded ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="text-muted-foreground mt-0.5 text-sm font-medium hover:underline"
+          >
+            {expanded ? "접기" : "더 보기"}
+          </button>
+        ) : null}
       </div>
 
-      {post.images.length > 0 ? (
-        <GroupPostImageGrid images={post.images} className="mt-3 border-y" />
-      ) : null}
+      {post.images.length > 0 ? <GroupPostImageGrid images={post.images} className="mt-3" /> : null}
 
-      <div className="text-muted-foreground flex items-center justify-between px-4 pt-3 text-xs">
-        <span>좋아요 {post.reactionCount}</span>
-        <span>댓글 {post.commentCount}</span>
-      </div>
-
-      <Separator className="mt-2" />
-
-      <div className="grid grid-cols-3 gap-1 p-1">
-        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground w-full">
-          <HeartIcon className="size-4" aria-hidden="true" />
-          좋아요
-        </Button>
-        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground w-full">
-          <MessageSquareIcon className="size-4" aria-hidden="true" />
-          댓글
-        </Button>
-        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground w-full">
-          <Share2Icon className="size-4" aria-hidden="true" />
-          공유
-        </Button>
+      <div className="mt-1 flex items-center justify-between px-2 py-1">
+        <div className="text-muted-foreground flex items-center">
+          <button
+            type="button"
+            className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
+          >
+            <ThumbsUpIcon className="size-4.5" aria-hidden="true" />
+            {post.reactionCount > 0 ? post.reactionCount : null}
+          </button>
+          <button
+            type="button"
+            className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
+          >
+            <MessageCircleIcon className="size-4.5" aria-hidden="true" />
+            {post.commentCount > 0 ? post.commentCount : null}
+          </button>
+          <button
+            type="button"
+            aria-label="공유"
+            className="hover:bg-muted hover:text-foreground flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors"
+          >
+            <SendIcon className="size-4.5" aria-hidden="true" />
+          </button>
+        </div>
+        {post.topReactions.length > 0 ? (
+          <div className="flex items-center gap-0.5 pr-2 text-sm">
+            {post.topReactions.map((emoji) => (
+              <span key={emoji} className="leading-none">
+                {emoji}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   )

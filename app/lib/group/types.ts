@@ -38,4 +38,6 @@ export type GroupPost = {
   /** count(*)로 읽는 파생값(캐시 컬럼 아님). */
   commentCount: number
   reactionCount: number
+  /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
+  topReactions: string[]
 }

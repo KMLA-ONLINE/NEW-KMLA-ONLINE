@@ -22,7 +22,7 @@ export const mockGroupPosts: GroupPost[] = [
     id: 1,
     title: "5월 축제 자원봉사자 모집",
     content:
-      "부스 운영과 안전 관리를 도와줄 자원봉사자를 모집합니다. 관심 있는 분은 이번 주 금요일까지 댓글로 신청해 주세요.",
+      "부스 운영과 안전 관리를 도와줄 자원봉사자를 모집합니다. 이번 축제는 예년보다 규모가 커져 많은 인원이 필요합니다. 활동 시간은 오전·오후 교대로 배정되며, 봉사 시간 인증서도 발급됩니다. 관심 있는 분은 이번 주 금요일까지 댓글로 신청해 주세요. 문의는 학생회 인스타 DM으로 받습니다.",
     author: { name: "김지원" },
     isPinned: true,
     createdAt: "2026-07-11T05:00:00.000Z",
@@ -32,6 +32,7 @@ export const mockGroupPosts: GroupPost[] = [
     ],
     commentCount: 8,
     reactionCount: 21,
+    topReactions: ["👍", "❤️"],
   },
   {
     id: 2,
@@ -43,6 +44,7 @@ export const mockGroupPosts: GroupPost[] = [
     images: [],
     commentCount: 3,
     reactionCount: 14,
+    topReactions: ["👍"],
   },
   {
     id: 3,
@@ -54,6 +56,7 @@ export const mockGroupPosts: GroupPost[] = [
     images: [],
     commentCount: 12,
     reactionCount: 9,
+    topReactions: ["😆", "👍"],
   },
   {
     id: 4,
@@ -65,5 +68,6 @@ export const mockGroupPosts: GroupPost[] = [
     images: [{ src: mockImage("#15803d", "#5eead4"), alt: "대강당 무대" }],
     commentCount: 5,
     reactionCount: 12,
+    topReactions: ["👍", "❤️"],
   },
 ]
