@@ -41,3 +41,11 @@ export type GroupPost = {
   /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
   topReactions: string[]
 }
+
+export type GroupComment = {
+  id: number
+  /** null이면 익명 댓글(is_anonymous). */
+  author: GroupPostAuthor | null
+  content: string
+  createdAt: string
+}

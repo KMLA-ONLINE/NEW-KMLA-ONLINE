@@ -4,7 +4,10 @@ export default [
   layout("./routes/_app.tsx", [
     index("./routes/_app._index.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
-    route("groups/:pubId", "./routes/group/group.tsx", [route("new", "./routes/group/new.tsx")]),
+    route("groups/:pubId", "./routes/group/group.tsx", [
+      route("new", "./routes/group/new.tsx"),
+      route("posts/:postId", "./routes/group/post.tsx"),
+    ]),
     route("community", "./routes/_app.community.tsx"),
     route("messenger", "./routes/messenger/messenger.tsx", [
       index("./routes/messenger/index.tsx"),

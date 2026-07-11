@@ -1,4 +1,4 @@
-import type { GroupPost, GroupSpace } from "~/lib/group/types"
+import type { GroupComment, GroupPost, GroupSpace } from "~/lib/group/types"
 
 // 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
 // 내려줄 로더가 붙으면 사라진다.
@@ -69,5 +69,27 @@ export const mockGroupPosts: GroupPost[] = [
     commentCount: 5,
     reactionCount: 12,
     topReactions: ["👍", "❤️"],
+  },
+]
+
+// 상세 화면 댓글 대역. 로더가 글별 댓글을 읽어올 때까지 공용으로 쓴다.
+export const mockComments: GroupComment[] = [
+  {
+    id: 1,
+    author: { name: "이민서" },
+    content: "저 참여할게요! 신청은 언제까지 받나요?",
+    createdAt: "2026-07-11T06:00:00.000Z",
+  },
+  {
+    id: 2,
+    author: null,
+    content: "봉사 시간 인증서는 어디서 받을 수 있나요?",
+    createdAt: "2026-07-11T06:30:00.000Z",
+  },
+  {
+    id: 3,
+    author: { name: "박서연" },
+    content: "좋은 기획이네요 👍",
+    createdAt: "2026-07-11T07:00:00.000Z",
   },
 ]

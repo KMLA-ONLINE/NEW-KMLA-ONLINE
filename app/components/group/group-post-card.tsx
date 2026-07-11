@@ -1,5 +1,6 @@
 import { MessageCircleIcon, MoreHorizontalIcon, SendIcon } from "lucide-react"
 import { useCallback, useState } from "react"
+import { Link } from "react-router"
 
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupReactionButton } from "~/components/group/group-reaction-button"
@@ -69,7 +70,11 @@ export function GroupPostCard({
       </header>
 
       <div className="px-4">
-        <h3 className="font-semibold">{post.title}</h3>
+        <h3 className="font-semibold">
+          <Link to={`posts/${post.id}`} className="hover:underline">
+            {post.title}
+          </Link>
+        </h3>
         <p
           ref={measureContent}
           className={cn(
@@ -95,13 +100,13 @@ export function GroupPostCard({
       <div className="mt-1 flex items-center justify-between px-2 py-1">
         <div className="text-muted-foreground flex items-center">
           <GroupReactionButton count={post.reactionCount} reactionTypes={reactionTypes} />
-          <button
-            type="button"
+          <Link
+            to={`posts/${post.id}`}
             className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
           >
             <MessageCircleIcon className="size-4.5" aria-hidden="true" />
             {post.commentCount > 0 ? post.commentCount : null}
-          </button>
+          </Link>
           <button
             type="button"
             aria-label="공유"
