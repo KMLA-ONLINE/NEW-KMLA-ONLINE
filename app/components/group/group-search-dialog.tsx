@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
+import { useDebouncedValue } from "~/hooks/use-debounced-value"
 import type { GroupPost } from "~/lib/group/types"
 
 // 게시물 검색: 제목·본문을 공백 제거 + 소문자로 정규화해 부분 일치시킨다. DB의 검색 인덱스가
@@ -29,7 +30,8 @@ export function GroupSearchDialog({
   posts: GroupPost[]
 }) {
   const [query, setQuery] = useState("")
-  const trimmed = query.trim()
+  // 입력은 즉시 반영하되 실제 검색은 타이핑이 멈춘 뒤에만(백엔드에 붙으면 키 입력마다 쿼리 방지).
+  const trimmed = useDebouncedValue(query.trim(), 400)
   const needle = normalize(trimmed)
   const results = needle
     ? posts.filter(
