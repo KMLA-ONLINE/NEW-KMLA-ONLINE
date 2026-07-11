@@ -18,6 +18,12 @@ export type GroupPostAuthor = {
   name: string
 }
 
+/** post_attachments의 이미지 한 장. 서명 URL은 로더가 채운다. */
+export type GroupPostImage = {
+  src: string
+  alt: string
+}
+
 export type GroupPost = {
   id: number
   title: string
@@ -28,6 +34,7 @@ export type GroupPost = {
   isPinned: boolean
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
   createdAt: string
+  images: GroupPostImage[]
   /** count(*)로 읽는 파생값(캐시 컬럼 아님). */
   commentCount: number
   reactionCount: number

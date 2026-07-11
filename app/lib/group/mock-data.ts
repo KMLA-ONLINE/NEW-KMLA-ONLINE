@@ -1,5 +1,12 @@
 import type { GroupPost, GroupSpace } from "~/lib/group/types"
 
+// 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
+// 내려줄 로더가 붙으면 사라진다.
+function mockImage(from: string, to: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="800" height="600" fill="url(#g)"/></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
 // 로더가 space와 글을 읽어올 때까지의 대역. 값은 스키마가 실제로 담는 것만 쓴다.
 export const mockGroup: GroupSpace = {
   name: "학생회",
@@ -19,6 +26,10 @@ export const mockGroupPosts: GroupPost[] = [
     author: { name: "김지원" },
     isPinned: true,
     createdAt: "2026-07-11T05:00:00.000Z",
+    images: [
+      { src: mockImage("#2563eb", "#38bdf8"), alt: "작년 축제 부스 전경" },
+      { src: mockImage("#7c3aed", "#f472b6"), alt: "자원봉사 안내 포스터" },
+    ],
     commentCount: 8,
     reactionCount: 21,
   },
@@ -29,6 +40,7 @@ export const mockGroupPosts: GroupPost[] = [
     author: { name: "이현우" },
     isPinned: false,
     createdAt: "2026-07-11T02:00:00.000Z",
+    images: [],
     commentCount: 3,
     reactionCount: 14,
   },
@@ -39,6 +51,7 @@ export const mockGroupPosts: GroupPost[] = [
     author: null,
     isPinned: false,
     createdAt: "2026-07-10T07:00:00.000Z",
+    images: [],
     commentCount: 12,
     reactionCount: 9,
   },
@@ -49,6 +62,7 @@ export const mockGroupPosts: GroupPost[] = [
     author: { name: "박서연" },
     isPinned: false,
     createdAt: "2026-07-09T07:00:00.000Z",
+    images: [{ src: mockImage("#15803d", "#5eead4"), alt: "대강당 무대" }],
     commentCount: 5,
     reactionCount: 12,
   },
