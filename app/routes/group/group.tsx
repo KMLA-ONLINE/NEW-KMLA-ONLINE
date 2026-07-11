@@ -9,7 +9,8 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
-export const handle = { mobileContentEdge: "bleed" as const }
+// 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
+export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
 
 const TABS = [
   { label: "게시물", active: true },
