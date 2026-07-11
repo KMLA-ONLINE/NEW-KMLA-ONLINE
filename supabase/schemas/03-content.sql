@@ -6,6 +6,9 @@ create table public.posts (
   title text not null,
   content text not null,
   is_anonymous boolean not null default false,
+  -- 이 글이 속한 그룹 게시판/말머리(선택). 카테고리 삭제 시 글은 남고 미분류로 떨어진다.
+  -- 같은 space의 카테고리여야 한다 -- FK로 못 잡아 trg_validate_post_category가 검증.
+  category_id bigint null references public.space_categories (id) on delete set null,
   pinned_at timestamptz null,
   pinned_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
@@ -43,6 +46,8 @@ create table public.comments (
 
 create index idx_posts_author_created_at on public.posts (author_id, created_at);
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
+where deleted_at is null;
+create index idx_posts_active_space_category on public.posts (space_id, category_id, created_at desc, id desc)
 where deleted_at is null;
 create index idx_posts_pinned on public.posts (space_id, pinned_at desc)
 where pinned_at is not null and deleted_at is null;
@@ -145,6 +150,30 @@ for each row execute function private.validate_comment_parent();
 
 revoke execute on function private.validate_comment_parent() from public, anon, authenticated, service_role;
 
+-- 글의 카테고리는 반드시 같은 space의 것이어야 한다(단일 FK로는 교차 컬럼 검증 불가).
+create function private.validate_post_category()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.category_id is not null and not exists (
+    select 1 from public.space_categories sc
+    where sc.id = new.category_id and sc.space_id = new.space_id
+  ) then
+    raise exception 'post category must belong to the same space';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_validate_post_category
+before insert or update of space_id, category_id on public.posts
+for each row execute function private.validate_post_category();
+
+revoke execute on function private.validate_post_category() from public, anon, authenticated, service_role;
+
 alter table public.posts enable row level security;
 alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
@@ -158,8 +187,8 @@ create policy comments_insert on public.comments for insert to authenticated wit
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
 
 grant select on public.posts, public.post_attachments, public.comments to authenticated;
-grant insert (space_id,author_id,title,content,is_anonymous) on public.posts to authenticated;
-grant update (title,content,is_anonymous) on public.posts to authenticated;
+grant insert (space_id,author_id,title,content,is_anonymous,category_id) on public.posts to authenticated;
+grant update (title,content,is_anonymous,category_id) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
