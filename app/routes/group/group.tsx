@@ -1,4 +1,4 @@
-import { Globe2Icon, LandmarkIcon, LockIcon, UsersIcon } from "lucide-react"
+import { Globe2Icon, LandmarkIcon, LockIcon, SearchIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 import { Link, Outlet, useSearchParams } from "react-router"
 
@@ -6,6 +6,7 @@ import { GroupCategoryChips } from "~/components/group/group-category-chips"
 import { GroupHeader } from "~/components/group/group-header"
 import { GroupJoinRequests } from "~/components/group/group-join-requests"
 import { GroupMemberList } from "~/components/group/group-member-list"
+import { GroupSearchDialog } from "~/components/group/group-search-dialog"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { GroupSettings } from "~/components/group/group-settings"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
@@ -18,6 +19,7 @@ import {
   mockJoinRequests,
 } from "~/lib/group/mock-data"
 import { Badge } from "~/components/ui/badge"
+import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -51,6 +53,7 @@ export default function GroupPage() {
   const [tab, setTab] = useState<GroupTab>("posts")
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [feedVisible, setFeedVisible] = useState(FEED_PAGE_SIZE)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
   // 카테고리 필터를 바꾸면 페이지를 처음부터 다시 센다.
@@ -129,7 +132,7 @@ export default function GroupPage() {
         onViewMembers={() => setTab("members")}
       />
 
-      <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
+      <nav className="mx-2 mt-4 flex items-center gap-1 border-b" aria-label="그룹 메뉴">
         {visibleTabs.map((item) => (
           <button
             key={item.id}
@@ -150,6 +153,15 @@ export default function GroupPage() {
             ) : null}
           </button>
         ))}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground mb-1 ml-auto"
+          onClick={() => setSearchOpen(true)}
+          aria-label="게시물 검색"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
       </nav>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -230,6 +242,8 @@ export default function GroupPage() {
       </div>
 
       <Outlet />
+
+      <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
     </div>
   )
 }
