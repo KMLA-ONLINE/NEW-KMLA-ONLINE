@@ -46,6 +46,8 @@ export type GroupPost = {
   content: string
   /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
   author: GroupPostAuthor | null
+  /** 내가 쓴 글인지(author_id === 현재 프로필). 수정/삭제 메뉴 노출용. */
+  isMine?: boolean
   /** posts.pinned_at 여부. "고정" 배지로 표시. */
   isPinned: boolean
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */

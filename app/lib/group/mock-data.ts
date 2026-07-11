@@ -184,4 +184,19 @@ export const mockGroupPosts: GroupPost[] = [
     topReactions: ["👍"],
     comments: [],
   },
+  {
+    id: 6,
+    pubId: "a1f0c3e2-0006-4aaa-9aaa-000000000006",
+    title: "코딩 동아리 부원 모집합니다",
+    content:
+      "이번 학기 코딩 동아리에서 새 부원을 모집해요. 웹/앱 프로젝트를 함께 만들 사람 환영합니다. 관심 있으면 댓글이나 DM 주세요!",
+    author: { name: "나" },
+    isMine: true,
+    isPinned: false,
+    createdAt: "2026-07-11T04:00:00.000Z",
+    images: [{ src: mockImage("#f59e0b", "#fbbf24"), alt: "coding-club-recruit.png" }],
+    reactionCount: 3,
+    topReactions: ["👍"],
+    comments: [],
+  },
 ]

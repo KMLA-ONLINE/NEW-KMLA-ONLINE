@@ -1,20 +1,13 @@
-import { MoreHorizontalIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
+import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
-import { Button } from "~/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu"
 import type { GroupPost } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
@@ -51,23 +44,7 @@ export function GroupPostCard({
           </div>
           <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              aria-label="게시물 옵션"
-            >
-              <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>숨기기</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">신고하기</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <GroupPostMenu isMine={post.isMine} editTo={`posts/${post.pubId}/edit`} />
       </header>
 
       <div className="px-4">

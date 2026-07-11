@@ -1,4 +1,4 @@
-import { MoreHorizontalIcon, XIcon } from "lucide-react"
+import { XIcon } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
@@ -6,6 +6,7 @@ import { GroupCommentList } from "~/components/group/group-comment-list"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
+import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -70,14 +71,7 @@ export default function GroupPostDetailPage() {
                       className="text-muted-foreground text-xs"
                     />
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="게시물 옵션"
-                  >
-                    <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-                  </Button>
+                  <GroupPostMenu isMine={post.isMine} editTo="edit" />
                 </header>
 
                 <div>
