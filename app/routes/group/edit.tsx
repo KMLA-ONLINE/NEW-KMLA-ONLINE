@@ -85,33 +85,38 @@ export default function GroupEditPostPage() {
         </DialogHeader>
 
         {post ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-            <div className="flex items-center gap-2">
-              <Avatar>
-                <AvatarFallback>나</AvatarFallback>
-              </Avatar>
-              <div className="text-sm leading-tight">
-                <p className="font-semibold">나</p>
-                <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
+          <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+              <div className="flex items-center gap-2">
+                <Avatar>
+                  <AvatarFallback>나</AvatarFallback>
+                </Avatar>
+                <div className="text-sm leading-tight">
+                  <p className="font-semibold">나</p>
+                  <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
+                </div>
               </div>
+
+              <input
+                type="text"
+                defaultValue={post.title}
+                placeholder="제목"
+                className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
+              />
+              <textarea
+                defaultValue={post.content}
+                placeholder="내용을 입력하세요…"
+                className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
+              />
+
+              <GroupAttachmentPreview images={previewImages} files={previewFiles} />
             </div>
 
-            <input
-              type="text"
-              defaultValue={post.title}
-              placeholder="제목"
-              className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
-            />
-            <textarea
-              defaultValue={post.content}
-              placeholder="내용을 입력하세요…"
-              className="placeholder:text-muted-foreground min-h-40 resize-none border-0 bg-transparent p-0 text-base outline-none"
-            />
-
-            <GroupAttachmentPreview images={previewImages} files={previewFiles} />
-
-            <GroupAttachmentButtons onAdd={addNew} className="mt-3 flex gap-2" />
-          </div>
+            {/* 사진/파일 첨부는 하단 고정 바에. 본문 textarea가 그 위 공간을 flex-1로 채운다. */}
+            <div className="border-t p-3">
+              <GroupAttachmentButtons onAdd={addNew} className="flex gap-2" />
+            </div>
+          </>
         ) : (
           <div className="text-muted-foreground flex flex-1 items-center justify-center p-10 text-sm">
             게시물을 찾을 수 없습니다.

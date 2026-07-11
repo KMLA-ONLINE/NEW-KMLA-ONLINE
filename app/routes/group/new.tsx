@@ -83,12 +83,15 @@ export default function GroupNewPostPage() {
           />
           <textarea
             placeholder="내용을 입력하세요…"
-            className="placeholder:text-muted-foreground min-h-40 resize-none border-0 bg-transparent p-0 text-base outline-none"
+            className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
           />
 
           <GroupAttachmentPreview images={previewImages} files={previewFiles} />
+        </div>
 
-          <GroupAttachmentButtons onAdd={add} className="mt-3 flex gap-2" />
+        {/* 사진/파일 첨부는 하단 고정 바에. 본문 textarea가 그 위 공간을 flex-1로 채운다. */}
+        <div className="border-t p-3">
+          <GroupAttachmentButtons onAdd={add} className="flex gap-2" />
         </div>
 
         {isDragging ? <FileDropOverlay /> : null}
