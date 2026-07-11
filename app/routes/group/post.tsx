@@ -1,5 +1,5 @@
 import { XIcon } from "lucide-react"
-import { useNavigate, useParams } from "react-router"
+import { useParams } from "react-router"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupCommentList } from "~/components/group/group-comment-list"
@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
+import { useModalClose } from "~/hooks/use-modal-close"
 import { mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
@@ -25,8 +26,7 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const navigate = useNavigate()
-  const close = () => navigate("..")
+  const close = useModalClose()
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
   const post = mockGroupPosts.find((item) => item.pubId === postId)
   const authorName = post?.author?.name ?? "익명"

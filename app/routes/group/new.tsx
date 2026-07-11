@@ -1,9 +1,9 @@
 import { XIcon } from "lucide-react"
-import { useNavigate } from "react-router"
 
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
+import { useModalClose } from "~/hooks/use-modal-close"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
@@ -18,9 +18,8 @@ import { mockGroup } from "~/lib/group/mock-data"
 // /groups/:pubId/new. 데스크톱은 모달, 모바일은 풀스크린(같은 Dialog를 반응형으로).
 // 부모 group 라우트의 <Outlet/>에 얹혀 그 위에 뜬다. 저장은 백엔드 붙일 때.
 export default function GroupNewPostPage() {
-  const navigate = useNavigate()
-  // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 그룹으로 되돌아간다.
-  const close = () => navigate("..")
+  // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 히스토리를 pop해 그룹으로 돌아간다.
+  const close = useModalClose()
 
   // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부만 로컬 상태. 저장은 백엔드 붙일 때.
   const { attachments, add, remove } = useFileAttachments()

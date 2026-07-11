@@ -1,10 +1,11 @@
 import { XIcon } from "lucide-react"
 import { useState } from "react"
-import { useNavigate, useParams } from "react-router"
+import { useParams } from "react-router"
 
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
+import { useModalClose } from "~/hooks/use-modal-close"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
@@ -20,9 +21,8 @@ import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
 // 제목/본문은 uncontrolled(defaultValue)라 타이핑엔 리렌더 없음. 저장은 백엔드 붙일 때.
 export default function GroupEditPostPage() {
   const { postId } = useParams()
-  const navigate = useNavigate()
-  // 닫으면 한 단계 위(게시물 상세)로 돌아간다.
-  const close = () => navigate("..")
+  // 닫으면 히스토리를 pop한다(뒤로가기로 수정 화면이 되살아나지 않게). 딥링크면 게시물 상세로.
+  const close = useModalClose()
   const post = mockGroupPosts.find((item) => item.pubId === postId)
 
   // 기존 첨부는 삭제 가능하도록 로컬 상태로, 새로 고른 파일은 훅이 관리한다.
