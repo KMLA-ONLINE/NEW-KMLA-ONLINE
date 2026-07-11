@@ -126,6 +126,33 @@ export function ImageViewer({
   const [isDragging, setIsDragging] = useState(false)
   const [renderedOpenImageId, setRenderedOpenImageId] = useState<string | null>(null)
 
+  // Desktop: arrow keys page through. A window listener rather than the
+  // Content's onKeyDown, so it fires regardless of what holds focus -- including
+  // when the viewer opens on top of another dialog and focus never lands here.
+  useEffect(() => {
+    if (openImageId === null) {
+      return
+    }
+
+    const handleArrowKey = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return
+      }
+
+      event.preventDefault()
+      offsetRef.current = 0
+      setOffset(0)
+      setStoredIndex((current) => {
+        const clamped = Math.max(0, Math.min(current, images.length - 1))
+        const next = event.key === "ArrowLeft" ? clamped - 1 : clamped + 1
+        return Math.max(0, Math.min(next, images.length - 1))
+      })
+    }
+
+    window.addEventListener("keydown", handleArrowKey)
+    return () => window.removeEventListener("keydown", handleArrowKey)
+  }, [openImageId, images.length])
+
   // A fresh open: jump to the image it was opened on. Nothing else moves the
   // index from the outside. `offsetRef` is left alone -- it only carries a value
   // between pointerdown and pointerup, and pointerdown seeds it.
@@ -297,15 +324,6 @@ export function ImageViewer({
         <DialogPrimitive.Content
           aria-describedby={undefined}
           className="data-open:animate-in data-open:fade-in-0 fixed inset-0 z-50 flex flex-col duration-150 focus:outline-none"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") {
-              goTo(index - 1)
-            }
-
-            if (event.key === "ArrowRight") {
-              goTo(index + 1)
-            }
-          }}
         >
           <DialogPrimitive.Title className="sr-only">{activeImage.name}</DialogPrimitive.Title>
 
