@@ -172,21 +172,40 @@ body {
     }
   }
 
-  .messenger-scrollbar {
-    scrollbar-color: oklch(0.708 0 0) white;
+  /* The thin pill-thumb scrollbar that used to be messenger-only, now global.
+     Track and thumb border are transparent (background-clip keeps the 2px inset)
+     so it reads the same in light and dark instead of the old hard-coded white.
+     .messenger-scrollbar stays on the messenger panes -- message-bubble finds its
+     scroll container with closest(".messenger-scrollbar") -- but its look now
+     comes from these global rules. */
+  * {
+    scrollbar-color: oklch(0.708 0 0) transparent;
   }
 
-  .messenger-scrollbar::-webkit-scrollbar {
+  *::-webkit-scrollbar {
     width: 10px;
+    height: 10px;
   }
 
-  .messenger-scrollbar::-webkit-scrollbar-track {
-    background: white;
+  *::-webkit-scrollbar-track {
+    background: transparent;
   }
 
-  .messenger-scrollbar::-webkit-scrollbar-thumb {
+  *::-webkit-scrollbar-thumb {
     background: oklch(0.708 0 0);
-    border: 2px solid white;
+    border: 2px solid transparent;
     border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  /* Opt-outs keep hiding their scrollbar (sidebar, image thumbnail strip). */
+  .no-scrollbar,
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
