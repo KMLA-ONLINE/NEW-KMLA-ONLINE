@@ -51,6 +51,11 @@ export function GroupPostCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{authorName}</span>
+            {post.category ? (
+              <Badge variant="secondary" className="shrink-0">
+                {post.category.name}
+              </Badge>
+            ) : null}
             {post.isPinned ? (
               <Badge variant="secondary" className="shrink-0">
                 고정
@@ -63,11 +68,6 @@ export function GroupPostCard({
       </header>
 
       <div className="px-4">
-        {post.category ? (
-          <Badge variant="secondary" className="mb-2">
-            {post.category.name}
-          </Badge>
-        ) : null}
         <p className="mb-2 text-xl font-semibold">
           <Link to={`posts/${post.pubId}`} className="hover:underline">
             {post.title}

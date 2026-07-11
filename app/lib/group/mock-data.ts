@@ -314,6 +314,20 @@ export const mockGroupPosts: GroupPost[] = [
       },
     ],
   },
+  {
+    id: 10,
+    pubId: "a1f0c3e2-0010-4aaa-9aaa-000000000010",
+    category: null,
+    title: "분실물 찾아가세요 (검은색 우산)",
+    content: "3층 복도에서 검은색 장우산 주웠어요. 학생회실로 오시면 돌려드릴게요.",
+    author: { name: "정하늘" },
+    isPinned: false,
+    createdAt: "2026-07-08T04:00:00.000Z",
+    images: [],
+    reactionCount: 2,
+    topReactions: ["👍"],
+    comments: [],
+  },
 ]
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
