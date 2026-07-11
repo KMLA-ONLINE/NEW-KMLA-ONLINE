@@ -31,10 +31,12 @@ export function GroupPostCard({
     if (node) setClampable(node.scrollHeight > node.clientHeight + 1)
   }, [])
 
-  // 본문을 눌러도 "더 보기/접기"와 똑같이 토글한다. 단 텍스트를 드래그해 선택 중이면
-  // 무시해서 본문을 긁다가 접히는 오작동을 막고, 접거나 펼칠 게 있을 때만 반응한다.
+  // 터치 기기(핸드폰·패드)에서만 본문을 눌러도 "더 보기/접기"가 토글되게 한다. 데스크톱
+  // (마우스)은 링크를 직접 누르게 두어 본문 클릭이 방해되지 않게 한다. 텍스트를 드래그해
+  // 선택 중이면 무시해 긁다가 접히는 오작동을 막고, 접거나 펼칠 게 있을 때만 반응한다.
   const toggleFromContent = () => {
     if (!clampable && !expanded) return
+    if (!window.matchMedia("(pointer: coarse)").matches) return
     const selection = window.getSelection()
     if (selection && !selection.isCollapsed) return
     setExpanded((value) => !value)
@@ -72,7 +74,7 @@ export function GroupPostCard({
           className={cn(
             "mt-1 text-sm leading-6 whitespace-pre-line",
             !expanded && "line-clamp-3",
-            (clampable || expanded) && "cursor-pointer"
+            (clampable || expanded) && "pointer-coarse:cursor-pointer"
           )}
         >
           {post.content}
