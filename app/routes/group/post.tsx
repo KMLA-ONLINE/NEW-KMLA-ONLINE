@@ -1,6 +1,7 @@
-import { MoreHorizontalIcon, SendIcon, XIcon } from "lucide-react"
+import { MoreHorizontalIcon, XIcon } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 
+import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { RelativeTime } from "~/components/relative-time"
@@ -30,7 +31,7 @@ export default function GroupPostDetailPage() {
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-xl"
+        className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-2xl"
       >
         <DialogHeader className="relative flex-row items-center justify-center border-b p-3">
           <DialogTitle className="text-base">
@@ -132,19 +133,7 @@ export default function GroupPostDetailPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 border-t p-3">
-          <Avatar>
-            <AvatarFallback>나</AvatarFallback>
-          </Avatar>
-          <input
-            type="text"
-            placeholder="댓글을 입력하세요…"
-            className="bg-muted placeholder:text-muted-foreground min-w-0 flex-1 rounded-full px-4 py-2 text-sm outline-none"
-          />
-          <Button variant="ghost" size="icon-sm" className="text-primary" aria-label="댓글 게시">
-            <SendIcon />
-          </Button>
-        </div>
+        <GroupCommentComposer />
       </DialogContent>
     </Dialog>
   )
