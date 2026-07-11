@@ -38,7 +38,7 @@ import type {
 } from "~/lib/messenger/types"
 
 export const handle = {
-  mobileContentPadding: "none",
+  mobileScroll: "self",
 }
 
 function getRoomSummary(room: Room): RoomSummary {
