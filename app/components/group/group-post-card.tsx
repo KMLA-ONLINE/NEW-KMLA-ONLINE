@@ -1,7 +1,8 @@
-import { MessageCircleIcon, MoreHorizontalIcon, SendIcon, ThumbsUpIcon } from "lucide-react"
+import { MessageCircleIcon, MoreHorizontalIcon, SendIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
+import { GroupReactionButton } from "~/components/group/group-reaction-button"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -13,11 +14,18 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import type { GroupPost } from "~/lib/group/types"
+import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
 // 페북식 "카드" 렌즈: 아바타 헤더·제목·본문(3줄 클램프 + 더 보기)·이미지 그리드,
 // 그리고 좋아요/댓글/공유를 아이콘+개수로 왼쪽에, 반응 요약 이모지를 오른쪽에.
-export function GroupPostCard({ post }: { post: GroupPost }) {
+export function GroupPostCard({
+  post,
+  reactionTypes,
+}: {
+  post: GroupPost
+  reactionTypes: ReactionType[]
+}) {
   const authorName = post.author?.name ?? "익명"
   const [expanded, setExpanded] = useState(false)
   const [clampable, setClampable] = useState(false)
@@ -86,13 +94,7 @@ export function GroupPostCard({ post }: { post: GroupPost }) {
 
       <div className="mt-1 flex items-center justify-between px-2 py-1">
         <div className="text-muted-foreground flex items-center">
-          <button
-            type="button"
-            className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
-          >
-            <ThumbsUpIcon className="size-4.5" aria-hidden="true" />
-            {post.reactionCount > 0 ? post.reactionCount : null}
-          </button>
+          <GroupReactionButton count={post.reactionCount} reactionTypes={reactionTypes} />
           <button
             type="button"
             className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"

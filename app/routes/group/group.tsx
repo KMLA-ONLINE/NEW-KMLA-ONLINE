@@ -6,6 +6,7 @@ import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { PostViewToggle } from "~/components/group/post-view-toggle"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
+import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
@@ -62,7 +63,11 @@ export default function GroupPage() {
             <PostViewToggle value={viewMode} onChange={setViewMode} />
           </div>
 
-          <GroupPostFeed posts={mockGroupPosts} viewMode={viewMode} />
+          <GroupPostFeed
+            posts={mockGroupPosts}
+            viewMode={viewMode}
+            reactionTypes={PLACEHOLDER_REACTION_TYPES}
+          />
         </div>
 
         <aside className="hidden lg:block">
