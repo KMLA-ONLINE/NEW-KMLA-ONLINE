@@ -53,6 +53,8 @@ export type GroupComment = {
   parentId: number | null
   /** null이면 익명 댓글(is_anonymous). */
   author: GroupPostAuthor | null
+  /** 내가 쓴 댓글인지(author_id === 현재 프로필). 수정/삭제 메뉴 노출용. */
+  isMine?: boolean
   content: string
   createdAt: string
 }

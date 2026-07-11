@@ -61,8 +61,9 @@ export const mockGroupPosts: GroupPost[] = [
       {
         id: 3,
         parentId: null,
-        author: { name: "박서연" },
-        content: "좋은 기획이네요 👍",
+        author: { name: "나" },
+        isMine: true,
+        content: "저도 참여하고 싶어요! 방금 신청했습니다.",
         createdAt: "2026-07-11T07:00:00.000Z",
       },
     ],

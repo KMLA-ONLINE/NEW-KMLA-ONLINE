@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
+import { cn } from "~/lib/utils"
 
 const MAX_HEIGHT = 120
 
@@ -16,21 +17,33 @@ function resize(element: HTMLTextAreaElement) {
   element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? "auto" : "hidden"
 }
 
-// 로컬 상태라 타이핑이 상세 페이지 전체를 리렌더하지 않는다. 저장은 백엔드 붙일 때 --
+// 로컬 상태라 타이핑이 상세 페이지 전체를 리렌더하지 않는다. 하단 댓글 입력에도, 각
+// 댓글의 인라인 답글에도 쓴다(className으로 프레임만 바꿈). 저장은 백엔드 붙일 때 --
 // 지금은 Enter로 전송하면 비우기만 한다(Shift+Enter는 줄바꿈).
-export function GroupCommentComposer() {
+export function GroupCommentComposer({
+  placeholder = "댓글을 입력하세요…",
+  autoFocus = false,
+  onSubmit,
+  className = "border-t p-3",
+}: {
+  placeholder?: string
+  autoFocus?: boolean
+  onSubmit?: (text: string) => void
+  className?: string
+}) {
   const [draft, setDraft] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const canSend = draft.trim().length > 0
 
   const send = () => {
     if (!canSend) return
+    onSubmit?.(draft)
     setDraft("")
     if (textareaRef.current) resize(textareaRef.current)
   }
 
   return (
-    <div className="flex items-end gap-2 border-t p-3">
+    <div className={cn("flex items-end gap-2", className)}>
       <Avatar>
         <AvatarFallback>나</AvatarFallback>
       </Avatar>
@@ -38,7 +51,8 @@ export function GroupCommentComposer() {
         ref={textareaRef}
         value={draft}
         rows={1}
-        placeholder="댓글을 입력하세요…"
+        autoFocus={autoFocus}
+        placeholder={placeholder}
         className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden rounded-3xl px-4 py-2 text-sm leading-5 outline-none"
         onChange={(event) => {
           setDraft(event.target.value)

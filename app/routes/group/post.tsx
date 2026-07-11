@@ -33,7 +33,7 @@ export default function GroupPostDetailPage() {
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-2xl"
+        className="flex h-[90svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-2xl"
       >
         <DialogHeader className="relative flex-row items-center justify-center border-b p-3">
           <DialogTitle className="text-base">
@@ -99,7 +99,10 @@ export default function GroupPostDetailPage() {
 
             <section className="border-t p-4">
               {post.comments.length > 0 ? (
-                <GroupCommentList comments={post.comments} />
+                <GroupCommentList
+                  comments={post.comments}
+                  reactionTypes={PLACEHOLDER_REACTION_TYPES}
+                />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
                   <p className="text-foreground font-semibold">아직 댓글이 없습니다</p>
