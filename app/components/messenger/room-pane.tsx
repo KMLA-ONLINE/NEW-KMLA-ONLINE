@@ -24,6 +24,7 @@ export function RoomPane({
   onBack,
   onOpenDetail,
   onOpenPinnedMessages,
+  onAttachImage,
   onAttachFile,
   onClearReply,
   onReply,
@@ -41,6 +42,7 @@ export function RoomPane({
   onBack?: () => void
   onOpenDetail: () => void
   onOpenPinnedMessages: () => void
+  onAttachImage: () => void
   onAttachFile: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
@@ -251,6 +253,7 @@ export function RoomPane({
 
         <MessageComposer
           replyTo={replyTo}
+          onAttachImage={onAttachImage}
           onAttachFile={onAttachFile}
           onClearReply={onClearReply}
           onSend={onSend}

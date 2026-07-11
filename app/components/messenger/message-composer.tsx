@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { PaperclipIcon, SendIcon, SmileIcon, XIcon } from "lucide-react"
+import { ImageIcon, PaperclipIcon, SendIcon, SmileIcon, XIcon } from "lucide-react"
 
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
@@ -17,11 +17,13 @@ function resizeTextarea(element: HTMLTextAreaElement) {
 
 export function MessageComposer({
   replyTo,
+  onAttachImage,
   onAttachFile,
   onClearReply,
   onSend,
 }: {
   replyTo: ReplyPreview | null
+  onAttachImage: () => void
   onAttachFile: () => void
   onClearReply: () => void
   onSend: (draft: string) => boolean
@@ -63,10 +65,20 @@ export function MessageComposer({
               : "max-sm:max-w-32 max-sm:opacity-100"
           )}
         >
+          {/* 사진(갤러리)과 파일(브라우저)을 분리 -- 모바일에서 각자 맞는 피커가 열린다. */}
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Add attachment"
+            aria-label="사진 첨부"
+            disabled={!canAttach}
+            onClick={onAttachImage}
+          >
+            <ImageIcon className="size-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="파일 첨부"
             disabled={!canAttach}
             onClick={onAttachFile}
           >

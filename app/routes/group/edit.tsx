@@ -1,7 +1,8 @@
-import { PaperclipIcon, XIcon } from "lucide-react"
-import { useRef, useState } from "react"
+import { XIcon } from "lucide-react"
+import { useState } from "react"
 import { useNavigate, useParams } from "react-router"
 
+import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
@@ -28,7 +29,6 @@ export default function GroupEditPostPage() {
   const [images, setImages] = useState(post?.images ?? [])
   const [files, setFiles] = useState(post?.files ?? [])
   const { attachments: newAttachments, add: addNew, remove: removeNew } = useFileAttachments()
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const previewImages = [
     ...images.map((image, index) => ({
@@ -106,27 +106,7 @@ export default function GroupEditPostPage() {
 
             <GroupAttachmentPreview images={previewImages} files={previewFiles} />
 
-            <div className="mt-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(event) => {
-                  addNew(event.target.files)
-                  event.target.value = ""
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <PaperclipIcon className="size-4" aria-hidden="true" />
-                파일 첨부
-              </Button>
-            </div>
+            <GroupAttachmentButtons onAdd={addNew} className="mt-3 flex gap-2" />
           </div>
         ) : (
           <div className="text-muted-foreground flex flex-1 items-center justify-center p-10 text-sm">

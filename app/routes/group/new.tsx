@@ -1,7 +1,7 @@
-import { PaperclipIcon, XIcon } from "lucide-react"
-import { useRef } from "react"
+import { XIcon } from "lucide-react"
 import { useNavigate } from "react-router"
 
+import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
@@ -24,7 +24,6 @@ export default function GroupNewPostPage() {
 
   // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부만 로컬 상태. 저장은 백엔드 붙일 때.
   const { attachments, add, remove } = useFileAttachments()
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const previewImages = attachments.flatMap((item, index) =>
     item.url ? [{ key: String(index), src: item.url, onRemove: () => remove(index) }] : []
@@ -86,27 +85,7 @@ export default function GroupNewPostPage() {
 
           <GroupAttachmentPreview images={previewImages} files={previewFiles} />
 
-          <div className="mt-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                add(event.target.files)
-                event.target.value = ""
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <PaperclipIcon className="size-4" aria-hidden="true" />
-              파일 첨부
-            </Button>
-          </div>
+          <GroupAttachmentButtons onAdd={add} className="mt-3 flex gap-2" />
         </div>
       </DialogContent>
     </Dialog>

@@ -145,6 +145,7 @@ export default function MessengerPage() {
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
   const isMobile = useIsMobile()
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedRoomIdRef = useRef<string | null>(null)
   const objectUrlsRef = useRef<string[]>([])
@@ -189,6 +190,9 @@ export default function MessengerPage() {
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId
 
+    if (imageInputRef.current) {
+      imageInputRef.current.value = ""
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -428,6 +432,16 @@ export default function MessengerPage() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden md:min-h-[32rem] md:rounded-[1.75rem] md:border">
+      {/* 사진과 파일 첨부를 분리한다 -- accept="image/*"는 모바일에서 갤러리·카메라를,
+          일반 입력은 파일 브라우저를 연다. 선택 후 처리는 handleFileChange가 공통으로. */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        onChange={handleFileChange}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -461,6 +475,7 @@ export default function MessengerPage() {
               onBack={() => navigate("/messenger")}
               onOpenDetail={() => navigate(`/messenger/${selectedRoom.id}/details`)}
               onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
+              onAttachImage={() => imageInputRef.current?.click()}
               onAttachFile={() => fileInputRef.current?.click()}
               onClearReply={() => setReplyTo(null)}
               onReply={openReply}
@@ -563,6 +578,7 @@ export default function MessengerPage() {
                   )
                 }
                 onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
+                onAttachImage={() => imageInputRef.current?.click()}
                 onAttachFile={() => fileInputRef.current?.click()}
                 onClearReply={() => setReplyTo(null)}
                 onReply={openReply}
