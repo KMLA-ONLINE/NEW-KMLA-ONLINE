@@ -20,6 +20,24 @@ export type GroupPostAuthor = {
   name: string
 }
 
+/** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
+export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
+
+/** space_members 한 행 + 표시에 필요한 profiles 필드. */
+export type GroupMember = {
+  /** profiles.id */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  avatarUrl: string | null
+  role: GroupMemberRole
+  /** space_members.joined_at (ISO 8601). */
+  joinedAt: string
+  /** 현재 사용자 본인인지(표시 강조용). */
+  isMe?: boolean
+}
+
 /** post_attachments의 이미지 한 장. 서명 URL은 로더가 채운다. */
 export type GroupPostImage = {
   src: string

@@ -1,4 +1,4 @@
-import type { GroupPost, GroupSpace } from "~/lib/group/types"
+import type { GroupMember, GroupPost, GroupSpace } from "~/lib/group/types"
 
 // 실제 이미지 자산 없이 그리드를 보여주기 위한 그라디언트 SVG data-URI. 서명 URL을
 // 내려줄 로더가 붙으면 사라진다. alt는 스키마에 캡션 컬럼이 없어 file_name에서 온다.
@@ -282,5 +282,74 @@ export const mockGroupPosts: GroupPost[] = [
         createdAt: "2026-07-09T13:00:00.000Z",
       },
     ],
+  },
+]
+
+// space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
+// 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.
+export const mockGroupMembers: GroupMember[] = [
+  {
+    id: 101,
+    name: "김지원",
+    avatarUrl: null,
+    role: "owner",
+    joinedAt: "2025-03-02T00:00:00.000Z",
+  },
+  {
+    id: 102,
+    name: "이현우",
+    avatarUrl: null,
+    role: "admin",
+    joinedAt: "2025-03-05T00:00:00.000Z",
+  },
+  {
+    id: 103,
+    name: "박서연",
+    avatarUrl: null,
+    role: "admin",
+    joinedAt: "2025-04-10T00:00:00.000Z",
+  },
+  {
+    id: 104,
+    name: "정하늘",
+    avatarUrl: null,
+    role: "manager",
+    joinedAt: "2025-05-21T00:00:00.000Z",
+  },
+  {
+    id: 1,
+    name: "나",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2025-06-01T00:00:00.000Z",
+    isMe: true,
+  },
+  {
+    id: 105,
+    name: "이민서",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2025-06-15T00:00:00.000Z",
+  },
+  {
+    id: 106,
+    name: "김도윤",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2025-09-03T00:00:00.000Z",
+  },
+  {
+    id: 107,
+    name: "최유진",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-01-12T00:00:00.000Z",
+  },
+  {
+    id: 108,
+    name: "한지호",
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-03-28T00:00:00.000Z",
   },
 ]

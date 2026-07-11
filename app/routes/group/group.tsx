@@ -1,10 +1,12 @@
 import { Globe2Icon, LandmarkIcon, LockIcon, PenSquareIcon, UsersIcon } from "lucide-react"
+import { useState } from "react"
 import { Link, Outlet } from "react-router"
 
 import { GroupHeader } from "~/components/group/group-header"
+import { GroupMemberList } from "~/components/group/group-member-list"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
-import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
+import { mockGroup, mockGroupMembers, mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -12,18 +14,29 @@ import { cn } from "~/lib/utils"
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
 export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
 
-const TABS = [
-  { label: "게시물", active: true },
-  { label: "멤버", active: false },
-  { label: "정보", active: false },
+type GroupTab = "posts" | "members"
+
+const TABS: { id: GroupTab; label: string }[] = [
+  { id: "posts", label: "게시물" },
+  { id: "members", label: "멤버" },
 ]
 
-// 라우트는 /groups/:pubId. 슬러그로 space와 글을 읽는 로더는 백엔드 붙일 때 추가한다.
-// 멤버/정보 탭은 아직 표시만(별도 라우트 없음).
+// 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
+// 문자열이라 사전식 비교가 곧 시간순이다. 정렬 옵션은 최신순 하나뿐이라 드롭다운은 없다.
+function sortForFeed(posts: typeof mockGroupPosts) {
+  return [...posts].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
+    return b.createdAt.localeCompare(a.createdAt)
+  })
+}
+
+// 라우트는 /groups/:pubId. 슬러그로 space·글·멤버를 읽는 로더는 백엔드 붙일 때 추가한다.
 export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
+  const [tab, setTab] = useState<GroupTab>("posts")
   const isPrivate = mockGroup.joinPolicy === "invite_only"
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
+  const feedPosts = sortForFeed(mockGroupPosts)
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -35,40 +48,53 @@ export default function GroupPage() {
       />
 
       <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
-        {TABS.map((tab) => (
+        {TABS.map((item) => (
           <button
-            key={tab.label}
+            key={item.id}
             type="button"
+            onClick={() => setTab(item.id)}
+            aria-current={tab === item.id ? "page" : undefined}
             className={cn(
               "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-              tab.active
+              tab === item.id
                 ? "border-foreground text-foreground"
                 : "text-muted-foreground hover:text-foreground border-transparent"
             )}
           >
-            {tab.label}
+            {item.label}
           </button>
         ))}
       </nav>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-w-0 flex-col gap-4">
-          <Link
-            to="new"
-            className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
-          >
-            <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />
-            <span className="text-muted-foreground text-sm">
-              {mockGroup.name}에 글을 남겨보세요…
-            </span>
-            <PenSquareIcon className="text-muted-foreground ml-auto size-4" aria-hidden="true" />
-          </Link>
+          {tab === "posts" ? (
+            <>
+              <Link
+                to="new"
+                className="hover:bg-muted/60 bg-card flex items-center gap-3 rounded-none px-4 py-3 text-left transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
+              >
+                <div className="bg-muted size-8 shrink-0 rounded-full" aria-hidden="true" />
+                <span className="text-muted-foreground text-sm">
+                  {mockGroup.name}에 글을 남겨보세요…
+                </span>
+                <PenSquareIcon
+                  className="text-muted-foreground ml-auto size-4"
+                  aria-hidden="true"
+                />
+              </Link>
 
-          <GroupPostFeed
-            posts={mockGroupPosts}
-            viewMode={viewMode}
-            reactionTypes={PLACEHOLDER_REACTION_TYPES}
-          />
+              <GroupPostFeed
+                posts={feedPosts}
+                viewMode={viewMode}
+                reactionTypes={PLACEHOLDER_REACTION_TYPES}
+              />
+            </>
+          ) : (
+            <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
+              <GroupMemberList members={mockGroupMembers} />
+            </div>
+          )}
         </div>
 
         <aside className="hidden lg:block">
