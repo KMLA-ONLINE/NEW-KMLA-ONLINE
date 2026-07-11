@@ -323,6 +323,10 @@ export function ImageViewer({
         <DialogPrimitive.Overlay className="data-open:animate-in data-open:fade-in-0 fixed inset-0 z-50 bg-black/95 duration-150" />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          // Don't auto-focus a control on open: it parks a focus ring on the
+          // close/download button. Arrows run off a window listener and Esc off
+          // Radix, so nothing here needs focus.
+          onOpenAutoFocus={(event) => event.preventDefault()}
           className="data-open:animate-in data-open:fade-in-0 fixed inset-0 z-50 flex flex-col duration-150 focus:outline-none"
         >
           <DialogPrimitive.Title className="sr-only">{activeImage.name}</DialogPrimitive.Title>
