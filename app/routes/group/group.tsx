@@ -47,7 +47,16 @@ export default function GroupPage() {
   const [tab, setTab] = useState<GroupTab>("posts")
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [searchParams] = useSearchParams()
-  const isPrivate = mockGroup.joinPolicy === "invite_only"
+
+  // 가입 정책·멤버·가입 요청은 서로 영향을 줘서(정책 전환 시 대기 요청 정리) 여기서 함께 들고
+  // 있는다. 저장(백엔드)만 미루고 mock 동작은 실제처럼 반영한다.
+  const [joinPolicy, setJoinPolicy] = useState(mockGroup.joinPolicy)
+  const [members, setMembers] = useState(mockGroupMembers)
+  const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
+  const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
+  const liveGroup = { ...mockGroup, joinPolicy, memberCount }
+
+  const isPrivate = joinPolicy === "invite_only"
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
   // 카테고리 필터(null=전체) 적용 후 정렬. 필터가 정렬보다 먼저라 고정 글도 카테고리에 걸린다.
   const feedPosts = sortForFeed(
@@ -59,14 +68,44 @@ export default function GroupPage() {
   const viewerRole = searchParams.get("as") === "admin" ? "admin" : mockGroup.viewerRole
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
-  const showJoinRequests = canManage && mockGroup.joinPolicy === "request"
+  const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 관리자만 본다.
   const visibleTabs = TABS.filter((item) => !item.manageOnly || canManage)
+
+  // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
+  // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
+  const approveRequests = (list: typeof pendingRequests) => {
+    if (list.length === 0) return
+    const ids = new Set(list.map((request) => request.id))
+    setMembers((prev) => [
+      ...prev,
+      ...list.map((request) => ({
+        id: request.id,
+        name: request.name,
+        avatarUrl: request.avatarUrl,
+        role: "member" as const,
+        joinedAt: new Date().toISOString(),
+      })),
+    ])
+    setMemberCount((count) => count + list.length)
+    setPendingRequests((prev) => prev.filter((request) => !ids.has(request.id)))
+  }
+  const rejectRequests = (list: typeof pendingRequests) => {
+    const ids = new Set(list.map((request) => request.id))
+    setPendingRequests((prev) => prev.filter((request) => !ids.has(request.id)))
+  }
+
+  // 정책 전환 시 대기 요청 정리: 비공개=전부 거절, 공개(즉시가입)=전부 수락. request 유지는 그대로.
+  const changeJoinPolicy = (next: typeof joinPolicy) => {
+    if (next === "public") approveRequests(pendingRequests)
+    else if (next === "invite_only") rejectRequests(pendingRequests)
+    setJoinPolicy(next)
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl">
       <GroupHeader
-        group={mockGroup}
+        group={liveGroup}
         className="border-0 sm:rounded-xl sm:border"
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -89,8 +128,8 @@ export default function GroupPage() {
           >
             {item.label}
             {/* 관리자는 멤버 탭에 대기 중인 가입 요청 수를 배지로 봐서 알아챈다. */}
-            {item.id === "members" && showJoinRequests && mockJoinRequests.length > 0 ? (
-              <Badge variant="secondary">{mockJoinRequests.length}</Badge>
+            {item.id === "members" && showJoinRequests && pendingRequests.length > 0 ? (
+              <Badge variant="secondary">{pendingRequests.length}</Badge>
             ) : null}
           </button>
         ))}
@@ -130,13 +169,24 @@ export default function GroupPage() {
             </>
           ) : tab === "members" ? (
             <div className="flex flex-col gap-4">
-              {showJoinRequests ? <GroupJoinRequests requests={mockJoinRequests} /> : null}
+              {showJoinRequests ? (
+                <GroupJoinRequests
+                  requests={pendingRequests}
+                  onApprove={(request) => approveRequests([request])}
+                  onReject={(request) => rejectRequests([request])}
+                />
+              ) : null}
               <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
-                <GroupMemberList members={mockGroupMembers} />
+                <GroupMemberList members={members} />
               </div>
             </div>
           ) : (
-            <GroupSettings group={mockGroup} categories={mockGroupCategories} />
+            <GroupSettings
+              group={liveGroup}
+              categories={mockGroupCategories}
+              joinPolicy={joinPolicy}
+              onJoinPolicyChange={changeJoinPolicy}
+            />
           )}
         </div>
 
@@ -154,7 +204,7 @@ export default function GroupPage() {
             </div>
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <UsersIcon className="size-4" aria-hidden="true" />
-              멤버 {mockGroup.memberCount}명
+              멤버 {memberCount}명
             </div>
           </div>
         </aside>

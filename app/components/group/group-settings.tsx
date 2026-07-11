@@ -125,8 +125,13 @@ function BasicInfoSection({ group }: { group: GroupSpace }) {
   )
 }
 
-function JoinPolicySection({ group }: { group: GroupSpace }) {
-  const [policy, setPolicy] = useState(group.joinPolicy)
+function JoinPolicySection({
+  policy,
+  onChange,
+}: {
+  policy: GroupSpace["joinPolicy"]
+  onChange: (next: GroupSpace["joinPolicy"]) => void
+}) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(policy)
   const current = JOIN_POLICY_OPTIONS.find((option) => option.value === policy)
@@ -136,12 +141,8 @@ function JoinPolicySection({ group }: { group: GroupSpace }) {
     setEditing(true)
   }
   const save = () => {
-    // TODO(backend): spaces엔 아직 update 경로가 없다. 매니저 게이트 RPC(set_join_policy 등)로
-    // 정책을 바꾸고, request에서 벗어날 때 대기 중인 space_join_requests를 정리한다:
-    //   - invite_only(비공개)로 전환 → 대기 요청 전부 거절(delete)
-    //   - public(공개·즉시가입)으로 전환 → 대기 요청 전부 수락(멤버 승격 + member_count)
-    // request 유지면 그대로 둔다. 지금은 로컬 상태만 갱신(mock).
-    setPolicy(draft)
+    // 전환 side effect(request에서 벗어날 때 대기 요청 정리 -- 비공개=거절/공개=수락)는 부모가 처리.
+    onChange(draft)
     setEditing(false)
   }
 
@@ -328,14 +329,18 @@ function CategorySection({ initial }: { initial: GroupCategory[] }) {
 export function GroupSettings({
   group,
   categories,
+  joinPolicy,
+  onJoinPolicyChange,
 }: {
   group: GroupSpace
   categories: GroupCategory[]
+  joinPolicy: GroupSpace["joinPolicy"]
+  onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
 }) {
   return (
     <div className="flex flex-col gap-4">
       <BasicInfoSection group={group} />
-      <JoinPolicySection group={group} />
+      <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
       <CategorySection initial={categories} />
     </div>
   )
