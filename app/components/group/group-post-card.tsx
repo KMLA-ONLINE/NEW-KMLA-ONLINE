@@ -71,7 +71,7 @@ export function GroupPostCard({
 
       <div className="px-4">
         <h3 className="font-semibold">
-          <Link to={`posts/${post.id}`} className="hover:underline">
+          <Link to={`posts/${post.pubId}`} className="hover:underline">
             {post.title}
           </Link>
         </h3>
@@ -102,7 +102,7 @@ export function GroupPostCard({
         commentCount={post.comments.length}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
-        commentHref={`posts/${post.id}`}
+        commentHref={`posts/${post.pubId}`}
         className="mt-1"
       />
     </article>

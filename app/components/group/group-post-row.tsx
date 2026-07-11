@@ -11,7 +11,7 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
 
   return (
     <Link
-      to={`posts/${post.id}`}
+      to={`posts/${post.pubId}`}
       className="hover:bg-muted/60 dark:hover:bg-muted/40 flex w-full flex-col gap-1 rounded-md px-3 py-2.5 text-left transition-colors"
     >
       <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { Globe2Icon, LockIcon, PenSquareIcon, UsersIcon } from "lucide-react"
+import { Globe2Icon, LandmarkIcon, LockIcon, PenSquareIcon, UsersIcon } from "lucide-react"
 import { Link, Outlet } from "react-router"
 
 import { GroupHeader } from "~/components/group/group-header"
@@ -74,6 +74,10 @@ export default function GroupPage() {
           <div className="bg-card sticky top-4 flex flex-col gap-3 rounded-xl border p-4">
             <h2 className="text-sm font-semibold">그룹 정보</h2>
             <p className="text-muted-foreground text-sm">{mockGroup.description}</p>
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+              <LandmarkIcon className="size-4" aria-hidden="true" />
+              {mockGroup.type === "group" ? "공식 그룹" : "비공식 그룹"}
+            </div>
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <PrivacyIcon className="size-4" aria-hidden="true" />
               {isPrivate ? "비공개" : "공개"}

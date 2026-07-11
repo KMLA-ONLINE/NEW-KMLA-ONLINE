@@ -6,6 +6,8 @@
 export type GroupSpace = {
   name: string
   description: string
+  /** spaces.space_type. group=공식, community=비공식. 이 화면은 둘 다 담는다. */
+  type: "group" | "community"
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
   joinPolicy: "public" | "request" | "invite_only"
@@ -26,6 +28,8 @@ export type GroupPostImage = {
 
 export type GroupPost = {
   id: number
+  /** posts.pub_id (uuid). 외부/공유용 식별자 -- 상세 URL은 id가 아니라 이걸로 주소한다. */
+  pubId: string
   title: string
   content: string
   /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
@@ -45,6 +49,8 @@ export type GroupPost = {
 
 export type GroupComment = {
   id: number
+  /** comments.parent_id. null이면 최상위, 값이 있으면 그 부모 댓글의 id (대댓글). */
+  parentId: number | null
   /** null이면 익명 댓글(is_anonymous). */
   author: GroupPostAuthor | null
   content: string

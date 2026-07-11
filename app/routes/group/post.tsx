@@ -2,6 +2,7 @@ import { MoreHorizontalIcon, XIcon } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
+import { GroupCommentList } from "~/components/group/group-comment-list"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { RelativeTime } from "~/components/relative-time"
@@ -24,7 +25,8 @@ export default function GroupPostDetailPage() {
   const { postId } = useParams()
   const navigate = useNavigate()
   const close = () => navigate("..")
-  const post = mockGroupPosts.find((item) => String(item.id) === postId)
+  // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
+  const post = mockGroupPosts.find((item) => item.pubId === postId)
   const authorName = post?.author?.name ?? "익명"
 
   return (
@@ -97,28 +99,7 @@ export default function GroupPostDetailPage() {
 
             <section className="border-t p-4">
               {post.comments.length > 0 ? (
-                <ul className="flex flex-col gap-3">
-                  {post.comments.map((comment) => {
-                    const name = comment.author?.name ?? "익명"
-                    return (
-                      <li key={comment.id} className="flex gap-2">
-                        <Avatar>
-                          <AvatarFallback>{name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <div className="bg-muted w-fit rounded-2xl px-3 py-2">
-                            <p className="text-xs font-semibold">{name}</p>
-                            <p className="text-sm">{comment.content}</p>
-                          </div>
-                          <RelativeTime
-                            value={comment.createdAt}
-                            className="text-muted-foreground mt-1 ml-3 block text-xs"
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                <GroupCommentList comments={post.comments} />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
                   <p className="text-foreground font-semibold">아직 댓글이 없습니다</p>
