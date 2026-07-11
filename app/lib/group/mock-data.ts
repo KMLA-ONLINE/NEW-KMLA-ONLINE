@@ -145,4 +145,43 @@ export const mockGroupPosts: GroupPost[] = [
     topReactions: ["👍", "❤️"],
     comments: [],
   },
+  {
+    id: 5,
+    pubId: "a1f0c3e2-0005-4aaa-9aaa-000000000005",
+    title: "3분기 학생회 정기회의 회의록 모음",
+    content: "지난 분기 정기회의 회의록과 예산 내역을 첨부합니다. 안건별로 나눠 올렸어요.",
+    author: { name: "이현우" },
+    isPinned: false,
+    createdAt: "2026-07-08T09:00:00.000Z",
+    images: [],
+    files: [
+      {
+        name: "7월_정기회의_회의록.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 312000,
+        url: "#",
+      },
+      {
+        name: "8월_정기회의_회의록.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 287000,
+        url: "#",
+      },
+      {
+        name: "9월_정기회의_회의록.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 356000,
+        url: "#",
+      },
+      {
+        name: "예산_집행_내역.xlsx",
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 45000,
+        url: "#",
+      },
+    ],
+    reactionCount: 6,
+    topReactions: ["👍"],
+    comments: [],
+  },
 ]
