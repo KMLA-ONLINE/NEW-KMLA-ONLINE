@@ -1,23 +1,44 @@
+import type { Ref } from "react"
+
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { GroupPostCard } from "~/components/group/group-post-card"
 import { GroupPostRow } from "~/components/group/group-post-row"
 import type { GroupPost } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 
-// 피드 끝 표시. 더 불러올 글이 없다는 걸 알려 목록이 잘린 게 아님을 분명히 한다.
-function FeedEnd() {
+// 피드 하단: 더 불러올 게 있으면 sentinel(스크롤이 닿으면 부모가 다음 페이지를 부른다),
+// 없으면 끝 표시로 목록이 잘린 게 아님을 알린다.
+function FeedFooter({
+  hasMore,
+  sentinelRef,
+}: {
+  hasMore: boolean
+  sentinelRef?: Ref<HTMLDivElement>
+}) {
+  if (hasMore) {
+    return (
+      <div ref={sentinelRef} className="text-muted-foreground py-6 text-center text-sm">
+        불러오는 중…
+      </div>
+    )
+  }
   return <p className="text-muted-foreground py-6 text-center text-sm">마지막 게시물입니다</p>
 }
 
-// 같은 글 목록을 두 렌즈로 렌더한다: 펼친 카드(페북) 또는 촘촘한 제목 행(레딧).
+// 같은 글 목록을 두 렌즈로 렌더한다: 펼친 카드(페북) 또는 촘촘한 제목 행(레딧). 페이지네이션은
+// 부모가 관리하고(posts는 이미 잘린 페이지), hasMore/sentinelRef로 무한 스크롤을 잇는다.
 export function GroupPostFeed({
   posts,
   viewMode,
   reactionTypes,
+  hasMore = false,
+  sentinelRef,
 }: {
   posts: GroupPost[]
   viewMode: PostViewMode
   reactionTypes: ReactionType[]
+  hasMore?: boolean
+  sentinelRef?: Ref<HTMLDivElement>
 }) {
   if (posts.length === 0) {
     return (
@@ -38,7 +59,7 @@ export function GroupPostFeed({
             </li>
           ))}
         </ul>
-        <FeedEnd />
+        <FeedFooter hasMore={hasMore} sentinelRef={sentinelRef} />
       </>
     )
   }
@@ -50,7 +71,7 @@ export function GroupPostFeed({
       {posts.map((post) => (
         <GroupPostCard key={post.id} post={post} reactionTypes={reactionTypes} />
       ))}
-      <FeedEnd />
+      <FeedFooter hasMore={hasMore} sentinelRef={sentinelRef} />
     </div>
   )
 }

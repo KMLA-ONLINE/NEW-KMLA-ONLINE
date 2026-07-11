@@ -2,7 +2,7 @@ import { useState } from "react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
-import { Button } from "~/components/ui/button"
+import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import type { GroupMember, GroupMemberRole } from "~/lib/group/types"
 
 // 일반 멤버는 한 번에 다 그리지 않고 페이지 단위로만 보여준다 -- 실제로는 로더가 space_
@@ -52,9 +52,14 @@ function MemberRow({ member }: { member: GroupMember }) {
 export function GroupMemberList({ members }: { members: GroupMember[] }) {
   const staff = members.filter((member) => member.role !== "member").sort(byRoleThenJoined)
   const regular = members.filter((member) => member.role === "member").sort(byRoleThenJoined)
-  // 운영진은 소수라 전부, 일반 멤버는 페이지 단위로만 노출한다.
+  // 운영진은 소수라 전부, 일반 멤버는 페이지 단위로만 노출하고 스크롤이 바닥에 닿으면 더 부른다.
   const [visibleCount, setVisibleCount] = useState(MEMBER_PAGE_SIZE)
   const shownRegular = regular.slice(0, visibleCount)
+  const hasMore = visibleCount < regular.length
+  const sentinelRef = useInfiniteScroll(
+    () => setVisibleCount((count) => count + MEMBER_PAGE_SIZE),
+    hasMore
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,14 +83,10 @@ export function GroupMemberList({ members }: { members: GroupMember[] }) {
             <MemberRow key={member.id} member={member} />
           ))}
         </ul>
-        {visibleCount < regular.length ? (
-          <Button
-            variant="ghost"
-            className="mt-2 w-full"
-            onClick={() => setVisibleCount((count) => count + MEMBER_PAGE_SIZE)}
-          >
-            더 보기
-          </Button>
+        {hasMore ? (
+          <div ref={sentinelRef} className="text-muted-foreground py-4 text-center text-sm">
+            불러오는 중…
+          </div>
         ) : null}
       </section>
     </div>

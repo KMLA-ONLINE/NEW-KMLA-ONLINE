@@ -9,6 +9,7 @@ import { GroupMemberList } from "~/components/group/group-member-list"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { GroupSettings } from "~/components/group/group-settings"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
+import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import {
   mockGroup,
   mockGroupCategories,
@@ -19,6 +20,9 @@ import {
 import { Badge } from "~/components/ui/badge"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
+
+// 피드도 한 번에 다 렌더하지 않고 페이지 단위로만(스크롤이 바닥에 닿으면 다음 페이지).
+const FEED_PAGE_SIZE = 6
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
@@ -46,7 +50,14 @@ export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
   const [tab, setTab] = useState<GroupTab>("posts")
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [feedVisible, setFeedVisible] = useState(FEED_PAGE_SIZE)
   const [searchParams] = useSearchParams()
+
+  // 카테고리 필터를 바꾸면 페이지를 처음부터 다시 센다.
+  const selectCategory = (id: number | null) => {
+    setCategoryId(id)
+    setFeedVisible(FEED_PAGE_SIZE)
+  }
 
   // 가입 정책·멤버·가입 요청은 서로 영향을 줘서(정책 전환 시 대기 요청 정리) 여기서 함께 들고
   // 있는다. 저장(백엔드)만 미루고 mock 동작은 실제처럼 반영한다.
@@ -61,6 +72,12 @@ export default function GroupPage() {
   // 카테고리 필터(null=전체) 적용 후 정렬. 필터가 정렬보다 먼저라 고정 글도 카테고리에 걸린다.
   const feedPosts = sortForFeed(
     mockGroupPosts.filter((post) => categoryId === null || post.category?.id === categoryId)
+  )
+  const visiblePosts = feedPosts.slice(0, feedVisible)
+  const feedHasMore = feedVisible < feedPosts.length
+  const feedSentinelRef = useInfiniteScroll(
+    () => setFeedVisible((count) => count + FEED_PAGE_SIZE),
+    feedHasMore
   )
 
   // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
@@ -156,15 +173,17 @@ export default function GroupPage() {
                   <GroupCategoryChips
                     categories={mockGroupCategories}
                     selected={categoryId}
-                    onSelect={setCategoryId}
+                    onSelect={selectCategory}
                   />
                 </div>
               ) : null}
 
               <GroupPostFeed
-                posts={feedPosts}
+                posts={visiblePosts}
                 viewMode={viewMode}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
+                hasMore={feedHasMore}
+                sentinelRef={feedSentinelRef}
               />
             </>
           ) : tab === "members" ? (
