@@ -1,7 +1,9 @@
-import { FileIcon, PaperclipIcon, XIcon } from "lucide-react"
-import { useRef, useState } from "react"
+import { PaperclipIcon, XIcon } from "lucide-react"
+import { useRef } from "react"
 import { useNavigate } from "react-router"
 
+import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
+import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
@@ -11,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { formatFileSize } from "~/lib/group/format"
 import { mockGroup } from "~/lib/group/mock-data"
 
 // /groups/:pubId/new. 데스크톱은 모달, 모바일은 풀스크린(같은 Dialog를 반응형으로).
@@ -21,10 +22,25 @@ export default function GroupNewPostPage() {
   // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 그룹으로 되돌아간다.
   const close = () => navigate("..")
 
-  // 첨부는 선택만 로컬 상태로 보관한다(제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음).
-  // 실제 업로드/저장은 백엔드 붙일 때.
-  const [attachments, setAttachments] = useState<File[]>([])
+  // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부만 로컬 상태. 저장은 백엔드 붙일 때.
+  const { attachments, add, remove } = useFileAttachments()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const previewImages = attachments.flatMap((item, index) =>
+    item.url ? [{ key: String(index), src: item.url, onRemove: () => remove(index) }] : []
+  )
+  const previewFiles = attachments.flatMap((item, index) =>
+    item.url
+      ? []
+      : [
+          {
+            key: String(index),
+            name: item.file.name,
+            sizeBytes: item.file.size,
+            onRemove: () => remove(index),
+          },
+        ]
+  )
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
@@ -65,47 +81,19 @@ export default function GroupNewPostPage() {
           />
           <textarea
             placeholder="내용을 입력하세요…"
-            className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
+            className="placeholder:text-muted-foreground min-h-40 resize-none border-0 bg-transparent p-0 text-base outline-none"
           />
 
-          {attachments.length > 0 ? (
-            <ul className="mt-2 flex flex-col gap-2">
-              {attachments.map((file, index) => (
-                <li
-                  key={`${file.name}-${index}`}
-                  className="flex items-center gap-3 rounded-lg border p-2"
-                >
-                  <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
-                    <FileIcon className="text-muted-foreground size-4.5" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{file.name}</p>
-                    <p className="text-muted-foreground text-xs">{formatFileSize(file.size)}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="첨부 삭제"
-                    onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== index))}
-                  >
-                    <XIcon />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <GroupAttachmentPreview images={previewImages} files={previewFiles} />
 
-          <div className="mt-2">
+          <div className="mt-3">
             <input
               ref={fileInputRef}
               type="file"
               multiple
               className="hidden"
               onChange={(event) => {
-                if (event.target.files) {
-                  setAttachments((prev) => [...prev, ...Array.from(event.target.files!)])
-                }
+                add(event.target.files)
                 event.target.value = ""
               }}
             />

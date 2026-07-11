@@ -1,7 +1,9 @@
-import { FileIcon, PaperclipIcon, XIcon } from "lucide-react"
+import { PaperclipIcon, XIcon } from "lucide-react"
 import { useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router"
 
+import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
+import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
@@ -11,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { formatFileSize } from "~/lib/group/format"
 import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
 
 // /groups/:pubId/posts/:postId/edit. 작성(new)과 같은 폼을 기존 값으로 채운 수정 화면.
@@ -23,11 +24,44 @@ export default function GroupEditPostPage() {
   const close = () => navigate("..")
   const post = mockGroupPosts.find((item) => item.pubId === postId)
 
-  // 기존 첨부는 삭제 가능하도록 로컬 상태로, 새로 고른 파일은 따로 보관한다.
+  // 기존 첨부는 삭제 가능하도록 로컬 상태로, 새로 고른 파일은 훅이 관리한다.
   const [images, setImages] = useState(post?.images ?? [])
   const [files, setFiles] = useState(post?.files ?? [])
-  const [newFiles, setNewFiles] = useState<File[]>([])
+  const { attachments: newAttachments, add: addNew, remove: removeNew } = useFileAttachments()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const previewImages = [
+    ...images.map((image, index) => ({
+      key: `existing-image-${index}`,
+      src: image.src,
+      onRemove: () => setImages((prev) => prev.filter((_, i) => i !== index)),
+    })),
+    ...newAttachments.flatMap((item, index) =>
+      item.url
+        ? [{ key: `new-image-${index}`, src: item.url, onRemove: () => removeNew(index) }]
+        : []
+    ),
+  ]
+  const previewFiles = [
+    ...files.map((file, index) => ({
+      key: `existing-file-${index}`,
+      name: file.name,
+      sizeBytes: file.sizeBytes,
+      onRemove: () => setFiles((prev) => prev.filter((_, i) => i !== index)),
+    })),
+    ...newAttachments.flatMap((item, index) =>
+      item.url
+        ? []
+        : [
+            {
+              key: `new-file-${index}`,
+              name: item.file.name,
+              sizeBytes: item.file.size,
+              onRemove: () => removeNew(index),
+            },
+          ]
+    ),
+  ]
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
@@ -67,93 +101,19 @@ export default function GroupEditPostPage() {
             <textarea
               defaultValue={post.content}
               placeholder="내용을 입력하세요…"
-              className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
+              className="placeholder:text-muted-foreground min-h-40 resize-none border-0 bg-transparent p-0 text-base outline-none"
             />
 
-            {images.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {images.map((image, index) => (
-                  <div
-                    key={`${image.src}-${index}`}
-                    className="relative size-20 overflow-hidden rounded-lg border"
-                  >
-                    <img src={image.src} alt={image.alt} className="size-full object-cover" />
-                    <button
-                      type="button"
-                      aria-label="이미지 삭제"
-                      onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
-                      className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white"
-                    >
-                      <XIcon className="size-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            <GroupAttachmentPreview images={previewImages} files={previewFiles} />
 
-            {files.length > 0 || newFiles.length > 0 ? (
-              <ul className="mt-2 flex flex-col gap-2">
-                {files.map((file, index) => (
-                  <li
-                    key={`existing-${index}`}
-                    className="flex items-center gap-3 rounded-lg border p-2"
-                  >
-                    <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
-                      <FileIcon className="text-muted-foreground size-4.5" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{file.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {formatFileSize(file.sizeBytes)}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="첨부 삭제"
-                      onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
-                    >
-                      <XIcon />
-                    </Button>
-                  </li>
-                ))}
-                {newFiles.map((file, index) => (
-                  <li
-                    key={`new-${index}`}
-                    className="flex items-center gap-3 rounded-lg border p-2"
-                  >
-                    <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
-                      <FileIcon className="text-muted-foreground size-4.5" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{file.name}</p>
-                      <p className="text-muted-foreground text-xs">{formatFileSize(file.size)}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="첨부 삭제"
-                      onClick={() => setNewFiles((prev) => prev.filter((_, i) => i !== index))}
-                    >
-                      <XIcon />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            <div className="mt-2">
+            <div className="mt-3">
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  if (event.target.files) {
-                    setNewFiles((prev) => [...prev, ...Array.from(event.target.files!)])
-                  }
+                  addNew(event.target.files)
                   event.target.value = ""
                 }}
               />
