@@ -1,3 +1,4 @@
+import { PinIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
@@ -44,7 +45,13 @@ export function GroupPostCard({
 
   return (
     <article className="bg-card border-foreground/20 sm:border-border overflow-hidden border-b-2 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
-      <header className="flex items-start gap-3 p-4 pb-3">
+      {post.isPinned ? (
+        <div className="text-muted-foreground flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold">
+          <PinIcon className="size-3.5 -rotate-45 fill-current" aria-hidden="true" />
+          고정된 게시물
+        </div>
+      ) : null}
+      <header className={cn("flex items-start gap-3 px-4 pb-3", post.isPinned ? "pt-2" : "pt-4")}>
         <Avatar size="lg">
           <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
         </Avatar>
@@ -54,11 +61,6 @@ export function GroupPostCard({
             {post.category ? (
               <Badge variant="secondary" className="shrink-0">
                 {post.category.name}
-              </Badge>
-            ) : null}
-            {post.isPinned ? (
-              <Badge variant="secondary" className="shrink-0">
-                고정
               </Badge>
             ) : null}
           </div>

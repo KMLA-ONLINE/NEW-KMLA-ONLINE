@@ -1,4 +1,4 @@
-import { XIcon } from "lucide-react"
+import { PinIcon, XIcon } from "lucide-react"
 import { useParams } from "react-router"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
@@ -57,6 +57,12 @@ export default function GroupPostDetailPage() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <article>
               <div className="flex flex-col gap-3 p-4">
+                {post.isPinned ? (
+                  <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold">
+                    <PinIcon className="size-3.5 -rotate-45 fill-current" aria-hidden="true" />
+                    고정된 게시물
+                  </div>
+                ) : null}
                 <header className="flex items-center gap-3">
                   <Avatar size="lg">
                     <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
@@ -64,7 +70,6 @@ export default function GroupPostDetailPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{authorName}</span>
-                      {post.isPinned ? <Badge variant="secondary">고정</Badge> : null}
                     </div>
                     <RelativeTime
                       value={post.createdAt}

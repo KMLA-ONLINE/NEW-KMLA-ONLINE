@@ -1,4 +1,4 @@
-import { HeartIcon, MessageSquareIcon } from "lucide-react"
+import { HeartIcon, MessageSquareIcon, PinIcon } from "lucide-react"
 import { Link } from "react-router"
 
 import { RelativeTime } from "~/components/relative-time"
@@ -16,9 +16,11 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
     >
       <div className="flex items-center gap-2">
         {post.isPinned ? (
-          <Badge variant="secondary" className="shrink-0">
-            고정
-          </Badge>
+          <PinIcon
+            className="text-muted-foreground size-4 shrink-0 -rotate-45 fill-current"
+            role="img"
+            aria-label="고정됨"
+          />
         ) : null}
         {post.category ? (
           <Badge variant="outline" className="text-muted-foreground shrink-0 font-normal">
