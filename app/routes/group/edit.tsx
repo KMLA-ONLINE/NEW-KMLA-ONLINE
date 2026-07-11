@@ -5,6 +5,7 @@ import { useParams } from "react-router"
 import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
+import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
@@ -17,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
+import { mockGroup, mockGroupCategories, mockGroupPosts } from "~/lib/group/mock-data"
 
 // /groups/:pubId/posts/:postId/edit. 작성(new)과 같은 폼을 기존 값으로 채운 수정 화면.
 // 제목/본문은 uncontrolled(defaultValue)라 타이핑엔 리렌더 없음. 저장은 백엔드 붙일 때.
@@ -32,6 +33,7 @@ export default function GroupEditPostPage() {
   const [files, setFiles] = useState(post?.files ?? [])
   const { attachments: newAttachments, add: addNew, remove: removeNew } = useFileAttachments()
   const { isDragging, dropHandlers } = useFileDrop(addNew)
+  const [categoryId, setCategoryId] = useState<number | null>(post?.category?.id ?? null)
 
   const previewImages = [
     ...images.map((image, index) => ({
@@ -112,9 +114,15 @@ export default function GroupEditPostPage() {
               <GroupAttachmentPreview images={previewImages} files={previewFiles} />
             </div>
 
-            {/* 사진/파일 첨부는 하단 고정 바에. 본문 textarea가 그 위 공간을 flex-1로 채운다. */}
-            <div className="border-t p-3">
+            {/* 사진/파일 첨부 + 카테고리는 하단 고정 바에. 본문 textarea가 그 위를 flex-1로 채운다. */}
+            <div className="flex items-center gap-2 border-t p-3">
               <GroupAttachmentButtons onAdd={addNew} className="flex gap-2" />
+              <GroupCategorySelect
+                categories={mockGroupCategories}
+                selected={categoryId}
+                onSelect={setCategoryId}
+                className="ml-auto"
+              />
             </div>
           </>
         ) : (

@@ -1,8 +1,10 @@
 import { XIcon } from "lucide-react"
+import { useState } from "react"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
+import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
@@ -15,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
-import { mockGroup } from "~/lib/group/mock-data"
+import { mockGroup, mockGroupCategories } from "~/lib/group/mock-data"
 
 // /groups/:pubId/new. 데스크톱은 모달, 모바일은 풀스크린(같은 Dialog를 반응형으로).
 // 부모 group 라우트의 <Outlet/>에 얹혀 그 위에 뜬다. 저장은 백엔드 붙일 때.
@@ -23,9 +25,10 @@ export default function GroupNewPostPage() {
   // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 히스토리를 pop해 그룹으로 돌아간다.
   const close = useModalClose()
 
-  // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부만 로컬 상태. 저장은 백엔드 붙일 때.
+  // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부·카테고리만 로컬 상태. 저장은 백엔드 붙일 때.
   const { attachments, add, remove } = useFileAttachments()
   const { isDragging, dropHandlers } = useFileDrop(add)
+  const [categoryId, setCategoryId] = useState<number | null>(null)
 
   const previewImages = attachments.flatMap((item, index) =>
     item.url ? [{ key: String(index), src: item.url, onRemove: () => remove(index) }] : []
@@ -47,7 +50,7 @@ export default function GroupNewPostPage() {
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[90svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-2xl"
+        className="flex h-[80svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-2xl"
         {...dropHandlers}
       >
         <DialogHeader className="flex-row items-center gap-2 border-b p-3 text-left">
@@ -89,9 +92,15 @@ export default function GroupNewPostPage() {
           <GroupAttachmentPreview images={previewImages} files={previewFiles} />
         </div>
 
-        {/* 사진/파일 첨부는 하단 고정 바에. 본문 textarea가 그 위 공간을 flex-1로 채운다. */}
-        <div className="border-t p-3">
+        {/* 사진/파일 첨부 + 카테고리는 하단 고정 바에. 본문 textarea가 그 위를 flex-1로 채운다. */}
+        <div className="flex items-center gap-2 border-t p-3">
           <GroupAttachmentButtons onAdd={add} className="flex gap-2" />
+          <GroupCategorySelect
+            categories={mockGroupCategories}
+            selected={categoryId}
+            onSelect={setCategoryId}
+            className="ml-auto"
+          />
         </div>
 
         {isDragging ? <FileDropOverlay /> : null}
