@@ -4,6 +4,7 @@ export default [
   layout("./routes/_app.tsx", [
     index("./routes/_app._index.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
+    route("groups/discover", "./routes/_app.groups.discover.tsx"),
     route("community", "./routes/_app.community.tsx"),
     route("messenger", "./routes/_app.messenger.tsx"),
     route("menu", "./routes/_app.menu.tsx"),
