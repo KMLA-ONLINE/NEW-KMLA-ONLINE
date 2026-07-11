@@ -1,11 +1,16 @@
 import { MoreHorizontalIcon, UsersIcon } from "lucide-react"
 
 import { Badge } from "~/components/ui/badge"
+import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { Button } from "~/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import type { GroupSpace } from "~/lib/group/types"
@@ -19,7 +24,17 @@ const JOIN_POLICY_LABELS: Record<GroupSpace["joinPolicy"], string> = {
 
 // 커버 배너 + 그 위로 겹친 그룹 아이콘. 설명은 여기 두지 않고 "그룹 정보" aside에 둔다.
 // 프레임(마진·모서리·테두리)은 호출부가 className으로 정한다 -- 모바일 full-bleed 때문.
-export function GroupHeader({ group, className }: { group: GroupSpace; className?: string }) {
+export function GroupHeader({
+  group,
+  className,
+  viewMode,
+  onViewModeChange,
+}: {
+  group: GroupSpace
+  className?: string
+  viewMode: PostViewMode
+  onViewModeChange: (mode: PostViewMode) => void
+}) {
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
       <div className="from-primary/30 to-primary/5 h-32 w-full bg-linear-to-br sm:h-44" />
@@ -53,6 +68,15 @@ export function GroupHeader({ group, className }: { group: GroupSpace; className
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuLabel>게시물 보기</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={viewMode}
+                onValueChange={(value) => onViewModeChange(value as PostViewMode)}
+              >
+                <DropdownMenuRadioItem value="card">카드</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="list">목록</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuItem>알림 설정</DropdownMenuItem>
               <DropdownMenuItem variant="destructive">그룹 나가기</DropdownMenuItem>
             </DropdownMenuContent>

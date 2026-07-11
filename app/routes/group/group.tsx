@@ -3,7 +3,6 @@ import { Link, Outlet } from "react-router"
 
 import { GroupHeader } from "~/components/group/group-header"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
-import { PostViewToggle } from "~/components/group/post-view-toggle"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { mockGroup, mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -27,7 +26,12 @@ export default function GroupPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl">
-      <GroupHeader group={mockGroup} className="border-0 sm:rounded-xl sm:border" />
+      <GroupHeader
+        group={mockGroup}
+        className="border-0 sm:rounded-xl sm:border"
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
 
       <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
         {TABS.map((tab) => (
@@ -58,10 +62,6 @@ export default function GroupPage() {
             </span>
             <PenSquareIcon className="text-muted-foreground ml-auto size-4" aria-hidden="true" />
           </Link>
-
-          <div className="flex items-center justify-end px-4 sm:px-0">
-            <PostViewToggle value={viewMode} onChange={setViewMode} />
-          </div>
 
           <GroupPostFeed
             posts={mockGroupPosts}
