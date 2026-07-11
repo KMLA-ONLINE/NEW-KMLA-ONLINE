@@ -52,6 +52,13 @@ export const mockGroupPosts: GroupPost[] = [
         createdAt: "2026-07-11T06:15:00.000Z",
       },
       {
+        id: 8,
+        parentId: 7,
+        author: { name: "이민서" },
+        content: "네 신청했어요, 감사합니다!",
+        createdAt: "2026-07-11T06:20:00.000Z",
+      },
+      {
         id: 2,
         parentId: null,
         author: null,

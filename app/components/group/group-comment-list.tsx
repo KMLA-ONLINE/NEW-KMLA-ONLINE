@@ -14,6 +14,7 @@ import {
 } from "~/components/ui/dropdown-menu"
 import type { GroupComment } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
+import { cn } from "~/lib/utils"
 
 // 평면 댓글 목록을 parentId로 스레드화해 렌더한다. 대댓글은 부모 아래로 들여쓰며,
 // 임의 깊이를 재귀로 처리한다(comments.parent_id).
@@ -44,10 +45,12 @@ function GroupCommentItem({
   comment,
   all,
   reactionTypes,
+  depth = 0,
 }: {
   comment: GroupComment
   all: GroupComment[]
   reactionTypes: ReactionType[]
+  depth?: number
 }) {
   const name = comment.author?.name ?? "익명"
   const replies = all.filter((item) => item.parentId === comment.id)
@@ -136,13 +139,14 @@ function GroupCommentItem({
       </div>
 
       {replies.length > 0 || replying ? (
-        <ul className="mt-3 flex flex-col gap-3 pl-10">
+        <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
           {replies.map((reply) => (
             <GroupCommentItem
               key={reply.id}
               comment={reply}
               all={all}
               reactionTypes={reactionTypes}
+              depth={depth + 1}
             />
           ))}
           {replying ? (
