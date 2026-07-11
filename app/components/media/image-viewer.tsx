@@ -409,7 +409,11 @@ export function ImageViewer({
 
           {images.length > 1 ? (
             <Filmstrip images={images} activeIndex={index} onSelect={goTo} />
-          ) : null}
+          ) : (
+            // Reserve the filmstrip's height (size-14 thumb + py-3) even with one
+            // image, so the image area doesn't stretch to fill the extra space.
+            <div className="h-10 shrink-0" aria-hidden="true" />
+          )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
