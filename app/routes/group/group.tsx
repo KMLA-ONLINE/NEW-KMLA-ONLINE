@@ -7,6 +7,7 @@ import { GroupHeader } from "~/components/group/group-header"
 import { GroupJoinRequests } from "~/components/group/group-join-requests"
 import { GroupMemberList } from "~/components/group/group-member-list"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
+import { GroupSettings } from "~/components/group/group-settings"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import {
   mockGroup,
@@ -23,11 +24,12 @@ import { cn } from "~/lib/utils"
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
 export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
 
-type GroupTab = "posts" | "members"
+type GroupTab = "posts" | "members" | "settings"
 
-const TABS: { id: GroupTab; label: string }[] = [
+const TABS: { id: GroupTab; label: string; manageOnly?: boolean }[] = [
   { id: "posts", label: "게시물" },
   { id: "members", label: "멤버" },
+  { id: "settings", label: "그룹 설정", manageOnly: true },
 ]
 
 // 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
@@ -58,6 +60,8 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
   const showJoinRequests = canManage && mockGroup.joinPolicy === "request"
+  // 그룹 설정 탭은 관리자만 본다.
+  const visibleTabs = TABS.filter((item) => !item.manageOnly || canManage)
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -70,7 +74,7 @@ export default function GroupPage() {
       />
 
       <nav className="mx-2 mt-4 flex gap-1 border-b" aria-label="그룹 메뉴">
-        {TABS.map((item) => (
+        {visibleTabs.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -124,13 +128,15 @@ export default function GroupPage() {
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
               />
             </>
-          ) : (
+          ) : tab === "members" ? (
             <div className="flex flex-col gap-4">
               {showJoinRequests ? <GroupJoinRequests requests={mockJoinRequests} /> : null}
               <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
                 <GroupMemberList members={mockGroupMembers} />
               </div>
             </div>
+          ) : (
+            <GroupSettings group={mockGroup} categories={mockGroupCategories} />
           )}
         </div>
 
