@@ -5,8 +5,9 @@ import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import type { GroupCategory, GroupSpace } from "~/lib/group/types"
 
-// 관리자 전용 그룹 설정. 백엔드 전이라 전부 로컬 상태(저장 없음). 이름/설명/가입정책은 spaces
-// 컬럼, 카테고리는 space_categories에 대응 -- 저장 경로는 백엔드 붙일 때.
+// 관리자 전용 그룹 설정. 실수로 바꾸기 쉽지 않게 각 섹션은 읽기 모드가 기본이고, "편집"을
+// 누른 뒤에만 수정할 수 있다(저장/취소). 백엔드 전이라 저장은 로컬 상태만 갱신한다 --
+// 이름/설명/가입정책은 spaces, 카테고리는 space_categories 컬럼으로 갈 자리.
 
 const JOIN_POLICY_OPTIONS: {
   value: GroupSpace["joinPolicy"]
@@ -30,41 +31,183 @@ const JOIN_POLICY_OPTIONS: {
   },
 ]
 
-function SettingsCard({ title, children }: { title: string; children: React.ReactNode }) {
+// 카드 헤더: 제목 + 편집/저장·취소. 읽기 모드에선 "편집"만, 편집 모드에선 취소·저장.
+function SectionHeader({
+  title,
+  editing,
+  onEdit,
+  onCancel,
+  onSave,
+}: {
+  title: string
+  editing: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: () => void
+}) {
   return (
-    <section className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
-      <h2 className="mb-3 text-sm font-semibold">{title}</h2>
-      {children}
-    </section>
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {editing ? (
+        <div className="flex gap-1">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            취소
+          </Button>
+          <Button type="button" size="sm" onClick={onSave}>
+            저장
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+          편집
+        </Button>
+      )}
+    </div>
   )
 }
 
-// 카테고리 CRUD + 순서. sort_order는 배열 순서에서 파생하므로 위/아래로 자리를 바꾼다.
-function CategoryManager({ initial }: { initial: GroupCategory[] }) {
-  const [categories, setCategories] = useState(
-    [...initial].sort((a, b) => a.sortOrder - b.sortOrder)
+function SettingsCard({ children }: { children: React.ReactNode }) {
+  return <section className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">{children}</section>
+}
+
+function BasicInfoSection({ group }: { group: GroupSpace }) {
+  const [name, setName] = useState(group.name)
+  const [description, setDescription] = useState(group.description)
+  const [editing, setEditing] = useState(false)
+  // 편집 중 초안. 취소하면 버리고, 저장할 때만 커밋한다.
+  const [draftName, setDraftName] = useState(name)
+  const [draftDescription, setDraftDescription] = useState(description)
+
+  const edit = () => {
+    setDraftName(name)
+    setDraftDescription(description)
+    setEditing(true)
+  }
+  const save = () => {
+    setName(draftName)
+    setDescription(draftDescription)
+    setEditing(false)
+  }
+
+  return (
+    <SettingsCard>
+      <SectionHeader
+        title="기본 정보"
+        editing={editing}
+        onEdit={edit}
+        onCancel={() => setEditing(false)}
+        onSave={save}
+      />
+      {editing ? (
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-xs">그룹 이름</span>
+            <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-xs">설명</span>
+            <textarea
+              value={draftDescription}
+              onChange={(event) => setDraftDescription(event.target.value)}
+              className="border-input focus-visible:ring-ring min-h-20 resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2"
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">{name}</p>
+          <p className="text-muted-foreground text-sm whitespace-pre-line">
+            {description || "설명 없음"}
+          </p>
+        </div>
+      )}
+    </SettingsCard>
   )
+}
+
+function JoinPolicySection({ group }: { group: GroupSpace }) {
+  const [policy, setPolicy] = useState(group.joinPolicy)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(policy)
+  const current = JOIN_POLICY_OPTIONS.find((option) => option.value === policy)
+
+  const edit = () => {
+    setDraft(policy)
+    setEditing(true)
+  }
+  const save = () => {
+    setPolicy(draft)
+    setEditing(false)
+  }
+
+  return (
+    <SettingsCard>
+      <SectionHeader
+        title="가입 정책"
+        editing={editing}
+        onEdit={edit}
+        onCancel={() => setEditing(false)}
+        onSave={save}
+      />
+      {editing ? (
+        <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
+          {JOIN_POLICY_OPTIONS.map((option) => {
+            const selected = option.value === draft
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setDraft(option.value)}
+                className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{option.label}</p>
+                  <p className="text-muted-foreground text-xs">{option.description}</p>
+                </div>
+                {selected ? (
+                  <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm font-medium">{current?.label}</p>
+          <p className="text-muted-foreground text-xs">{current?.description}</p>
+        </div>
+      )}
+    </SettingsCard>
+  )
+}
+
+// 카테고리 CRUD + 순서(편집 모드 전용, controlled). sort_order는 배열 순서에서 파생.
+function CategoryEditor({
+  categories,
+  onChange,
+}: {
+  categories: GroupCategory[]
+  onChange: (next: GroupCategory[]) => void
+}) {
   const [newName, setNewName] = useState("")
 
   const rename = (id: number, name: string) =>
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)))
-
-  const remove = (id: number) => setCategories((prev) => prev.filter((c) => c.id !== id))
-
-  const move = (index: number, direction: -1 | 1) =>
-    setCategories((prev) => {
-      const target = index + direction
-      if (target < 0 || target >= prev.length) return prev
-      const next = [...prev]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-
+    onChange(categories.map((c) => (c.id === id ? { ...c, name } : c)))
+  const remove = (id: number) => onChange(categories.filter((c) => c.id !== id))
+  const move = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= categories.length) return
+    const next = [...categories]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
   const add = () => {
     const name = newName.trim()
     if (!name) return
     const nextId = Math.max(0, ...categories.map((c) => c.id)) + 1
-    setCategories((prev) => [...prev, { id: nextId, name, sortOrder: prev.length }])
+    onChange([...categories, { id: nextId, name, sortOrder: categories.length }])
     setNewName("")
   }
 
@@ -111,12 +254,6 @@ function CategoryManager({ initial }: { initial: GroupCategory[] }) {
         </div>
       ))}
 
-      {categories.length === 0 ? (
-        <p className="text-muted-foreground py-2 text-sm">
-          카테고리가 없습니다. 추가하면 피드 상단에 필터로 나타납니다.
-        </p>
-      ) : null}
-
       <div className="mt-1 flex items-center gap-2">
         <Input
           value={newName}
@@ -139,6 +276,50 @@ function CategoryManager({ initial }: { initial: GroupCategory[] }) {
   )
 }
 
+function CategorySection({ initial }: { initial: GroupCategory[] }) {
+  const [categories, setCategories] = useState(
+    [...initial].sort((a, b) => a.sortOrder - b.sortOrder)
+  )
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(categories)
+
+  const edit = () => {
+    setDraft(categories)
+    setEditing(true)
+  }
+  const save = () => {
+    setCategories(draft)
+    setEditing(false)
+  }
+
+  return (
+    <SettingsCard>
+      <SectionHeader
+        title="카테고리"
+        editing={editing}
+        onEdit={edit}
+        onCancel={() => setEditing(false)}
+        onSave={save}
+      />
+      {editing ? (
+        <CategoryEditor categories={draft} onChange={setDraft} />
+      ) : categories.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <span key={category.id} className="bg-muted rounded-full px-3 py-1 text-sm">
+              {category.name}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">
+          카테고리가 없습니다. 편집에서 추가하면 피드 상단에 필터로 나타납니다.
+        </p>
+      )}
+    </SettingsCard>
+  )
+}
+
 export function GroupSettings({
   group,
   categories,
@@ -146,55 +327,11 @@ export function GroupSettings({
   group: GroupSpace
   categories: GroupCategory[]
 }) {
-  const [joinPolicy, setJoinPolicy] = useState(group.joinPolicy)
-
   return (
     <div className="flex flex-col gap-4">
-      <SettingsCard title="기본 정보">
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-xs">그룹 이름</span>
-            <Input defaultValue={group.name} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-xs">설명</span>
-            <textarea
-              defaultValue={group.description}
-              className="border-input focus-visible:ring-ring min-h-20 resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2"
-            />
-          </label>
-        </div>
-      </SettingsCard>
-
-      <SettingsCard title="가입 정책">
-        <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
-          {JOIN_POLICY_OPTIONS.map((option) => {
-            const selected = option.value === joinPolicy
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setJoinPolicy(option.value)}
-                className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{option.label}</p>
-                  <p className="text-muted-foreground text-xs">{option.description}</p>
-                </div>
-                {selected ? (
-                  <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
-      </SettingsCard>
-
-      <SettingsCard title="카테고리">
-        <CategoryManager initial={categories} />
-      </SettingsCard>
+      <BasicInfoSection group={group} />
+      <JoinPolicySection group={group} />
+      <CategorySection initial={categories} />
     </div>
   )
 }
