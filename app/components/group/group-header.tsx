@@ -1,6 +1,5 @@
-import { MoreHorizontalIcon, UsersIcon } from "lucide-react"
+import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
 
-import { Badge } from "~/components/ui/badge"
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { Button } from "~/components/ui/button"
 import {
@@ -13,14 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip"
 import type { GroupSpace } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
-
-const JOIN_POLICY_LABELS: Record<GroupSpace["joinPolicy"], string> = {
-  public: "가입",
-  request: "승인가입",
-  invite_only: "초대",
-}
 
 // 커버 배너 + 그 위로 겹친 그룹 아이콘. 설명은 여기 두지 않고 "그룹 정보" aside에 둔다.
 // 프레임(마진·모서리·테두리)은 호출부가 className으로 정한다 -- 모바일 full-bleed 때문.
@@ -35,6 +29,13 @@ export function GroupHeader({
   viewMode: PostViewMode
   onViewModeChange: (mode: PostViewMode) => void
 }) {
+  // invite_only만 비공개(검색 노출 X). public·request(승인가입)는 검색에 노출되니 공개로 묶는다.
+  const isPrivate = group.joinPolicy === "invite_only"
+  const VisibilityIcon = isPrivate ? LockIcon : Globe2Icon
+  const visibilityLabel = isPrivate ? "비공개 그룹" : "공개 그룹"
+  // space_type: group=공식, community=비공식. 공식이면 제목 옆에 인증 표시.
+  const isOfficial = group.type === "group"
+
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
       <div className="from-primary/30 to-primary/5 h-32 w-full bg-linear-to-br sm:h-44" />
@@ -43,13 +44,27 @@ export function GroupHeader({
           {group.name.charAt(0)}
         </div>
         <div className="min-w-0 flex-1 pt-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <h1 className="truncate text-xl font-bold sm:text-2xl">{group.name}</h1>
-            <Badge variant="secondary">{JOIN_POLICY_LABELS[group.joinPolicy]}</Badge>
+            {isOfficial ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={0}
+                    role="img"
+                    aria-label="공식 그룹"
+                    className="inline-flex shrink-0 cursor-default"
+                  >
+                    <BadgeCheckIcon className="text-primary size-5 sm:size-6" aria-hidden="true" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>공식 그룹입니다</TooltipContent>
+              </Tooltip>
+            ) : null}
           </div>
-          <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-xs">
-            <UsersIcon className="size-3.5" aria-hidden="true" />
-            멤버 {group.memberCount}명
+          <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-sm">
+            <VisibilityIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            {visibilityLabel} · 멤버 {group.memberCount}명
           </p>
         </div>
         <div className="flex items-center gap-1 pt-1">
