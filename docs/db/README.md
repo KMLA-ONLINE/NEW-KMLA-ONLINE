@@ -61,7 +61,7 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 ## 검증
 
 - `supabase/tests/schema_runtime_check.sql` — begin/rollback 스모크 테스트. psql로 로컬 DB에 실행한다.
-- `supabase/tests/schema_rls_check.sql` — **stale**. 구현된 적 없는 계약(author/sender 자동 스탬핑, `message_reads` 테이블)을 전제해서 현재 실패한다. 게이트로 쓰지 말 것.
+- 이 파일은 grant와 policy가 **존재하는지**를 확인한다. 정책이 실제로 **어떻게 동작하는지**(예: `author_id` 위조가 막히는지, 탈퇴한 멤버가 읽지 못하는지)를 찔러보는 테스트는 현재 없고, 스키마를 바꿀 때마다 손으로 검증하고 있다.
 
 ## Production 배포
 
