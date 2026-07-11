@@ -1,8 +1,8 @@
-import { MessageCircleIcon, MoreHorizontalIcon, SendIcon, XIcon } from "lucide-react"
+import { MoreHorizontalIcon, SendIcon, XIcon } from "lucide-react"
 import { useNavigate, useParams } from "react-router"
 
+import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
-import { GroupReactionButton } from "~/components/group/group-reaction-button"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -50,62 +50,48 @@ export default function GroupPostDetailPage() {
 
         {post ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <article className="flex flex-col gap-3 p-4">
-              <header className="flex items-center gap-3">
-                <Avatar size="lg">
-                  <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{authorName}</span>
-                    {post.isPinned ? <Badge variant="secondary">고정</Badge> : null}
+            <article>
+              <div className="flex flex-col gap-3 p-4">
+                <header className="flex items-center gap-3">
+                  <Avatar size="lg">
+                    <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold">{authorName}</span>
+                      {post.isPinned ? <Badge variant="secondary">고정</Badge> : null}
+                    </div>
+                    <RelativeTime
+                      value={post.createdAt}
+                      className="text-muted-foreground text-xs"
+                    />
                   </div>
-                  <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground"
+                    aria-label="게시물 옵션"
+                  >
+                    <MoreHorizontalIcon className="size-4" aria-hidden="true" />
+                  </Button>
+                </header>
+
+                <div>
+                  <h2 className="font-semibold">{post.title}</h2>
+                  <p className="mt-1 text-sm leading-6 whitespace-pre-line">{post.content}</p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground"
-                  aria-label="게시물 옵션"
-                >
-                  <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-                </Button>
-              </header>
 
-              <div>
-                <h2 className="font-semibold">{post.title}</h2>
-                <p className="mt-1 text-sm leading-6 whitespace-pre-line">{post.content}</p>
+                {post.images.length > 0 ? (
+                  <GroupPostImageGrid images={post.images} className="overflow-hidden rounded-lg" />
+                ) : null}
               </div>
 
-              {post.images.length > 0 ? (
-                <GroupPostImageGrid images={post.images} className="overflow-hidden rounded-lg" />
-              ) : null}
-
-              <div className="text-muted-foreground flex items-center justify-between text-xs">
-                <span>좋아요 {post.reactionCount}</span>
-                <span>댓글 {post.commentCount}</span>
-              </div>
-
-              <div className="text-muted-foreground flex items-center justify-around border-y py-0.5">
-                <GroupReactionButton
-                  count={post.reactionCount}
-                  reactionTypes={PLACEHOLDER_REACTION_TYPES}
-                />
-                <button
-                  type="button"
-                  className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors"
-                >
-                  <MessageCircleIcon className="size-4.5" aria-hidden="true" />
-                  댓글
-                </button>
-                <button
-                  type="button"
-                  className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors"
-                >
-                  <SendIcon className="size-4.5" aria-hidden="true" />
-                  공유
-                </button>
-              </div>
+              <GroupPostActionBar
+                reactionCount={post.reactionCount}
+                commentCount={post.commentCount}
+                topReactions={post.topReactions}
+                reactionTypes={PLACEHOLDER_REACTION_TYPES}
+              />
             </article>
 
             <section className="border-t p-4">

@@ -1,9 +1,9 @@
-import { MessageCircleIcon, MoreHorizontalIcon, SendIcon } from "lucide-react"
+import { MoreHorizontalIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
+import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
-import { GroupReactionButton } from "~/components/group/group-reaction-button"
 import { RelativeTime } from "~/components/relative-time"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -97,34 +97,14 @@ export function GroupPostCard({
 
       {post.images.length > 0 ? <GroupPostImageGrid images={post.images} className="mt-3" /> : null}
 
-      <div className="mt-1 flex items-center justify-between px-2 py-1">
-        <div className="text-muted-foreground flex items-center">
-          <GroupReactionButton count={post.reactionCount} reactionTypes={reactionTypes} />
-          <Link
-            to={`posts/${post.id}`}
-            className="hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
-          >
-            <MessageCircleIcon className="size-4.5" aria-hidden="true" />
-            {post.commentCount > 0 ? post.commentCount : null}
-          </Link>
-          <button
-            type="button"
-            aria-label="공유"
-            className="hover:bg-muted hover:text-foreground flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors"
-          >
-            <SendIcon className="size-4.5" aria-hidden="true" />
-          </button>
-        </div>
-        {post.topReactions.length > 0 ? (
-          <div className="flex items-center gap-0.5 pr-2 text-sm">
-            {post.topReactions.map((emoji) => (
-              <span key={emoji} className="leading-none">
-                {emoji}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
+      <GroupPostActionBar
+        reactionCount={post.reactionCount}
+        commentCount={post.commentCount}
+        topReactions={post.topReactions}
+        reactionTypes={reactionTypes}
+        commentHref={`posts/${post.id}`}
+        className="mt-1"
+      />
     </article>
   )
 }
