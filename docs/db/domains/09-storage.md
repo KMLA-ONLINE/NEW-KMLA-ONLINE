@@ -39,5 +39,5 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 - profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}`(direct/room 구분 없음), **post 첨부는 `{space.pub_id}/{auth_uid}/{uuid}`** 경로를 사용한다.
 - post 첨부 경로가 post가 아니라 **space**에 매달린 건 blob을 글보다 먼저 올릴 수 있게 하려는 것이다(그래야 글+첨부가 한 트랜잭션이 된다). 근거는 [03-content](03-content.md)의 "첨부". 보안 성질은 message 첨부와 같다 — 내가 참여하는 공간의, 내 uid 경로에만 올린다.
 - `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat, `create_post_with_attachments()`/`set_post_attachments()`는 content 문서에 있다.
-- `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `schema_runtime_check.sql`이 둘의 drift를 잡는다.
+- `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `tests/09-storage.sql`이 둘의 drift를 잡는다.
 - space 이미지는 finalize RPC가 없어 `space-images` bucket에 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).

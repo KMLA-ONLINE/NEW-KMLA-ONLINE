@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // 로컬 Supabase를 상대로 프로토콜 전체를 왕복시킨다. crypto.test.ts는 암복호가 스스로
-// 맞아떨어지는지를 보고, schema_runtime_check.sql은 스키마 계약을 보지만(가짜 키로, 길이만),
+// 맞아떨어지는지를 보고, supabase/tests/05-chat.sql은 스키마 계약을 보지만(가짜 키로, 길이만),
 // 둘 중 어느 쪽도 "진짜 키로 봉인한 것이 진짜 DB를 통과해 상대에게 열리는가"를 증명하지
 // 않는다. 그건 여기서만 증명된다.
 //

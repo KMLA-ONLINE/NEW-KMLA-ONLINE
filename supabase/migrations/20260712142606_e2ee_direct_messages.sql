@@ -970,8 +970,9 @@ grant execute on function public.edit_encrypted_message(bigint,text) to authenti
 
 -- private.is_direct_conversation은 security invoker인 public.search_messages가 부른다.
 -- 즉 호출자 권한으로 실행되므로 authenticated에게 execute가 없으면 그룹 채팅 검색까지
--- 통째로 죽는다. (schema_runtime_check의 "실행 가능한 롤이 없는 함수" 단언은 public 스키마만
---  보므로 이건 잡아주지 못한다.)
+-- 통째로 죽는다. (tests/00-privileges.sql이 RLS·invoker 경로에서 쓰이는 private 헬퍼들의
+--  execute grant를 이름으로 못박아 확인한다 -- "실행 가능한 롤이 없는 함수" 단언은
+--  public 스키마만 보므로 이건 잡지 못하기 때문이다.)
 grant execute on function private.is_direct_conversation(bigint) to authenticated;
 revoke execute on function private.is_direct_conversation(bigint) from public, anon, service_role;
 
