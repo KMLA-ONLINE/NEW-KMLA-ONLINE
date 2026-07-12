@@ -25,16 +25,26 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 | `get_post(pub_id)` | post 접근 권한 | X | 상세 1건. 위와 같은 shape |
 | `get_post_comments(post_id)` | post 접근 권한 | X | 댓글 평면 목록(트리는 `parent_id`로 클라이언트가 조립). tombstone은 `is_deleted=true`에 `content`·`author` 모두 null |
 | `search_posts(query, space_id)` | space 멤버 | X | 공백 무시 제목·본문 검색. `search_messages`와 달리 SECURITY DEFINER다 — invoker로는 `author_id`를 못 읽고 익명 지우기도 못 한다 |
-| `set_post_attachments(post_id, attachments jsonb)` | 작성자 본인 | O | 첨부 목록을 통째로 교체. 빠진 blob만 삭제 큐로, `sort_order`는 배열 순서. 이미 붙어 있던 첨부는 스토리지 재확인을 건너뛴다(수정 시 blob이 24시간보다 오래됐을 수 있어서) |
+| `create_post_with_attachments(space_id, title, content, attachments?, category_id?, is_anonymous?)` | space 멤버 | O | 글+첨부를 **한 트랜잭션**으로 만들고 `pub_id`를 돌려준다. 실패하면 아무것도 남지 않는다 |
+| `set_post_attachments(post_id, attachments jsonb)` | 작성자 본인 | O | 수정용. 첨부 목록을 통째로 교체. 빠진 blob만 삭제 큐로, `sort_order`는 배열 순서. 이미 붙어 있던 첨부는 스토리지 재확인을 건너뛴다(수정 시 blob이 24시간보다 오래됐을 수 있어서) |
 | `set_post_pinned(id, pinned)` | space 관리자 (`can_manage_space`) | O | 게시물 고정/해제. 순수 모더레이션이라 작성자여도 자기 글을 고정할 수 없다 |
 | `soft_delete_post(id)` | 작성자 본인 **또는** space 관리자 | O | post soft delete + 첨부/반응 제거 + blob 삭제 큐 등록. 댓글은 손대지 않는다(`can_access_post`가 알아서 막음) |
 | `soft_delete_comment(id)` | 작성자 본인 **또는** space 관리자 | O | comment soft delete + 반응 제거 + **본문 비움**(tombstone이 원문을 싣지 않도록) |
 
 `purge_deleted_content`는 아직 없다.
 
-### 첨부 흐름은 chat과 반대다
+### 첨부 흐름
 
-`post_files_insert` 스토리지 정책이 경로를 `<post.pub_id>/<auth.uid()>/<uuid>`로 강제하고 **그 글이 실재하며 내 글일 것**을 요구한다. 그래서 순서가 **작성 → 업로드 → `set_post_attachments`**다. (chat은 대화가 이미 있으니 업로드 → `send_message_with_attachments` 한 번에 끝난다.) 첨부 없이 저장된 글은 그냥 첨부 없는 글이고, 확정되지 않은 blob은 고아 청소가 걷어간다.
+저장소의 표준 2단계 모델(업로드 → finalize RPC)을 그대로 따른다. blob은 `post-files/{space.pub_id}/{auth_uid}/{uuid}`에 올라가고, **글보다 먼저** 올라간다.
+
+```
+1. blob 업로드              → post-files/{space.pub_id}/{uid}/{uuid}   (브라우저 직접)
+2. create_post_with_attachments  → 글 + 첨부를 한 트랜잭션으로
+```
+
+**경로를 post가 아니라 space에 매단 이유**: 경로에 `post.pub_id`를 박으면 글이 먼저 존재해야만 업로드가 되고, 그러면 작성 → 업로드 → 확정 **3단계**가 된다. 중간에 실패하면 첨부 없는 글이 이미 게시된 채 남아 보상 트랜잭션(soft delete로 되감기)이 필요해지는데, **그 보상도 실패할 수 있어 유령 글이 영구히 남는다.** space에 매달면 실패 시 아무것도 만들어지지 않고, 올려둔 blob은 고아 청소가 걷어간다. 보안 성질은 message 첨부와 같다 — 내가 참여하는 공간의, 내 uid 경로에만 올릴 수 있다.
+
+수정은 `set_post_attachments`가 목록을 통째로 교체한다. 이미 붙어 있던 첨부는 스토리지 재확인(24시간 신선도)을 건너뛰므로, 오래된 글의 첨부를 유지한 채 새 것만 추가할 수 있다.
 
 메시지와 달리 글은 **이미지와 파일을 섞을 수 있다** (카드가 이미지 그리드와 파일 목록을 함께 렌더한다). 그래서 "여럿이면 전부 이미지" 규칙은 없고 개수 상한(`max_post_attachments()` = 10)만 있다.
 

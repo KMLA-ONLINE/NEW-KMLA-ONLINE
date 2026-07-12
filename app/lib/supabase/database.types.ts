@@ -1528,6 +1528,17 @@ export type Database = {
         Args: { p_peer_id: number }
         Returns: number
       }
+      create_post_with_attachments: {
+        Args: {
+          p_attachments?: Json
+          p_category_id?: number
+          p_content: string
+          p_is_anonymous?: boolean
+          p_space_id: number
+          p_title: string
+        }
+        Returns: string
+      }
       create_space_invite: {
         Args: {
           p_expires_at?: string

@@ -55,14 +55,19 @@ create policy space_images_insert on storage.objects for insert to authenticated
       and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
+-- 경로는 <space.pub_id>/<auth.uid()>/<uuid>다. blob을 글이 아니라 space에 매는 이유:
+-- 글보다 먼저 업로드할 수 있어야 create_post_with_attachments가 글+첨부를 한 트랜잭션으로 끝낸다.
+-- 글에 매면 작성 -> 업로드 -> 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상
+-- 트랜잭션(soft delete)이 필요해진다 -- 그 보상도 실패할 수 있어 유령 글이 생긴다.
+-- message_files_insert가 blob을 대화에 매는 것과 같은 구조이고, 보안 성질도 같다: 내가 참여하는
+-- 공간의, 내 uid 경로에만 올릴 수 있다. 확정되지 않은 blob은 고아 청소가 걷어간다.
 create policy post_files_insert on storage.objects for insert to authenticated with check (
   bucket_id='post-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
-    select 1 from public.posts p
-    where p.pub_id::text=split_part(storage.objects.name,'/',1)
-      and p.author_id=private.current_profile_id()
-      and p.deleted_at is null
-      and private.can_access_post(p.id)
-      and private.has_uuid_object_suffix(storage.objects.name,p.pub_id::text||'/'||(select auth.uid())::text||'/')
+    select 1 from public.spaces s
+    where s.pub_id::text=split_part(storage.objects.name,'/',1)
+      and s.deleted_at is null
+      and private.can_participate_space(s.id)
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/'||(select auth.uid())::text||'/')
   )
 );
 create policy message_files_insert on storage.objects for insert to authenticated with check (

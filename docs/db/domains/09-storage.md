@@ -36,7 +36,8 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 ## 주의
 
 - 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프.
-- profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}` 경로를 사용한다(direct/room 구분 없음).
-- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat 문서에 있다.
+- profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}`(direct/room 구분 없음), **post 첨부는 `{space.pub_id}/{auth_uid}/{uuid}`** 경로를 사용한다.
+- post 첨부 경로가 post가 아니라 **space**에 매달린 이유: 위의 2단계 모델(업로드 → finalize)이 성립하려면 **글보다 먼저 업로드할 수 있어야** 한다. 경로에 `post.pub_id`를 박으면 글이 먼저 존재해야 해서 작성 → 업로드 → 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상 트랜잭션(soft delete)이 필요해진다 — 그 보상도 실패할 수 있어 유령 글이 생긴다. space에 매면 `create_post_with_attachments`가 글+첨부를 한 트랜잭션으로 끝내고, 실패 시 아무것도 남지 않는다(올려둔 blob은 고아 청소행). 보안 성질은 message 첨부와 동일하다: 내가 참여하는 공간의, 내 uid 경로에만 올릴 수 있다.
+- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat, `create_post_with_attachments()`/`set_post_attachments()`는 content 문서에 있다.
 - `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `schema_runtime_check.sql`이 둘의 drift를 잡는다.
-- post 첨부/space 이미지 finalize RPC는 2026-07 정리에서 제거돼 현재 해당 bucket의 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).
+- space 이미지는 finalize RPC가 없어 `space-images` bucket에 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).
