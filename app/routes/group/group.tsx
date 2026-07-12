@@ -166,7 +166,7 @@ export default function GroupPage() {
         </Button>
       </nav>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-w-0 flex-col sm:gap-4">
           {tab === "posts" ? (
             <>
