@@ -17,13 +17,22 @@ create table public.posts (
   deleted_by bigint null references public.profiles (id) on delete set null
 );
 
+-- post 첨부가 받아들이는 MIME과 타입별 크기 상한. message_attachment_mime_types와 같은 역할이고,
+-- post_attachments가 여기로 FK를 걸어 "글이 받지 않는 타입은 저장 자체가 불가능"하게 만든다.
+-- 행은 seed라 마이그레이션에 산다.
+create table public.post_attachment_mime_types (
+  content_type text primary key references public.mime_types (content_type) on update cascade on delete restrict,
+  max_bytes int8 not null,
+  created_at timestamptz not null default now()
+);
+
 create table public.post_attachments (
   id bigserial primary key,
   post_id bigint not null references public.posts (id) on delete restrict,
   storage_bucket text not null,
   storage_path text not null,
   file_name text not null,
-  content_type text not null,
+  content_type text not null references public.post_attachment_mime_types (content_type) on update cascade on delete restrict,
   size_bytes int8 null,
   sort_order int4 not null default 0,
   width int4 null,
@@ -126,8 +135,29 @@ returns boolean language sql stable security definer set search_path = '' as $$
   )
   select exists (select 1 from descendants where deleted_at is null)
 $$;
-revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) from public, anon, service_role;
+create function private.max_post_attachments()
+returns int4 language sql immutable set search_path = '' as $$ select 10 $$;
+revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint), private.max_post_attachments() from public, anon, service_role;
 grant execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) to authenticated;
+
+-- set_post_attachments가 이미 개수를 검사하지만, 테이블에서도 다시 막는다(service_role 직접 삽입 등).
+-- 메시지와 달리 글은 이미지와 파일을 섞을 수 있어서(카드가 이미지 그리드와 파일 목록을 함께 렌더한다)
+-- "여럿이면 전부 이미지" 규칙은 없고 개수 상한만 있다.
+create function private.enforce_post_attachment_shape()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (
+    select 1
+    from (select distinct post_id from new_rows) touched
+    where (select count(*) from public.post_attachments a where a.post_id = touched.post_id)
+          > private.max_post_attachments()
+  ) then
+    raise exception 'a post carries at most % attachments', private.max_post_attachments();
+  end if;
+  return null;
+end;
+$$;
+revoke execute on function private.enforce_post_attachment_shape() from public, anon, authenticated, service_role;
 
 create function private.validate_comment_parent()
 returns trigger
@@ -179,9 +209,16 @@ for each row execute function private.validate_post_category();
 
 revoke execute on function private.validate_post_category() from public, anon, authenticated, service_role;
 
+create trigger trg_enforce_post_attachment_shape
+after insert on public.post_attachments
+referencing new table as new_rows
+for each statement execute function private.enforce_post_attachment_shape();
+
 alter table public.posts enable row level security;
+alter table public.post_attachment_mime_types enable row level security;
 alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
+create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
 create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
@@ -191,14 +228,384 @@ create policy comments_select on public.comments for select to authenticated usi
 create policy comments_insert on public.comments for insert to authenticated with check (author_id=private.current_profile_id() and private.can_access_post(post_id));
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
 
-grant select on public.posts, public.post_attachments, public.comments to authenticated;
+-- 익명이 익명이려면 author_id를 클라이언트가 못 읽어야 한다. 테이블 전체 select를 주면
+-- `select author_id from posts where is_anonymous`로 익명 글 작성자 명단이 그대로 나온다 --
+-- is_anonymous는 표시 플래그일 뿐 RLS가 author_id를 가려주지 않는다.
+-- 그래서 select를 컬럼 단위로 좁혀 author_id/deleted_by(모더레이터 신원)/pinned_by를 회수하고,
+-- 작성자 정보는 아래 읽기 RPC들이 익명이면 null로 지워서 내려준다. RLS 정책과 트리거는 테이블
+-- 소유자 권한으로 돌므로 이 회수에 영향받지 않는다.
+grant select (id,pub_id,space_id,title,content,is_anonymous,category_id,pinned_at,created_at,updated_at) on public.posts to authenticated;
+grant select (id,post_id,parent_id,content,is_anonymous,created_at,updated_at,deleted_at) on public.comments to authenticated;
+grant select on public.post_attachments, public.post_attachment_mime_types to authenticated;
 grant insert (space_id,author_id,title,content,is_anonymous,category_id) on public.posts to authenticated;
 grant update (title,content,is_anonymous,category_id) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
-grant select, insert, update, delete on public.posts, public.post_attachments, public.comments to service_role;
+grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
+
+-- 읽기 경로가 RPC인 이유는 두 가지다.
+-- 1) 익명. author_id의 select grant를 회수했으므로 작성자를 붙여줄 수 있는 건 security definer
+--    함수뿐이고, 그 함수가 is_anonymous면 author를 null로 지운다. is_mine은 익명이어도 true다 --
+--    자기 글엔 수정/삭제가 떠야 하고, 그 사실은 남에게 새지 않는다(남에겐 false).
+-- 2) 카운트. 댓글/반응 수는 캐시하지 않고 count(*)로 세는데, 클라이언트가 글마다 따로 세면 N+1이다.
+--    한 번에 묶어 내린다(list_conversations가 unread를 묶는 것과 같은 이유).
+create function private.post_author(p_author_id bigint, p_is_anonymous boolean)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select case when p_is_anonymous then null else
+    (select jsonb_build_object('id',pr.id,'name',pr.name,'avatar_url',pr.avatar_url)
+     from public.profiles pr where pr.id=p_author_id)
+  end
+$$;
+revoke execute on function private.post_author(bigint,boolean) from public, anon, authenticated, service_role;
+
+create function public.list_space_posts(
+  p_space_id bigint,
+  p_category_id bigint default null,
+  p_before_id bigint default null,
+  p_limit int4 default 20
+)
+returns table(
+  post_id bigint,
+  pub_id uuid,
+  title text,
+  content text,
+  is_anonymous boolean,
+  author jsonb,
+  is_mine boolean,
+  category jsonb,
+  pinned_at timestamptz,
+  created_at timestamptz,
+  comment_count bigint,
+  reaction_count bigint,
+  top_reactions jsonb,
+  my_reaction_id bigint,
+  attachments jsonb
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  before_created_at timestamptz;
+begin
+  if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
+  if p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+
+  -- 커서는 id 하나지만 정렬은 (created_at, id)다. 그 글의 created_at을 찾아 행 비교로 쓰면
+  -- idx_posts_active_space_created_at을 그대로 탄다.
+  if p_before_id is not null then
+    select p.created_at into before_created_at from public.posts p where p.id=p_before_id;
+  end if;
+
+  return query
+  with page as (
+    -- 고정 글은 첫 페이지에만 얹고, 시간순 스트림에서는 빼서 두 번 나오지 않게 한다(FB와 동일).
+    select p.*, 0 as sort_group
+    from public.posts p
+    where p_before_id is null
+      and p.space_id=p_space_id and p.deleted_at is null and p.pinned_at is not null
+      and (p_category_id is null or p.category_id=p_category_id)
+    union all
+    (
+      select p.*, 1 as sort_group
+      from public.posts p
+      where p.space_id=p_space_id and p.deleted_at is null and p.pinned_at is null
+        and (p_category_id is null or p.category_id=p_category_id)
+        and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
+      order by p.created_at desc, p.id desc
+      limit p_limit
+    )
+  )
+  select
+    page.id,
+    page.pub_id,
+    page.title,
+    page.content,
+    page.is_anonymous,
+    private.post_author(page.author_id, page.is_anonymous),
+    page.author_id=caller_id,
+    case when cat.id is null then null else
+      jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
+    page.pinned_at,
+    page.created_at,
+    coalesce(counts.comment_count,0),
+    coalesce(counts.reaction_count,0),
+    coalesce(summary.top_reactions,'[]'::jsonb),
+    summary.my_reaction_id,
+    coalesce(files.items,'[]'::jsonb)
+  from page
+  left join public.space_categories cat on cat.id=page.category_id
+  left join lateral (
+    select
+      (select count(*) from public.comments c where c.post_id=page.id and c.deleted_at is null) as comment_count,
+      (select count(*) from public.post_reactions r where r.post_id=page.id) as reaction_count
+  ) counts on true
+  left join lateral (
+    select
+      (select jsonb_agg(t.icon order by t.n desc, t.icon)
+       from (
+         select rt.icon, count(*) as n
+         from public.post_reactions r
+         join public.reaction_types rt on rt.id=r.reaction_type_id
+         where r.post_id=page.id and rt.icon is not null
+         group by rt.icon
+         order by count(*) desc
+         limit 3
+       ) t) as top_reactions,
+      (select r.reaction_type_id from public.post_reactions r where r.post_id=page.id and r.user_id=caller_id) as my_reaction_id
+  ) summary on true
+  left join lateral (
+    select jsonb_agg(jsonb_build_object(
+      'id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,
+      'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,
+      'width',a.width,'height',a.height
+    ) order by a.sort_order, a.id) as items
+    from public.post_attachments a
+    join public.mime_types mime on mime.content_type=a.content_type
+    where a.post_id=page.id
+  ) files on true
+  order by page.sort_group, page.pinned_at desc nulls last, page.created_at desc, page.id desc;
+end;
+$$;
+
+create function public.get_post(p_pub_id uuid)
+returns table(
+  post_id bigint,
+  pub_id uuid,
+  space_id bigint,
+  title text,
+  content text,
+  is_anonymous boolean,
+  author jsonb,
+  is_mine boolean,
+  category jsonb,
+  pinned_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz,
+  comment_count bigint,
+  reaction_count bigint,
+  top_reactions jsonb,
+  my_reaction_id bigint,
+  attachments jsonb
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_id bigint;
+begin
+  select p.id into target_id from public.posts p where p.pub_id=p_pub_id and p.deleted_at is null;
+  if not found then return; end if;
+  if not private.can_access_post(target_id) then raise exception 'post access required'; end if;
+
+  return query
+  select
+    p.id, p.pub_id, p.space_id, p.title, p.content, p.is_anonymous,
+    private.post_author(p.author_id, p.is_anonymous),
+    p.author_id=caller_id,
+    case when cat.id is null then null else
+      jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
+    p.pinned_at, p.created_at, p.updated_at,
+    (select count(*) from public.comments c where c.post_id=p.id and c.deleted_at is null),
+    (select count(*) from public.post_reactions r where r.post_id=p.id),
+    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
+      from (
+        select rt.icon, count(*) as n
+        from public.post_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
+        where r.post_id=p.id and rt.icon is not null
+        group by rt.icon order by count(*) desc limit 3
+      ) t),'[]'::jsonb),
+    (select r.reaction_type_id from public.post_reactions r where r.post_id=p.id and r.user_id=caller_id),
+    coalesce((select jsonb_agg(jsonb_build_object(
+      'id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,
+      'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,
+      'width',a.width,'height',a.height
+    ) order by a.sort_order, a.id)
+    from public.post_attachments a join public.mime_types mime on mime.content_type=a.content_type
+    where a.post_id=p.id),'[]'::jsonb)
+  from public.posts p
+  left join public.space_categories cat on cat.id=p.category_id
+  where p.id=target_id;
+end;
+$$;
+
+-- 평면으로 내린다. 트리는 parent_id로 클라이언트가 만든다(임의 깊이라 서버에서 접기 애매하고,
+-- 화면도 어차피 전부 펼친다).
+create function public.get_post_comments(p_post_id bigint)
+returns table(
+  comment_id bigint,
+  parent_id bigint,
+  content text,
+  is_anonymous boolean,
+  author jsonb,
+  is_mine boolean,
+  is_deleted boolean,
+  created_at timestamptz,
+  reaction_count bigint,
+  top_reactions jsonb,
+  my_reaction_id bigint
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  if not private.can_access_post(p_post_id) then raise exception 'post access required'; end if;
+
+  return query
+  select
+    c.id,
+    c.parent_id,
+    c.content,
+    c.is_anonymous,
+    -- tombstone은 본문도 작성자도 내리지 않는다. 남는 건 "여기 삭제된 댓글이 있었다"는 사실뿐이다.
+    case when c.deleted_at is not null then null
+         else private.post_author(c.author_id, c.is_anonymous) end,
+    c.author_id=caller_id and c.deleted_at is null,
+    c.deleted_at is not null,
+    c.created_at,
+    (select count(*) from public.comment_reactions r where r.comment_id=c.id),
+    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
+      from (
+        select rt.icon, count(*) as n
+        from public.comment_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
+        where r.comment_id=c.id and rt.icon is not null
+        group by rt.icon order by count(*) desc limit 3
+      ) t),'[]'::jsonb),
+    (select r.reaction_type_id from public.comment_reactions r where r.comment_id=c.id and r.user_id=caller_id)
+  from public.comments c
+  where c.post_id=p_post_id
+    and (c.deleted_at is null or private.has_active_descendant(c.id))
+  order by c.created_at, c.id;
+end;
+$$;
+
+-- search_messages와 달리 security definer다. author_id의 select를 회수했으므로 invoker로는
+-- 작성자를 못 붙이고, 익명 지우기도 함수 안에서 해야 한다. 대신 멤버십을 직접 확인한다.
+-- 공백을 지운 소문자로 비교해 idx_posts_title/content_search_gin(같은 표현식의 trgm)을 탄다.
+create function public.search_posts(p_query text, p_space_id bigint)
+returns table(
+  post_id bigint,
+  pub_id uuid,
+  title text,
+  content_snippet text,
+  author jsonb,
+  created_at timestamptz
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare normalized_query text := regexp_replace(lower(btrim(p_query)), '\s+', '', 'g');
+begin
+  if p_space_id is null then raise exception 'space target required'; end if;
+  if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
+  if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or normalized_query='' then
+    raise exception 'query must contain 1 to 200 characters';
+  end if;
+
+  return query
+  select p.id, p.pub_id, p.title, left(p.content,300),
+         private.post_author(p.author_id, p.is_anonymous),
+         p.created_at
+  from public.posts p
+  where p.space_id=p_space_id
+    and p.deleted_at is null
+    and (regexp_replace(lower(p.title),'\s+','','g') ilike '%'||normalized_query||'%'
+      or regexp_replace(lower(p.content),'\s+','','g') ilike '%'||normalized_query||'%')
+  order by p.created_at desc, p.id desc
+  limit 50;
+end;
+$$;
+
+-- 첨부는 글이 먼저 있어야 만들 수 있다. post_files_insert 스토리지 정책이 경로를
+-- <post.pub_id>/<auth.uid()>/<uuid>로 강제하고 그 글이 실재하며 내 글일 것을 요구하기 때문이다
+-- (chat은 대화가 이미 있으니 업로드 -> send가 한 번에 되지만, 글은 작성 -> 업로드 -> 확정이다).
+--
+-- 목록을 통째로 갈아끼운다. 수정에서 첨부를 빼고 넣는 걸 한 번에 처리하려면 그게 가장 단순하고,
+-- sort_order도 배열 순서로 다시 매기면 된다. 빈 배열이면 첨부를 전부 없앤다.
+create function public.set_post_attachments(p_post_id bigint, p_attachments jsonb)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_pub_id uuid;
+  expected_prefix text;
+  attachment_count int4;
+begin
+  select p.pub_id into target_pub_id
+  from public.posts p
+  where p.id=p_post_id and p.deleted_at is null and p.author_id=caller_id
+  for update;
+  -- 본문 수정과 같은 권한이다(posts_update). 관리자라도 남의 글의 첨부를 바꾸지는 못한다.
+  if not found then raise exception 'post author required'; end if;
+
+  expected_prefix := target_pub_id::text || '/' || (select auth.uid())::text || '/';
+
+  if p_attachments is null or jsonb_typeof(p_attachments)<>'array' then
+    raise exception 'attachments must be a json array';
+  end if;
+  attachment_count := jsonb_array_length(p_attachments);
+  if attachment_count > private.max_post_attachments() then
+    raise exception 'a post carries at most % attachments', private.max_post_attachments();
+  end if;
+
+  -- 글이 받지 않는 MIME은 post_attachment_mime_types에 조인되지 않으므로 allowed.content_type is
+  -- null이 곧 "허용되지 않은 타입"이다.
+  if exists(
+    select 1
+    from jsonb_array_elements(p_attachments) as item(value)
+    left join public.post_attachment_mime_types allowed on allowed.content_type=item.value->>'content_type'
+    where allowed.content_type is null
+      or item.value->>'storage_path' is null
+      or not private.has_uuid_object_suffix(item.value->>'storage_path', expected_prefix)
+      or char_length(btrim(coalesce(item.value->>'file_name','')))=0
+      or (item.value->>'size_bytes')::int8 is null
+      or (item.value->>'size_bytes')::int8<0
+      or (item.value->>'size_bytes')::int8>allowed.max_bytes
+      or (
+        -- 이미 이 글에 붙어 있던 첨부는 스토리지 재확인을 건너뛴다. 수정할 때 그 blob은 24시간보다
+        -- 오래됐을 수 있어서, 새로 올라온 것만 객체 존재·타입·크기를 대조한다.
+        not exists(
+          select 1 from public.post_attachments a
+          where a.post_id=p_post_id and a.storage_path=item.value->>'storage_path'
+        )
+        and not exists(
+          select 1 from storage.objects o
+          where o.bucket_id='post-files'
+            and o.name=item.value->>'storage_path'
+            and o.created_at>=now()-interval '24 hours'
+            and o.metadata->>'mimetype'=item.value->>'content_type'
+            and (o.metadata->>'size')::int8=(item.value->>'size_bytes')::int8
+        )
+      )
+  ) then raise exception 'invalid post attachment'; end if;
+
+  -- 새 목록에서 빠진 기존 첨부의 blob만 삭제 큐로 보낸다(유지되는 blob은 건드리지 않는다).
+  insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by)
+  select a.storage_bucket, a.storage_path, caller_id
+  from public.post_attachments a
+  where a.post_id=p_post_id
+    and not exists(
+      select 1 from jsonb_array_elements(p_attachments) as item(value)
+      where item.value->>'storage_path'=a.storage_path
+    )
+  on conflict(storage_bucket,storage_path) do update
+  set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),
+      processed_at=null,
+      last_error=null;
+
+  delete from public.post_attachments where post_id=p_post_id;
+
+  insert into public.post_attachments(post_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
+  select
+    p_post_id,'post-files',
+    item.value->>'storage_path',
+    btrim(item.value->>'file_name'),
+    item.value->>'content_type',
+    (item.value->>'size_bytes')::int8,
+    (item.position-1)::int4,
+    (item.value->>'width')::int4,
+    (item.value->>'height')::int4
+  from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
+end;
+$$;
+
+revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint), public.search_posts(text,bigint), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint), public.search_posts(text,bigint), public.set_post_attachments(bigint,jsonb) to authenticated;
 
 -- 고정·삭제는 컬럼 grant로 표현할 수 없어서 RPC로 둔다. posts_update/comments_update 정책이
 -- author_id=current_profile_id()라 "관리자가 남의 글을 고정하거나 지운다"가 정책에 안 들어가고,
