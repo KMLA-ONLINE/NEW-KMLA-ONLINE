@@ -1,3 +1,9 @@
+-- 역할은 두 축이다. (1) 운영 권한: can_manage_space() = owner/admin. (2) 글 작성 권한: manager.
+-- manager는 "메인 글은 manager 이상만, 댓글은 멤버 전원"인 공지형 그룹을 위한 예약값이라
+-- can_manage_space가 이 값을 안 보는 건 설계다. 다만 아직 그 축을 읽는 곳이 없어 member와
+-- 구분되지 않는다 -- 살리려면 spaces에 공간별 스위치(예: post_policy) + posts_insert 정책 +
+-- create_post_with_attachments(security definer라 RLS를 지나친다)의 검사가 같이 필요하다.
+-- is_space_member의 p_allowed_roles가 정확히 그때 쓰라고 있는 인자다. 자세한 건 docs/db/domains/02-spaces.md.
 create type public.member_role as enum ('owner', 'admin', 'manager', 'member');
 create type public.notification_setting as enum ('off', 'mentions', 'all');
 -- 참여(읽기/쓰기)는 언제나 멤버십이 있어야 한다. 정책은 '어떻게 멤버가 되는가'만 가른다.

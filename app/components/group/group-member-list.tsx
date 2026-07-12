@@ -6,19 +6,12 @@ import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
 import { useDebouncedValue } from "~/hooks/use-debounced-value"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
-import { normalizeSearch } from "~/lib/group/format"
+import { normalizeSearch, ROLE_LABEL } from "~/lib/group/format"
 import type { GroupMember, GroupMemberRole } from "~/lib/group/types"
 
 // 일반 멤버는 한 번에 다 그리지 않고 페이지 단위로만 보여준다 -- 실제로는 로더가 space_
 // members를 keyset(role, joined_at)로 페이지네이션해 스크롤 바닥에서 다음 페이지를 부른다.
 const MEMBER_PAGE_SIZE = 10
-
-const ROLE_LABEL: Record<GroupMemberRole, string> = {
-  owner: "소유자",
-  admin: "관리자",
-  manager: "매니저",
-  member: "멤버",
-}
 
 // owner → admin → manager → member 순. 스키마 enum 정의 순서와 같다.
 const ROLE_RANK: Record<GroupMemberRole, number> = {

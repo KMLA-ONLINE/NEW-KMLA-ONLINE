@@ -1,3 +1,14 @@
+import type { GroupMemberRole } from "~/lib/group/types"
+
+// space_members.role의 표시 이름. 멤버 목록과 알림(space_role_changed)이 같은 이름을 써야 해서
+// 컴포넌트가 아니라 여기 산다.
+export const ROLE_LABEL: Record<GroupMemberRole, string> = {
+  owner: "소유자",
+  admin: "관리자",
+  manager: "매니저",
+  member: "멤버",
+}
+
 // post_attachments.size_bytes를 사람이 읽는 크기로.
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
