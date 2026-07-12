@@ -24,6 +24,7 @@ export function RoomPane({
   onBack,
   onOpenDetail,
   onOpenPinnedMessages,
+  onAttachImage,
   onAttachFile,
   onClearReply,
   onReply,
@@ -41,6 +42,7 @@ export function RoomPane({
   onBack?: () => void
   onOpenDetail: () => void
   onOpenPinnedMessages: () => void
+  onAttachImage: () => void
   onAttachFile: () => void
   onClearReply: () => void
   onReply: (message: Message) => void
@@ -205,7 +207,8 @@ export function RoomPane({
         <div className="relative min-h-0 flex-1">
           <div
             ref={messagesViewportRef}
-            className="messenger-scrollbar h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
+            data-scroll-container
+            className="h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
           >
             {isMessageListReady ? (
               <MessageList
@@ -250,6 +253,7 @@ export function RoomPane({
 
         <MessageComposer
           replyTo={replyTo}
+          onAttachImage={onAttachImage}
           onAttachFile={onAttachFile}
           onClearReply={onClearReply}
           onSend={onSend}

@@ -178,12 +178,15 @@ export type ImageSizeBounds = {
   minHeight: number
 }
 
-// Mobile-safe box for a single image inside a chat bubble: wide enough to
-// read, capped so it never forces the bubble past its max-width on a narrow
-// screen.
+// Preferred box for a single image inside a chat bubble. maxWidth is a target,
+// not a hard render width: the figure uses aspect-ratio + max-w-full, so on a
+// narrow screen it shrinks to the bubble column (~70% of the chat) without
+// distortion, and on desktop/tablet it grows up to ~half the chat width.
+// maxHeight keeps tall/portrait images from ballooning vertically (their width
+// stays narrow as a result), which is what we want.
 export const MESSAGE_IMAGE_BOUNDS: ImageSizeBounds = {
-  maxWidth: 224, // 14rem
-  maxHeight: 288, // 18rem
+  maxWidth: 360,
+  maxHeight: 420,
   minWidth: 140,
   minHeight: 110,
 }

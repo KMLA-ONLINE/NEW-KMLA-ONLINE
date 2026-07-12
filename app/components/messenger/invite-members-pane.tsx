@@ -25,7 +25,7 @@ export function InviteMembersPane({
         <p className="min-w-0 truncate text-sm font-semibold">멤버 초대</p>
       </header>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <section className="flex flex-col gap-4">
           <div className="relative">
             <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />

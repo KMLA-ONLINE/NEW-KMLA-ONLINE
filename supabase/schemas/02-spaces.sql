@@ -15,12 +15,37 @@ create table public.spaces (
   description text null,
   image_url text null,
   join_policy public.space_join_policy not null default 'public',
+  -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
+  -- allowed). 이미 올라간 익명 글은 그대로 익명이다 -- is_anonymous는 불변이고, 소급해서 까면
+  -- 익명을 믿고 쓴 사람을 배신하는 것이다.
+  allow_anonymous_posts boolean not null default true,
   member_count int4 not null default 0,
   created_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz null,
   deleted_at timestamptz null,
   deleted_by bigint null references public.profiles (id) on delete set null
+);
+
+-- 익명 작성 권한의 한시적 정지. 관리자가 익명 글의 작성자를 **모른 채로** 그 사람의 익명 권한만 뺏는다.
+--
+-- 왜 밴이 아니라 익명 정지인가: 밴은 익명을 깬다. 밴은 해제·감사·이의신청 때문에 관리자가 목록을
+-- 봐야만 하는데, 익명 글의 작성자를 밴하면 그 목록에 새로 뜬 단 한 명이 곧 작성자다(집합 차집합 한 번).
+-- 반면 익명 정지는 스스로 만료되므로 관리자가 볼 이유가 없고, 그래서 **관리자에게 아무 관측 가능한
+-- 상태도 남기지 않을 수 있다.** RLS가 본인에게만 보여준다. 관리자는 효과만 얻고 정보는 못 얻는다.
+--
+-- 처방도 더 정확하다: 문제가 "익명을 악용한다"면 뺏을 것은 익명이지 계정이 아니다.
+create table public.space_anonymity_suspensions (
+  space_id bigint not null references public.spaces (id) on delete restrict,
+  user_id bigint not null references public.profiles (id) on delete restrict,
+  suspended_until timestamptz not null,
+  -- 누범 횟수. 관리자는 이 사람이 전에도 정지됐는지 알 수 없으므로(그게 익명의 조건이다) 누범
+  -- 가중을 스스로 판단할 수가 없다. 그래서 서버가 대신 센다 -- suspend_anonymity가 이 값으로
+  -- 형량을 배가한다. 관리자는 여전히 아무것도 관측하지 못한다.
+  strike_count int4 not null default 1,
+  suspended_by bigint null references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (space_id, user_id)
 );
 
 create table public.space_members (
@@ -61,6 +86,16 @@ create table public.space_join_requests (
   primary key (space_id, user_id)
 );
 
+-- 그룹별 게시판/말머리(정보·공식·잡담, 학생회 업무 구분 등). 관리자(can_manage_space)가
+-- 정의하고 글이 하나에 속한다(posts.category_id). 0개면 프론트는 분류 없이 전체를 보여준다.
+create table public.space_categories (
+  id bigserial primary key,
+  space_id bigint not null references public.spaces (id) on delete restrict,
+  name text not null,
+  sort_order int4 not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create index idx_spaces_active_directory on public.spaces (join_policy, member_count)
 where deleted_at is null;
 create index idx_space_join_requests_space on public.space_join_requests (space_id, created_at);
@@ -71,6 +106,9 @@ where banned_at is null;
 create index idx_space_members_user_pinned on public.space_members (user_id, pinned_at desc)
 where pinned_at is not null;
 create index idx_space_invites_space on public.space_invites (space_id, created_at desc);
+create index idx_space_categories_space on public.space_categories (space_id, sort_order, id);
+create unique index space_categories_space_name_key
+on public.space_categories (space_id, lower(btrim(name)));
 
 alter table public.spaces
   add constraint spaces_pub_id_key unique (pub_id),
@@ -106,6 +144,10 @@ where role = 'owner';
 alter table public.space_invites
   add constraint space_invites_token_key unique (token),
   add constraint space_invites_token_check check (char_length(token) between 16 and 128);
+
+alter table public.space_categories
+  add constraint space_categories_name_check check (char_length(btrim(name)) between 1 and 50),
+  add constraint space_categories_sort_order_check check (sort_order >= 0);
 
 create function private.is_space_member(p_space_id bigint,p_allowed_roles public.member_role[] default null)
 returns boolean language sql stable security definer set search_path = '' as $$
@@ -150,16 +192,62 @@ for each row execute function private.validate_space_owner();
 
 revoke execute on function private.validate_space_owner() from public, anon, authenticated, service_role;
 
+-- 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고, 내가 정지 중이 아니어야 한다.
+-- posts/comments의 insert 트리거가 이걸 강제한다 -- RPC에서만 막으면 컬럼 grant로 테이블에 직접
+-- insert해서 우회할 수 있다.
+create function private.can_post_anonymously(p_space_id bigint, p_user_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.spaces s where s.id=p_space_id and s.allow_anonymous_posts)
+    and not exists(
+      select 1 from public.space_anonymity_suspensions x
+      where x.space_id=p_space_id and x.user_id=p_user_id and x.suspended_until > now()
+    )
+$$;
+revoke execute on function private.can_post_anonymously(bigint,bigint) from public, anon, authenticated, service_role;
+
+create function private.enforce_anonymous_allowed()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare target_space_id bigint;
+begin
+  if not new.is_anonymous then return new; end if;
+
+  if tg_table_name='posts' then
+    target_space_id := new.space_id;
+  else
+    select p.space_id into target_space_id from public.posts p where p.id=new.post_id;
+  end if;
+
+  if not private.can_post_anonymously(target_space_id, new.author_id) then
+    raise exception 'anonymous posting is not available in this space';
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function private.enforce_anonymous_allowed() from public, anon, authenticated, service_role;
+
 alter table public.spaces enable row level security;
 alter table public.space_members enable row level security;
+alter table public.space_anonymity_suspensions enable row level security;
 alter table public.space_invites enable row level security;
 alter table public.space_join_requests enable row level security;
+alter table public.space_categories enable row level security;
+-- 본인 것만 보인다. 관리자에게 보이면 익명 글 작성자를 밴할 때와 똑같은 유출이 생긴다 --
+-- "익명 글 X의 작성자를 정지" 후 목록을 다시 읽으면 새로 뜬 한 명이 곧 X의 작성자다.
+-- 쓰기는 RPC(suspend_*_author_anonymity)로만 간다.
+create policy space_anonymity_suspensions_select on public.space_anonymity_suspensions
+  for select to authenticated using (user_id=private.current_profile_id());
 create policy spaces_select on public.spaces for select to authenticated using (
   deleted_at is null and (
     (join_policy in ('public','request') and (select private.is_accepted_user()))
     or private.is_space_member(id)
   )
 );
+-- 매니저(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description, allow_anonymous_posts.
+-- join_policy는 전환 시 대기 중인 가입 요청을 정리해야 해서 여기 없다(RPC가 갈 자리).
+-- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 storage finalize RPC가 필요하다.
+create policy spaces_update on public.spaces for update to authenticated
+  using (deleted_at is null and private.can_manage_space(id))
+  with check (deleted_at is null and private.can_manage_space(id));
 create policy space_members_select on public.space_members for select to authenticated using (private.is_space_member(space_id));
 create policy space_members_update on public.space_members for update to authenticated using (user_id=private.current_profile_id() and private.is_space_member(space_id)) with check (user_id=private.current_profile_id() and private.is_space_member(space_id));
 create policy space_invites_select on public.space_invites for select to authenticated using (private.can_manage_space(space_id));
@@ -167,14 +255,27 @@ create policy space_invites_select on public.space_invites for select to authent
 -- 겸한다 -- 승인만 멤버십·member_count를 건드리므로 RPC(approve_join_request)로 간다.
 create policy space_join_requests_select on public.space_join_requests for select to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
 create policy space_join_requests_delete on public.space_join_requests for delete to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
+-- 카테고리 조회는 멤버, 관리(생성·수정·삭제)는 매니저(owner/admin).
+create policy space_categories_select on public.space_categories for select to authenticated using (private.is_space_member(space_id));
+create policy space_categories_insert on public.space_categories for insert to authenticated with check (private.can_manage_space(space_id));
+create policy space_categories_update on public.space_categories for update to authenticated using (private.can_manage_space(space_id)) with check (private.can_manage_space(space_id));
+create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_manage_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,join_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,join_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+-- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
+grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
+grant update (name,description,allow_anonymous_posts) on public.spaces to authenticated;
 grant select on public.space_members to authenticated;
 grant update (notification_setting,pinned_at) on public.space_members to authenticated;
 grant select on public.space_invites to authenticated;
 grant select, delete on public.space_join_requests to authenticated;
-grant select, insert, update, delete on public.spaces, public.space_members, public.space_invites, public.space_join_requests to service_role;
-grant usage, select on sequence public.spaces_id_seq, public.space_invites_id_seq to service_role;
+grant select on public.space_categories to authenticated;
+grant insert (space_id,name,sort_order) on public.space_categories to authenticated;
+grant update (name,sort_order) on public.space_categories to authenticated;
+grant delete on public.space_categories to authenticated;
+grant usage, select on sequence public.space_categories_id_seq to authenticated;
+grant select, insert, update, delete on public.spaces, public.space_members, public.space_anonymity_suspensions, public.space_invites, public.space_join_requests, public.space_categories to service_role;
+grant usage, select on sequence public.spaces_id_seq, public.space_invites_id_seq, public.space_categories_id_seq to service_role;
 
 -- 'joined'(즉시 가입 또는 이미 멤버) 또는 'requested'(승인 대기)를 돌려준다. request
 -- 정책 공간은 멤버가 되는 게 아니라 요청만 쌓이므로, 호출자가 어느 쪽인지 알아야 한다.

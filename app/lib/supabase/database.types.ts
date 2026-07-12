@@ -276,7 +276,7 @@ export type Database = {
       comments: {
         Row: {
           author_id: number
-          content: string
+          content: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
@@ -288,7 +288,7 @@ export type Database = {
         }
         Insert: {
           author_id: number
-          content: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -300,7 +300,7 @@ export type Database = {
         }
         Update: {
           author_id?: number
-          content?: string
+          content?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -830,6 +830,32 @@ export type Database = {
         }
         Relationships: []
       }
+      post_attachment_mime_types: {
+        Row: {
+          content_type: string
+          created_at: string
+          max_bytes: number
+        }
+        Insert: {
+          content_type: string
+          created_at?: string
+          max_bytes: number
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          max_bytes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_attachment_mime_types_content_type_fkey"
+            columns: ["content_type"]
+            isOneToOne: true
+            referencedRelation: "mime_types"
+            referencedColumns: ["content_type"]
+          },
+        ]
+      }
       post_attachments: {
         Row: {
           content_type: string
@@ -871,6 +897,13 @@ export type Database = {
           width?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "post_attachments_content_type_fkey"
+            columns: ["content_type"]
+            isOneToOne: false
+            referencedRelation: "post_attachment_mime_types"
+            referencedColumns: ["content_type"]
+          },
           {
             foreignKeyName: "post_attachments_post_id_fkey"
             columns: ["post_id"]
@@ -929,6 +962,7 @@ export type Database = {
       posts: {
         Row: {
           author_id: number
+          category_id: number | null
           content: string
           created_at: string
           deleted_at: string | null
@@ -944,6 +978,7 @@ export type Database = {
         }
         Insert: {
           author_id: number
+          category_id?: number | null
           content: string
           created_at?: string
           deleted_at?: string | null
@@ -959,6 +994,7 @@ export type Database = {
         }
         Update: {
           author_id?: number
+          category_id?: number | null
           content?: string
           created_at?: string
           deleted_at?: string | null
@@ -978,6 +1014,13 @@ export type Database = {
             columns: ["author_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posts_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "space_categories"
             referencedColumns: ["id"]
           },
           {
@@ -1170,6 +1213,87 @@ export type Database = {
           },
         ]
       }
+      space_anonymity_suspensions: {
+        Row: {
+          created_at: string
+          space_id: number
+          strike_count: number
+          suspended_by: number | null
+          suspended_until: string
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          space_id: number
+          strike_count?: number
+          suspended_by?: number | null
+          suspended_until: string
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          space_id?: number
+          strike_count?: number
+          suspended_by?: number | null
+          suspended_until?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_anonymity_suspensions_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_anonymity_suspensions_suspended_by_fkey"
+            columns: ["suspended_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_anonymity_suspensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      space_categories: {
+        Row: {
+          created_at: string
+          id: number
+          name: string
+          sort_order: number
+          space_id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          name: string
+          sort_order?: number
+          space_id: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          name?: string
+          sort_order?: number
+          space_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_categories_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_invites: {
         Row: {
           created_at: string
@@ -1318,6 +1442,7 @@ export type Database = {
       }
       spaces: {
         Row: {
+          allow_anonymous_posts: boolean
           created_at: string
           created_by: number | null
           deleted_at: string | null
@@ -1333,6 +1458,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          allow_anonymous_posts?: boolean
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1348,6 +1474,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          allow_anonymous_posts?: boolean
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1453,6 +1580,17 @@ export type Database = {
         Args: { p_peer_id: number }
         Returns: number
       }
+      create_post_with_attachments: {
+        Args: {
+          p_attachments?: Json
+          p_category_id?: number
+          p_content: string
+          p_is_anonymous?: boolean
+          p_space_id: number
+          p_title: string
+        }
+        Returns: string
+      }
       create_space_invite: {
         Args: {
           p_expires_at?: string
@@ -1495,6 +1633,46 @@ export type Database = {
           sender_id: number
         }[]
       }
+      get_post: {
+        Args: { p_pub_id: string }
+        Returns: {
+          attachments: Json
+          author: Json
+          category: Json
+          comment_count: number
+          content: string
+          created_at: string
+          is_anonymous: boolean
+          is_mine: boolean
+          my_reaction_id: number
+          pinned_at: string
+          post_id: number
+          pub_id: string
+          reaction_count: number
+          space_id: number
+          title: string
+          top_reactions: Json
+          updated_at: string
+        }[]
+      }
+      get_post_comments: {
+        Args: { p_after_id?: number; p_limit?: number; p_post_id: number }
+        Returns: {
+          anonymous_label: string
+          author: Json
+          comment_id: number
+          content: string
+          created_at: string
+          is_anonymous: boolean
+          is_deleted: boolean
+          is_mine: boolean
+          my_reaction_id: number
+          parent_id: number
+          reaction_count: number
+          top_reactions: Json
+        }[]
+      }
+      get_unread_message_count: { Args: never; Returns: number }
       join_space: { Args: { p_space_id: number }; Returns: string }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
       list_conversations: {
@@ -1517,6 +1695,31 @@ export type Database = {
           notification_level: Database["public"]["Enums"]["notification_level"]
           type: Database["public"]["Enums"]["conversation_type"]
           unread_count: number
+        }[]
+      }
+      list_space_posts: {
+        Args: {
+          p_before_id?: number
+          p_category_id?: number
+          p_limit?: number
+          p_space_id: number
+        }
+        Returns: {
+          attachments: Json
+          author: Json
+          category: Json
+          comment_count: number
+          content: string
+          created_at: string
+          is_anonymous: boolean
+          is_mine: boolean
+          my_reaction_id: number
+          pinned_at: string
+          post_id: number
+          pub_id: string
+          reaction_count: number
+          title: string
+          top_reactions: Json
         }[]
       }
       remove_group_member: {
@@ -1544,6 +1747,17 @@ export type Database = {
           sender_name: string
         }[]
       }
+      search_posts: {
+        Args: { p_query: string; p_space_id: number }
+        Returns: {
+          author: Json
+          content_snippet: string
+          created_at: string
+          post_id: number
+          pub_id: string
+          title: string
+        }[]
+      }
       send_message_with_attachments: {
         Args: {
           p_attachments: Json
@@ -1553,7 +1767,17 @@ export type Database = {
         }
         Returns: number
       }
+      set_post_attachments: {
+        Args: { p_attachments: Json; p_post_id: number }
+        Returns: undefined
+      }
+      set_post_pinned: {
+        Args: { p_id: number; p_pinned: boolean }
+        Returns: undefined
+      }
+      soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
+      soft_delete_post: { Args: { p_id: number }; Returns: undefined }
       submit_onboarding: {
         Args: {
           p_birthday: string
@@ -1570,6 +1794,30 @@ export type Database = {
           p_track: Database["public"]["Enums"]["profile_track"]
           p_type: Database["public"]["Enums"]["profile_type"]
         }
+        Returns: undefined
+      }
+      suspend_comment_author_anonymity: {
+        Args: { p_comment_id: number }
+        Returns: {
+          already_suspended: boolean
+          strike_count: number
+          suspended_days: number
+        }[]
+      }
+      suspend_post_author_anonymity: {
+        Args: { p_post_id: number }
+        Returns: {
+          already_suspended: boolean
+          strike_count: number
+          suspended_days: number
+        }[]
+      }
+      undo_comment_anonymity_suspension: {
+        Args: { p_comment_id: number }
+        Returns: undefined
+      }
+      undo_post_anonymity_suspension: {
+        Args: { p_post_id: number }
         Returns: undefined
       }
       withdraw_profile: { Args: never; Returns: undefined }

@@ -4,8 +4,15 @@ export default [
   layout("./routes/_app.tsx", [
     index("./routes/_app._index.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
+    // discover는 정적 세그먼트라 :pubId보다 먼저 매칭된다(RR7은 배열 순서가 아니라 구체성으로
+    // 랭킹한다). 그래서 "discover"는 사실상 예약된 pub_id -- 그 슬러그를 가진 그룹은 가려진다.
     route("groups/discover", "./routes/_app.groups.discover.tsx"),
-    route("community", "./routes/_app.community.tsx"),
+    route("groups/:pubId", "./routes/group/group.tsx", [
+      route("new", "./routes/group/new.tsx"),
+      route("posts/:postId", "./routes/group/post.tsx"),
+      route("posts/:postId/edit", "./routes/group/edit.tsx"),
+    ]),
+    route("noti", "./routes/_app.noti.tsx"),
     route("messenger", "./routes/messenger/messenger.tsx", [
       index("./routes/messenger/index.tsx"),
       route(":roomId", "./routes/messenger/room.tsx", [

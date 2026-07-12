@@ -1,0 +1,156 @@
+// Shapes the group interior renders against. Deliberately mirrors the schema
+// (supabase/schemas/02-spaces.sql, 03-content.sql) so the mock can't grow fields
+// the backend won't return -- no "category"/"flair"/"featured", because spaces and
+// posts have none of those.
+
+export type GroupSpace = {
+  name: string
+  description: string
+  /** spaces.space_type. group=공식, community=비공식. 이 화면은 둘 다 담는다. */
+  type: "group" | "community"
+  /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
+  pubId: string
+  joinPolicy: "public" | "request" | "invite_only"
+  /** spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(기존 익명 글은 그대로). */
+  allowAnonymous: boolean
+  /**
+   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고 + 내가 익명 정지 중이
+   * 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가 남의
+   * 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
+   */
+  canPostAnonymously: boolean
+  /** 내가 익명 정지 중이면 해제 시각. 아니면 null. 왜 토글이 없는지 알려주는 데 쓴다. */
+  anonymitySuspendedUntil: string | null
+  memberCount: number
+  /** 현재 사용자가 이 space의 멤버인지(space_members). */
+  isMember: boolean
+  /**
+   * 현재 사용자의 이 space에서의 역할(space_members.role 중 내 행). null이면 비멤버.
+   * isMember처럼 컬럼이 아니라 로더가 파생한다. owner/admin이면 관리 UI가 열린다
+   * (can_manage_space 기본셋 = owner/admin).
+   */
+  viewerRole: GroupMemberRole | null
+}
+
+export type GroupPostAuthor = {
+  name: string
+}
+
+/** space_categories 한 행. 그룹이 정의하는 게시판/말머리(정보·공식·잡담 등). */
+export type GroupCategory = {
+  /** space_categories.id */
+  id: number
+  /** space_categories.name */
+  name: string
+  /** space_categories.sort_order (탭·칩 표시 순서) */
+  sortOrder: number
+}
+
+/** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
+export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
+
+/** space_join_requests 한 행 + 표시용 profiles 필드. request 정책 그룹의 승인 대기 가입 요청. */
+export type GroupJoinRequest = {
+  /** profiles.id (= space_join_requests.user_id) */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  avatarUrl: string | null
+  /** space_join_requests.created_at (ISO 8601). */
+  createdAt: string
+}
+
+/** space_members 한 행 + 표시에 필요한 profiles 필드. */
+export type GroupMember = {
+  /** profiles.id */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  avatarUrl: string | null
+  role: GroupMemberRole
+  /** space_members.joined_at (ISO 8601). */
+  joinedAt: string
+  /** 현재 사용자 본인인지(표시 강조용). */
+  isMe?: boolean
+}
+
+/** post_attachments의 이미지 한 장. 서명 URL은 로더가 채운다. */
+export type GroupPostImage = {
+  src: string
+  alt: string
+}
+
+/** 이미지가 아닌 첨부(post_attachments 중 kind가 image가 아닌 것). 이미지는 images로 나눈다. */
+export type GroupPostFile = {
+  /** file_name */
+  name: string
+  /** content_type */
+  contentType: string
+  /** size_bytes */
+  sizeBytes: number
+  /** storage_path 기반 서명 URL. 로더가 채운다. */
+  url: string
+}
+
+export type GroupPost = {
+  id: number
+  /** posts.pub_id (uuid). 외부/공유용 식별자 -- 상세 URL은 id가 아니라 이걸로 주소한다. */
+  pubId: string
+  title: string
+  content: string
+  /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
+  author: GroupPostAuthor | null
+  /** 내가 쓴 글인지(author_id === 현재 프로필). 수정/삭제 메뉴 노출용. */
+  isMine?: boolean
+  /** posts.pinned_at 여부. "고정" 배지로 표시. */
+  isPinned: boolean
+  /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
+  createdAt: string
+  /** posts.category_id가 가리키는 그룹 카테고리(로더가 조인해 내려줌, author처럼 비정규화). null=미분류. */
+  category: GroupCategory | null
+  images: GroupPostImage[]
+  /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
+  files?: GroupPostFile[]
+  /**
+   * 댓글 수. reactionCount와 같이 count(*)로 읽는 파생 스칼라(캐시 컬럼 아님, 03-content.sql).
+   * 피드 로더는 글마다 이 개수만 내려주지 트리 전체를 싣지 않는다 -- 그래서 comments와 분리한다.
+   */
+  commentCount: number
+  /** 이 글의 댓글 트리(parentId 스레드). 상세 로더만 조인해 채우는 상세 전용 필드. */
+  comments?: GroupComment[]
+  /** count(*)로 읽는 파생값(캐시 컬럼 아님). */
+  reactionCount: number
+  /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
+  topReactions: string[]
+}
+
+export type GroupComment = {
+  id: number
+  /** comments.parent_id. null이면 최상위, 값이 있으면 그 부모 댓글의 id (대댓글). */
+  parentId: number | null
+  /**
+   * 익명 댓글이거나(is_anonymous) 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
+   * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
+   */
+  author: GroupPostAuthor | null
+  /**
+   * 익명 댓글의 표시 이름: "익명1", "익명2", 또는 익명 글의 글쓴이면 "글쓴이". 익명이 아니거나
+   * 삭제됐으면 null. **번호는 서버가 매긴다** -- 클라이언트가 매기려면 작성자별 키가 필요한데
+   * 그게 곧 author_id고, 그러면 익명이 깨진다. 번호는 그 글 안에서만 유효하다(같은 사람이 다른
+   * 글에선 다른 번호를 받으므로 여러 글에 걸쳐 이어 붙일 수 없다).
+   */
+  anonymousLabel?: string | null
+  /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
+  isMine?: boolean
+  /**
+   * 삭제된 댓글(tombstone). 답글이 하나라도 살아 있으면 행이 남아 계속 내려온다
+   * (comments_select의 has_active_descendant) -- 안 그러면 답글 사슬이 끊긴다.
+   * 이때 content와 author는 서버가 비운다. 즉 삭제된 댓글에서 알 수 있는 건 "여기 뭔가 있었다"뿐.
+   */
+  isDeleted?: boolean
+  /** 삭제된 댓글이면 null. comments.content가 nullable인 이유다. */
+  content: string | null
+  createdAt: string
+}

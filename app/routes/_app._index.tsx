@@ -1,6 +1,6 @@
 import { Separator } from "~/components/ui/separator"
-import type { FeedPostCardProps } from "~/components/layout/feed-post-card"
-import { FeedPostList } from "~/components/layout/feed-post-list"
+import type { FeedPostCardProps } from "~/components/feed/feed-post-card"
+import { FeedPostList } from "~/components/feed/feed-post-list"
 import { Button } from "~/components/ui/button"
 
 // Stand-in rows until a loader reads posts across the spaces the viewer belongs

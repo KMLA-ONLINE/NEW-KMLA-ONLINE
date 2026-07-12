@@ -1,12 +1,17 @@
 import { BellOffIcon, SearchIcon } from "lucide-react"
+import { useState } from "react"
 import { Link } from "react-router"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
+import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import { getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { RoomSummary } from "~/lib/messenger/types"
+
+// 대화 목록도 한 번에 다 그리지 않고 페이지 단위로만(스크롤이 바닥에 닿으면 다음 페이지).
+const ROOM_PAGE_SIZE = 15
 
 export function ChatListPane({
   rooms,
@@ -23,6 +28,14 @@ export function ChatListPane({
   onSearchChange: (value: string) => void
   onSelectRoom: (roomId: string) => void
 }) {
+  const [visibleCount, setVisibleCount] = useState(ROOM_PAGE_SIZE)
+  const shownRooms = rooms.slice(0, visibleCount)
+  const hasMore = visibleCount < rooms.length
+  const sentinelRef = useInfiniteScroll(
+    () => setVisibleCount((count) => count + ROOM_PAGE_SIZE),
+    hasMore
+  )
+
   return (
     <section className="bg-card flex h-full min-h-0 flex-col overflow-hidden md:border-r">
       <div className="shrink-0 space-y-3 px-4 py-4 md:px-5 md:py-4">
@@ -40,10 +53,10 @@ export function ChatListPane({
         </div>
       </div>
 
-      <div className="messenger-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(0.75rem+4rem+env(safe-area-inset-bottom))] md:p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[calc(0.75rem+4rem+env(safe-area-inset-bottom))] md:p-2">
         {rooms.length > 0 ? (
           <div className="flex flex-col gap-1" aria-label="Conversation list">
-            {rooms.map((room) => {
+            {shownRooms.map((room) => {
               const isSelected = room.id === selectedRoomId
 
               return (
@@ -86,6 +99,11 @@ export function ChatListPane({
                 </Link>
               )
             })}
+            {hasMore ? (
+              <div ref={sentinelRef} className="text-muted-foreground py-3 text-center text-xs">
+                불러오는 중…
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center rounded-2xl border border-dashed p-8 text-center text-sm">

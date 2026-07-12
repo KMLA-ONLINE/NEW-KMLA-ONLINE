@@ -22,10 +22,12 @@ Source: [`supabase/schemas/02-spaces.sql`](../../../supabase/schemas/02-spaces.s
 
 ## 테이블
 
-- `spaces` — type(`group`=공식/`community`=비공식), `join_policy`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크용, 소문자·숫자·하이픈 3 ~ 50자, unique, 기본값 자동 12자 hex)
+- `spaces` — type(`group`=공식/`community`=비공식), `join_policy`, `allow_anonymous_posts`(그룹 전체 익명 스위치), `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크용, 소문자·숫자·하이픈 3 ~ 50자, unique, 기본값 자동 12자 hex)
+- `space_anonymity_suspensions` — `(space_id, user_id)` PK. **익명 작성 권한의 한시적 정지.** 관리자가 익명 글의 작성자를 *모른 채로* 그 사람의 익명 권한만 뺏는다. RLS가 행을 **본인에게만** 보여준다 — 관리자에게 보이면 익명 글 작성자를 특정하는 통로가 된다. 자세한 설계는 [03-content](03-content.md)의 "익명 악용" 절
 - `space_members` — `(space_id, user_id)` PK. 역할(`owner`/`admin`/`manager`/`member`), 알림 설정, **개인용 `pinned_at`**(가입한 그룹 상단 고정), ban 상태
 - `space_invites` — 초대장. `token`(unique, 링크에 실리는 비밀값)으로 식별. **`target_user_id`가 null이면 공유 링크**(토큰 아는 사람 누구나), **값이 있으면 그 사람만 수락 가능한 대상 지정 초대**. `expires_at`(만료)·`revoked_at`(폐기)로 무효화한다. `target_user_id`는 `on delete cascade`(대상 삭제 시 초대도 삭제 — set null이면 대상 지정 초대가 공유 링크로 격하되어 위험). 관리자만 조회
 - `space_join_requests` — `(space_id, user_id)` PK. `request` 공간의 대기 중인 가입 요청. 조회·삭제는 본인 또는 매니저(RLS). insert는 `join_space` RPC(정의자 권한)만, 승인은 `approve_join_request`만
+- `space_categories` — 그룹별 게시판/말머리(정보·공식·잡담, 학생회 업무 구분 등). `(space_id, lower(btrim(name)))` unique로 그룹 내 이름 중복 금지, `sort_order`로 탭 표시 순서. 조회는 멤버, 관리(생성·수정·삭제)는 매니저(owner/admin). 글은 하나의 카테고리에 속한다(`posts.category_id`, 선택). 0개면 프론트는 분류 없이 전체를 보여준다
 
 ## RPC
 
@@ -55,6 +57,9 @@ space 생성(`create_space`)·소유권 이양 등은 아직 없다. 테이블 �
 | `trg_validate_space_owner` | `space_members` | AFTER INSERT/UPDATE/DELETE (deferred constraint) | space당 owner가 정확히 1명이 아니면 트랜잭션 거부 |
 
 ## 주의
+
+- `spaces`의 update는 **컬럼 단위**로 매니저에게만 열려 있다: `name`, `description`, `allow_anonymous_posts`. `join_policy`는 전환 시 대기 중인 가입 요청을 정리해야 해서 빠져 있다(RPC가 갈 자리). `member_count`는 캐시라 join/leave RPC만 건드리고, `image_url`은 storage finalize RPC가 필요하다.
+- `allow_anonymous_posts`를 꺼도 **이미 올라간 익명 글은 그대로 익명이다.** `posts.is_anonymous`는 불변이라(update 컬럼 grant에 없다) 소급해서 작성자가 공개되지 않는다 — 익명을 믿고 쓴 사람을 배신하지 않기 위해서다. 강제는 `trg_enforce_anonymous_allowed_*`(03-content)가 insert 시점에 한다.
 
 - `member_count` = 밴되지 않은 `space_members` 행 수, **탈퇴(withdrawn) 사용자는 포함**(허용된 근사). membership RPC들이 증감시키며, 모든 이벤트가 space 도메인 안이라 유지 가능하다. 탈퇴는 identity 도메인에서 일어나 여기를 건드리지 않으므로 약간 과다 계수되지만, 계정 삭제는 드물고 `greatest(-1,0)` 클램프가 있으며 재보정(reconcile) 경로는 없다. 정확한 수가 필요하면 `count(*)`로 센다.
 - soft delete 전제(`deleted_at`/`deleted_by`). active group 이름은 `lower(btrim(name))` unique.
