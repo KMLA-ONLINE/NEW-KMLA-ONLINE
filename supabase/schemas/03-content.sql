@@ -58,6 +58,27 @@ create table public.comments (
   constraint comments_content_present check (content is not null or deleted_at is not null)
 );
 
+-- 본문에서 언급된 사람. 본문을 파싱하지 않는다 -- 에디터가 고른 대상의 profile id를 그대로 저장한다.
+-- 파싱하려면 유니크 handle이 필요한데 profiles엔 name뿐이고 유니크도 아니라 동명이인을 가를 수가
+-- 없다(게다가 코드블록·이메일 오탐이 따라붙는다). 이 테이블이 없으면 space_members의 기본
+-- notification_setting인 'mentions'가 "아무 알림도 안 받음"과 같은 뜻이 된다.
+--
+-- 익명 글/댓글도 멘션할 수 있다: 이 행은 "누가 언급됐나"만 담고 "누가 언급했나"는 담지 않는다.
+-- 작성자는 여전히 posts/comments.author_id에만 있고 거기 select grant는 회수돼 있다.
+create table public.post_mentions (
+  post_id bigint not null references public.posts (id) on delete cascade,
+  user_id bigint not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (post_id, user_id)
+);
+
+create table public.comment_mentions (
+  comment_id bigint not null references public.comments (id) on delete cascade,
+  user_id bigint not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (comment_id, user_id)
+);
+
 create index idx_posts_author_created_at on public.posts (author_id, created_at);
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
 where deleted_at is null;
@@ -67,6 +88,9 @@ create index idx_posts_pinned on public.posts (space_id, pinned_at desc)
 where pinned_at is not null and deleted_at is null;
 
 create index idx_comments_tree on public.comments (post_id, parent_id, created_at);
+-- 멘션은 (owner, user)가 PK라 "이 글의 멘션"은 이미 빠르다. 역방향("나를 언급한 것들")만 인덱스가 없다.
+create index idx_post_mentions_user on public.post_mentions (user_id);
+create index idx_comment_mentions_user on public.comment_mentions (user_id);
 create index idx_posts_title_search_gin on public.posts
   using gin (regexp_replace(lower(title), '\s+', '', 'g') extensions.gin_trgm_ops)
   where deleted_at is null;
@@ -137,8 +161,39 @@ returns boolean language sql stable security definer set search_path = '' as $$
 $$;
 create function private.max_post_attachments()
 returns int4 language sql immutable set search_path = '' as $$ select 10 $$;
-revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint), private.max_post_attachments() from public, anon, service_role;
+-- 멘션 하나가 알림 하나다. 상한이 없으면 글 한 개로 전교생에게 알림을 쏠 수 있다.
+create function private.max_mentions()
+returns int4 language sql immutable set search_path = '' as $$ select 20 $$;
+revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint), private.max_post_attachments(), private.max_mentions() from public, anon, service_role;
 grant execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) to authenticated;
+
+-- post_mentions와 comment_mentions는 소유자 컬럼 이름만 다르고(post_id / comment_id) 규칙이 같다.
+-- 소유자 컬럼명을 tg_argv로 받아 한 함수로 처리한다 -- 테이블마다 같은 함수를 복사하는 것보다
+-- 규칙이 하나뿐임이 분명해진다. tg_table_name은 %I로 인용하고 search_path는 비어 있어 주입 여지가 없다.
+create function private.enforce_mention_limit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  owner_column text := tg_argv[0];
+  owner_id bigint := (to_jsonb(new) ->> owner_column)::bigint;
+  existing int4;
+begin
+  execute format('select count(*) from public.%I where %I = $1', tg_table_name, owner_column)
+  into existing using owner_id;
+  if existing >= private.max_mentions() then
+    raise exception 'at most % people can be mentioned', private.max_mentions();
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function private.enforce_mention_limit() from public, anon, authenticated, service_role;
+
+create trigger trg_enforce_post_mention_limit
+before insert on public.post_mentions
+for each row execute function private.enforce_mention_limit('post_id');
+
+create trigger trg_enforce_comment_mention_limit
+before insert on public.comment_mentions
+for each row execute function private.enforce_mention_limit('comment_id');
 
 -- set_post_attachments가 이미 개수를 검사하지만, 테이블에서도 다시 막는다(service_role 직접 삽입 등).
 -- 메시지와 달리 글은 이미지와 파일을 섞을 수 있어서(카드가 이미지 그리드와 파일 목록을 함께 렌더한다)
@@ -218,6 +273,8 @@ alter table public.posts enable row level security;
 alter table public.post_attachment_mime_types enable row level security;
 alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
+alter table public.post_mentions enable row level security;
+alter table public.comment_mentions enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
 create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_participate_space(space_id));
@@ -227,6 +284,47 @@ create policy post_attachments_select on public.post_attachments for select to a
 create policy comments_select on public.comments for select to authenticated using (private.can_access_post(post_id) and (deleted_at is null or private.has_active_descendant(id)));
 create policy comments_insert on public.comments for insert to authenticated with check (author_id=private.current_profile_id() and private.can_access_post(post_id));
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
+
+-- 멘션은 작성자만 달고, 대상은 그 공간의 멤버여야 한다. 멤버 검사가 없으면 읽지도 못하는 글의
+-- 알림을 받게 되고(딥링크를 눌러도 403), 나아가 아무 공간에서나 아무에게나 알림을 쏘는 통로가 된다.
+-- update는 없다: 멘션은 붙이거나 떼거나 둘 중 하나다.
+create policy post_mentions_select on public.post_mentions for select to authenticated using (private.can_access_post(post_id));
+create policy post_mentions_insert on public.post_mentions for insert to authenticated with check (
+  exists(
+    select 1 from public.posts p
+    where p.id=post_mentions.post_id and p.author_id=private.current_profile_id() and p.deleted_at is null
+  )
+  and exists(
+    select 1 from public.posts p join public.space_members sm on sm.space_id=p.space_id
+    where p.id=post_mentions.post_id and sm.user_id=post_mentions.user_id and sm.banned_at is null
+  )
+);
+create policy post_mentions_delete on public.post_mentions for delete to authenticated using (
+  exists(
+    select 1 from public.posts p
+    where p.id=post_mentions.post_id and p.author_id=private.current_profile_id() and p.deleted_at is null
+  )
+);
+
+create policy comment_mentions_select on public.comment_mentions for select to authenticated using (private.can_access_comment(comment_id));
+create policy comment_mentions_insert on public.comment_mentions for insert to authenticated with check (
+  exists(
+    select 1 from public.comments c
+    where c.id=comment_mentions.comment_id and c.author_id=private.current_profile_id() and c.deleted_at is null
+  )
+  and exists(
+    select 1 from public.comments c
+    join public.posts p on p.id=c.post_id
+    join public.space_members sm on sm.space_id=p.space_id
+    where c.id=comment_mentions.comment_id and sm.user_id=comment_mentions.user_id and sm.banned_at is null
+  )
+);
+create policy comment_mentions_delete on public.comment_mentions for delete to authenticated using (
+  exists(
+    select 1 from public.comments c
+    where c.id=comment_mentions.comment_id and c.author_id=private.current_profile_id() and c.deleted_at is null
+  )
+);
 
 -- 익명이 익명이려면 author_id를 클라이언트가 못 읽어야 한다. 테이블 전체 select를 주면
 -- `select author_id from posts where is_anonymous`로 익명 글 작성자 명단이 그대로 나온다 --
@@ -245,8 +343,13 @@ grant insert (space_id,author_id,title,content,is_anonymous,category_id) on publ
 grant update (title,content,category_id) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
+-- 멘션은 update가 없다(붙이거나 떼거나 둘 중 하나). insert는 컬럼 단위라 created_at을 클라이언트가
+-- 정할 수 없다 -- 정할 수 있으면 멘션 시각을 소급해 꾸밀 수 있다.
+grant select, delete on public.post_mentions, public.comment_mentions to authenticated;
+grant insert (post_id,user_id) on public.post_mentions to authenticated;
+grant insert (comment_id,user_id) on public.comment_mentions to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
-grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments to service_role;
+grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
 
 -- 읽기 경로가 RPC인 이유는 두 가지다.

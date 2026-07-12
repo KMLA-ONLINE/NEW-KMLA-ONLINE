@@ -10,6 +10,7 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 - `post_attachments` — post 첨부 metadata (blob은 Storage `post-files`)
 - `post_attachment_mime_types` — post 첨부가 받는 MIME과 타입별 `max_bytes`. `post_attachments.content_type`이 여기로 FK를 걸어 "글이 받지 않는 타입은 저장 자체가 불가"하게 만든다 (`message_attachment_mime_types`와 동형). 행은 seed라 마이그레이션에 산다
 - `comments` — post 소속, `parent_id` self-reference (임의 깊이 대댓글 허용), soft delete. `content`는 nullable이다 — 답글이 달린 댓글은 삭제돼도 tombstone으로 계속 select되므로(`has_active_descendant`) 본문을 비울 수 있어야 한다. 살아있는 댓글의 본문은 `comments_content_present` check가 강제한다
+- `post_mentions` / `comment_mentions` — 본문에서 언급된 사람 `(owner_id, user_id)`. **본문을 파싱하지 않는다** — 에디터가 고른 대상의 profile id를 그대로 저장한다. 파싱하려면 유니크 handle이 필요한데 `profiles`엔 `name`뿐이고 유니크도 아니라 동명이인을 가를 수 없다(게다가 코드블록·이메일 오탐이 따라붙는다). 이 테이블이 없으면 `space_members`의 **기본** `notification_setting`인 `'mentions'`가 "아무 알림도 안 받음"과 같은 뜻이 된다. 익명 글/댓글도 멘션할 수 있다 — 이 행은 "누가 **언급됐나**"만 담고 "누가 언급했나"는 담지 않는다
 
 ## RPC
 
@@ -19,21 +20,21 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 
 **읽기가 RPC인 이유**: `posts.author_id`/`comments.author_id`의 select grant를 회수했기 때문이다(아래 "익명" 참고). 작성자를 붙여줄 수 있는 건 `security definer` 함수뿐이고, 그 함수가 `is_anonymous`면 `author`를 null로 지운다. 덤으로 댓글/반응 수(캐시 안 함)와 첨부를 한 번에 묶어 내려 N+1을 없앤다.
 
-| 함수 | 인증 | 쓰기 | 목적 |
-| --- | --- | --- | --- |
-| `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버 | X | 피드. 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다. 커서는 `id` 하나지만 정렬은 `(created_at, id)`라 행 비교로 `idx_posts_active_space_created_at`을 탄다. `author`(익명이면 null), `is_mine`, `category`, 댓글/반응 수, `top_reactions`, `my_reaction_id`, `attachments` 포함 |
-| `get_post(pub_id)` | post 접근 권한 | X | 상세 1건. 위와 같은 shape |
-| `get_post_comments(post_id, after_id?, limit?)` | post 접근 권한 | X | 댓글 평면 목록(트리는 `parent_id`로 클라이언트가 조립). **페이지네이션은 루트 댓글 단위**이고 그 루트의 자손은 전부 딸려 온다 — 평면 목록을 limit으로 자르면 부모 잘린 답글이 고아가 되어 트리가 끊긴다. 커서는 마지막 루트의 id. tombstone은 `is_deleted=true`에 `content`·`author` 모두 null |
-| `search_posts(query, space_id)` | space 멤버 | X | 공백 무시 제목·본문 검색. `search_messages`와 달리 SECURITY DEFINER다 — invoker로는 `author_id`를 못 읽고 익명 지우기도 못 한다 |
-| `create_post_with_attachments(space_id, title, content, attachments?, category_id?, is_anonymous?)` | space 멤버 | O | 글+첨부를 **한 트랜잭션**으로 만들고 `pub_id`를 돌려준다. 실패하면 아무것도 남지 않는다 |
-| `set_post_attachments(post_id, attachments jsonb)` | 작성자 본인 | O | 수정용. 첨부 목록을 통째로 교체. 빠진 blob만 삭제 큐로, `sort_order`는 배열 순서. 이미 붙어 있던 첨부는 스토리지 재확인을 건너뛴다(수정 시 blob이 24시간보다 오래됐을 수 있어서) |
-| `set_post_pinned(id, pinned)` | space 관리자 (`can_manage_space`) | O | 게시물 고정/해제. 순수 모더레이션이라 작성자여도 자기 글을 고정할 수 없다 |
-| `soft_delete_post(id)` | 작성자 본인 **또는** space 관리자 | O | post soft delete + 첨부/반응 제거 + blob 삭제 큐 등록. 댓글은 손대지 않는다(`can_access_post`가 알아서 막음) |
-| `soft_delete_comment(id)` | 작성자 본인 **또는** space 관리자 | O | comment soft delete + 반응 제거 + **본문 비움**(tombstone이 원문을 싣지 않도록) |
-| `suspend_post_author_anonymity(post_id)` | space 관리자 | O | 익명 글의 작성자를 **모른 채로** 그 사람의 익명 권한만 정지. 형량은 서버가 정한다(1→2→4→8일…, 90일 상한). `(suspended_days, strike_count, already_suspended)` 반환 |
-| `suspend_comment_author_anonymity(comment_id)` | space 관리자 | O | 위와 같되 익명 댓글 대상 |
-| `undo_post_anonymity_suspension(post_id)` | space 관리자 | O | 오판 취소. 현재 정지를 풀고 누범 단계를 **하나** 되돌린다. **void** |
-| `undo_comment_anonymity_suspension(comment_id)` | space 관리자 | O | 위와 같되 익명 댓글 대상 |
+| 함수                                                                                                | 인증                              | 쓰기 | 목적                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------- | --------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_space_posts(space_id, category_id?, before_id?, limit)`                                       | space 멤버                        | X    | 피드. 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다. 커서는 `id` 하나지만 정렬은 `(created_at, id)`라 행 비교로 `idx_posts_active_space_created_at`을 탄다. `author`(익명이면 null), `is_mine`, `category`, 댓글/반응 수, `top_reactions`, `my_reaction_id`, `attachments` 포함 |
+| `get_post(pub_id)`                                                                                  | post 접근 권한                    | X    | 상세 1건. 위와 같은 shape                                                                                                                                                                                                                                                                                  |
+| `get_post_comments(post_id, after_id?, limit?)`                                                     | post 접근 권한                    | X    | 댓글 평면 목록(트리는 `parent_id`로 클라이언트가 조립). **페이지네이션은 루트 댓글 단위**이고 그 루트의 자손은 전부 딸려 온다 — 평면 목록을 limit으로 자르면 부모 잘린 답글이 고아가 되어 트리가 끊긴다. 커서는 마지막 루트의 id. tombstone은 `is_deleted=true`에 `content`·`author` 모두 null             |
+| `search_posts(query, space_id)`                                                                     | space 멤버                        | X    | 공백 무시 제목·본문 검색. `search_messages`와 달리 SECURITY DEFINER다 — invoker로는 `author_id`를 못 읽고 익명 지우기도 못 한다                                                                                                                                                                            |
+| `create_post_with_attachments(space_id, title, content, attachments?, category_id?, is_anonymous?)` | space 멤버                        | O    | 글+첨부를 **한 트랜잭션**으로 만들고 `pub_id`를 돌려준다. 실패하면 아무것도 남지 않는다                                                                                                                                                                                                                    |
+| `set_post_attachments(post_id, attachments jsonb)`                                                  | 작성자 본인                       | O    | 수정용. 첨부 목록을 통째로 교체. 빠진 blob만 삭제 큐로, `sort_order`는 배열 순서. 이미 붙어 있던 첨부는 스토리지 재확인을 건너뛴다(수정 시 blob이 24시간보다 오래됐을 수 있어서)                                                                                                                           |
+| `set_post_pinned(id, pinned)`                                                                       | space 관리자 (`can_manage_space`) | O    | 게시물 고정/해제. 순수 모더레이션이라 작성자여도 자기 글을 고정할 수 없다                                                                                                                                                                                                                                  |
+| `soft_delete_post(id)`                                                                              | 작성자 본인 **또는** space 관리자 | O    | post soft delete + 첨부/반응 제거 + blob 삭제 큐 등록. 댓글은 손대지 않는다(`can_access_post`가 알아서 막음)                                                                                                                                                                                               |
+| `soft_delete_comment(id)`                                                                           | 작성자 본인 **또는** space 관리자 | O    | comment soft delete + 반응 제거 + **본문 비움**(tombstone이 원문을 싣지 않도록)                                                                                                                                                                                                                            |
+| `suspend_post_author_anonymity(post_id)`                                                            | space 관리자                      | O    | 익명 글의 작성자를 **모른 채로** 그 사람의 익명 권한만 정지. 형량은 서버가 정한다(1→2→4→8일…, 90일 상한). `(suspended_days, strike_count, already_suspended)` 반환                                                                                                                                         |
+| `suspend_comment_author_anonymity(comment_id)`                                                      | space 관리자                      | O    | 위와 같되 익명 댓글 대상                                                                                                                                                                                                                                                                                   |
+| `undo_post_anonymity_suspension(post_id)`                                                           | space 관리자                      | O    | 오판 취소. 현재 정지를 풀고 누범 단계를 **하나** 되돌린다. **void**                                                                                                                                                                                                                                        |
+| `undo_comment_anonymity_suspension(comment_id)`                                                     | space 관리자                      | O    | 위와 같되 익명 댓글 대상                                                                                                                                                                                                                                                                                   |
 
 ### 익명 악용은 밴이 아니라 "익명 정지"로 다룬다
 
@@ -86,25 +87,31 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 
 ## Private helper
 
-| 함수 | 용도 |
-| --- | --- |
-| `private.can_access_post(post_id)` | 활성 post + `can_participate_space`(멤버이거나 `open` 공간의 accepted 사용자) |
-| `private.can_access_comment(comment_id)` | 활성 comment + `can_access_post` 위임 |
-| `private.has_active_descendant(comment_id)` | 임의 깊이 하위에 활성 답글이 있는지 (재귀, depth 50 상한). 삭제 comment를 tombstone으로 노출할지 판단 |
-| `private.post_author(author_id, is_anonymous)` | 작성자를 jsonb로. 익명이면 null. 읽기 RPC들이 이걸로 익명을 지운다 |
-| `private.validate_post_attachments(post_id, space_pub_id, attachments)` | 첨부 검증(MIME 허용·크기·경로·스토리지 객체 존재). create/set이 같은 규칙을 쓰도록 한 곳에 |
-| `private.suspend_anonymity(space_id, author_id)` | 익명 정지의 실제 구현. 형량 가중·no-op 판단이 여기 |
-| `private.max_post_attachments()` | 10 |
+| 함수                                                                    | 용도                                                                                                                                            |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `private.can_access_post(post_id)`                                      | 활성 post + `can_participate_space`(멤버이거나 `open` 공간의 accepted 사용자)                                                                   |
+| `private.can_access_comment(comment_id)`                                | 활성 comment + `can_access_post` 위임                                                                                                           |
+| `private.has_active_descendant(comment_id)`                             | 임의 깊이 하위에 활성 답글이 있는지 (재귀, depth 50 상한). 삭제 comment를 tombstone으로 노출할지 판단                                           |
+| `private.post_author(author_id, is_anonymous)`                          | 작성자를 jsonb로. 익명이면 null. 읽기 RPC들이 이걸로 익명을 지운다                                                                              |
+| `private.validate_post_attachments(post_id, space_pub_id, attachments)` | 첨부 검증(MIME 허용·크기·경로·스토리지 객체 존재). create/set이 같은 규칙을 쓰도록 한 곳에                                                      |
+| `private.suspend_anonymity(space_id, author_id)`                        | 익명 정지의 실제 구현. 형량 가중·no-op 판단이 여기                                                                                              |
+| `private.max_post_attachments()`                                        | 10                                                                                                                                              |
+| `private.max_mentions()`                                                | 20. 멘션 하나가 알림 하나라 상한이 없으면 글 한 개로 전교생에게 알림을 쏠 수 있다                                                               |
+| `private.enforce_mention_limit()`                                       | 멘션 수 상한 트리거. `post_mentions`/`comment_mentions`는 소유자 컬럼 이름만 다르고 규칙이 같아서 그 이름을 `tg_argv`로 받아 한 함수가 처리한다 |
 
 ## Trigger
 
-| 트리거 | 테이블 | 이벤트 | side effect |
-| --- | --- | --- | --- |
-| `trg_validate_comment_parent` | `comments` | BEFORE INSERT/UPDATE of `post_id`,`parent_id` | 답글 부모가 같은 post의 활성 comment가 아니면 예외 (깊이 제한 없음) |
-| `trg_validate_post_category` | `posts` | BEFORE INSERT/UPDATE of `space_id`,`category_id` | `category_id`가 글과 다른 space의 카테고리면 예외 (같은 space 강제) |
-| `trg_enforce_anonymous_allowed_posts` | `posts` | BEFORE INSERT | 익명인데 그 space가 익명을 껐거나 작성자가 익명 정지 중이면 예외. **RPC가 아니라 트리거인 이유**: posts/comments는 컬럼 grant로 직접 insert할 수 있어 RPC에서만 막으면 테이블에 바로 꽂아 우회된다 |
-| `trg_enforce_anonymous_allowed_comments` | `comments` | BEFORE INSERT | 위와 같음 |
-| `trg_enforce_post_attachment_shape` | `post_attachments` | AFTER INSERT (statement) | 한 글의 첨부가 `max_post_attachments()`(10)를 넘으면 예외 |
+| 트리거                                   | 테이블             | 이벤트                                           | side effect                                                                                                                                                                                        |
+| ---------------------------------------- | ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trg_validate_comment_parent`            | `comments`         | BEFORE INSERT/UPDATE of `post_id`,`parent_id`    | 답글 부모가 같은 post의 활성 comment가 아니면 예외 (깊이 제한 없음)                                                                                                                                |
+| `trg_validate_post_category`             | `posts`            | BEFORE INSERT/UPDATE of `space_id`,`category_id` | `category_id`가 글과 다른 space의 카테고리면 예외 (같은 space 강제)                                                                                                                                |
+| `trg_enforce_anonymous_allowed_posts`    | `posts`            | BEFORE INSERT                                    | 익명인데 그 space가 익명을 껐거나 작성자가 익명 정지 중이면 예외. **RPC가 아니라 트리거인 이유**: posts/comments는 컬럼 grant로 직접 insert할 수 있어 RPC에서만 막으면 테이블에 바로 꽂아 우회된다 |
+| `trg_enforce_anonymous_allowed_comments` | `comments`         | BEFORE INSERT                                    | 위와 같음                                                                                                                                                                                          |
+| `trg_enforce_post_attachment_shape`      | `post_attachments` | AFTER INSERT (statement)                         | 한 글의 첨부가 `max_post_attachments()`(10)를 넘으면 예외                                                                                                                                          |
+| `trg_enforce_post_mention_limit`         | `post_mentions`    | BEFORE INSERT                                    | 한 글의 멘션이 `max_mentions()`(20)를 넘으면 예외                                                                                                                                                  |
+| `trg_enforce_comment_mention_limit`      | `comment_mentions` | BEFORE INSERT                                    | 위와 같음                                                                                                                                                                                          |
+
+알림을 만드는 트리거(`trg_notify_on_comment`, `trg_notify_on_post_mention`, `trg_notify_on_comment_mention`, `trg_notify_on_post_removed`, `trg_notify_on_comment_removed`)는 이 테이블들에 걸려 있지만 정의는 [06-notifications](06-notifications.md)에 있다.
 
 ## 주의
 
@@ -115,3 +122,5 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 - 댓글 수·리액션 수는 **캐시하지 않는다.** 읽는 쪽에서 `count(*)`로 센다. comments와 post_reactions는 클라이언트가 컬럼 grant로 직접 쓰므로 카운터를 걸 RPC 병목이 없고, 트리거로 캐시하면 댓글 하나마다 post 행에 락이 걸린다. 읽기 계약은 어느 쪽이든 같으니, 측정이 요구하면 그때 컬럼+트리거+backfill로 되돌리면 된다. (`spaces.member_count`는 join/leave가 RPC를 거치므로 캐시한다.)
 - 소프트 삭제된 댓글은 답글이 살아 있으면 tombstone으로 계속 select된다. 그래서 `soft_delete_comment`가 `content`를 비우고, `get_post_comments`는 `author`까지 지워 `is_deleted=true`만 내린다 — 안 비우면 "삭제된 댓글"이 원문과 작성자를 그대로 실어 보낸다.
 - 공백 제거 + `lower()` 기반 trgm 인덱스는 `search_posts`가 같은 표현식으로 비교할 때만 쓰인다. PostgREST로는 그 함수 표현식을 못 써서 직접 조회로는 인덱스를 못 탄다.
+- **멘션 대상은 그 공간의 멤버여야 한다**(`post_mentions_insert`/`comment_mentions_insert` 정책). 이 검사가 없으면 읽지도 못하는 글의 알림을 받게 되고(딥링크를 눌러도 막힌다), 나아가 아무 공간에서나 아무에게나 알림을 쏘는 통로가 된다. 멘션은 작성자만 달고 update는 없다 — 붙이거나 떼거나 둘 중 하나다. insert grant가 컬럼 단위(`created_at` 제외)인 이유는 클라이언트가 멘션 시각을 소급해 꾸미지 못하게 하려는 것이다.
+- 멘션을 뗐다 다시 붙여도 알림은 다시 안 간다. `uq_notifications_post_mention`(사람당 글당 하나)과 `uq_notifications_comment_event`(사람당 댓글당 하나)가 재발송을 막는다 — 없으면 멘션 토글이 알림 스팸 버튼이 된다.
