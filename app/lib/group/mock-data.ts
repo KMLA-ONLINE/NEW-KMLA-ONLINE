@@ -95,6 +95,23 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
         content: "봉사 시간 인증서는 어디서 받을 수 있나요?",
         createdAt: "2026-07-11T06:30:00.000Z",
       },
+      // 삭제됐지만 답글이 살아 있어 tombstone으로 남는 댓글. get_post_comments가 이런 행을 계속
+      // 내려주고(has_active_descendant), content와 author는 서버가 비운다.
+      {
+        id: 9,
+        parentId: null,
+        author: null,
+        isDeleted: true,
+        content: null,
+        createdAt: "2026-07-11T06:40:00.000Z",
+      },
+      {
+        id: 10,
+        parentId: 9,
+        author: { name: "박준서" },
+        content: "위 댓글에 달린 답글입니다. 부모가 지워져도 이 답글은 남아요.",
+        createdAt: "2026-07-11T06:45:00.000Z",
+      },
       {
         id: 3,
         parentId: null,
@@ -330,9 +347,11 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
   },
 ]
 
+// 삭제된 댓글(tombstone)은 세지 않는다 -- 서버도 deleted_at is null만 센다. tombstone은 답글
+// 사슬을 잇기 위해 목록에 남을 뿐 "댓글 n개"의 n은 아니다.
 export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => ({
   ...post,
-  commentCount: post.comments?.length ?? 0,
+  commentCount: post.comments?.filter((comment) => !comment.isDeleted).length ?? 0,
 }))
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로

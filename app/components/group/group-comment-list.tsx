@@ -91,11 +91,49 @@ function GroupCommentItem({
   const name = comment.author?.name ?? "익명"
   const replies = all.filter((item) => item.parentId === comment.id)
   // 답글이면 부모 댓글 작성자를 본문 앞 @이름 칩으로 붙인다(평탄화돼도 누구 답글인지 보이게).
+  // 부모가 삭제된 tombstone이면 붙일 이름이 없다 -- 서버가 작성자를 지워서 내려주기 때문이다.
   const parent = comment.parentId !== null ? all.find((item) => item.id === comment.parentId) : null
-  const parentName = parent ? (parent.author?.name ?? "익명") : null
+  const parentName = parent && !parent.isDeleted ? (parent.author?.name ?? "익명") : null
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
+
+  // 삭제된 댓글은 답글이 살아 있는 동안만 자리를 지킨다(없애면 답글 사슬이 끊긴다). 본문·작성자·
+  // 반응·답글·메뉴는 전부 사라지고 자국만 남지만, 자식 답글은 그대로 이어서 렌더한다.
+  if (comment.isDeleted) {
+    return (
+      <li>
+        <div className="flex gap-2">
+          <div className="bg-muted/60 size-8 shrink-0 rounded-full" aria-hidden="true" />
+          <p
+            id={`comment-${comment.id}`}
+            className={cn(
+              "text-muted-foreground bg-muted/60 w-fit rounded-2xl px-3 py-2 text-sm italic transition-shadow",
+              highlightedId === comment.id && "ring-2 ring-blue-400"
+            )}
+          >
+            삭제된 댓글입니다
+          </p>
+        </div>
+        {replies.length > 0 ? (
+          <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
+            {replies.map((reply) => (
+              <GroupCommentItem
+                key={reply.id}
+                comment={reply}
+                all={all}
+                reactionTypes={reactionTypes}
+                highlightedId={highlightedId}
+                onNavigate={onNavigate}
+                canManage={canManage}
+                depth={depth + 1}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </li>
+    )
+  }
 
   return (
     <li>

@@ -120,10 +120,20 @@ export type GroupComment = {
   id: number
   /** comments.parent_id. null이면 최상위, 값이 있으면 그 부모 댓글의 id (대댓글). */
   parentId: number | null
-  /** null이면 익명 댓글(is_anonymous). */
+  /**
+   * 익명 댓글이거나(is_anonymous) 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
+   * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
+   */
   author: GroupPostAuthor | null
-  /** 내가 쓴 댓글인지(author_id === 현재 프로필). 수정/삭제 메뉴 노출용. */
+  /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
   isMine?: boolean
-  content: string
+  /**
+   * 삭제된 댓글(tombstone). 답글이 하나라도 살아 있으면 행이 남아 계속 내려온다
+   * (comments_select의 has_active_descendant) -- 안 그러면 답글 사슬이 끊긴다.
+   * 이때 content와 author는 서버가 비운다. 즉 삭제된 댓글에서 알 수 있는 건 "여기 뭔가 있었다"뿐.
+   */
+  isDeleted?: boolean
+  /** 삭제된 댓글이면 null. comments.content가 nullable인 이유다. */
+  content: string | null
   createdAt: string
 }
