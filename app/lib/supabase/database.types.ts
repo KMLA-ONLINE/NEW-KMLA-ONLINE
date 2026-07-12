@@ -1871,6 +1871,14 @@ export type Database = {
         Args: { p_id: number; p_pinned: boolean }
         Returns: undefined
       }
+      set_space_member_role: {
+        Args: {
+          p_role: Database["public"]["Enums"]["member_role"]
+          p_space_id: number
+          p_user_id: number
+        }
+        Returns: undefined
+      }
       soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
       soft_delete_post: { Args: { p_id: number }; Returns: undefined }

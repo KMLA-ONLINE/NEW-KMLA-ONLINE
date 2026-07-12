@@ -407,5 +407,46 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) to authenticated;
+-- 멤버 역할 변경. RPC인 이유: space_members_update 정책은 **본인 행**만 열고 컬럼 grant도
+-- notification_setting/pinned_at뿐이라, "관리자가 남의 role을 바꾼다"는 정책으로 표현할 수 없다
+-- (set_post_pinned가 RPC인 것과 같은 이유).
+--
+-- 이게 없으면 manager를 임명할 방법이 없어서 post_policy='managers'가 사실상 owner/admin 전용
+-- 그룹이 된다 -- 즉 "특정 사람만 글 쓰게" 하려던 게 안 된다.
+create function public.set_space_member_role(p_space_id bigint, p_user_id bigint, p_role public.member_role)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  caller_role public.member_role;
+  target_role public.member_role;
+begin
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  select role into caller_role from public.space_members where space_id=p_space_id and user_id=caller_id;
+  select role into target_role from public.space_members
+  where space_id=p_space_id and user_id=p_user_id and banned_at is null
+  for update;
+  if target_role is null then raise exception 'not a member of this space'; end if;
+
+  -- 소유권 이양은 별개의 일이다. owner는 space당 정확히 1명이라(space_members_one_owner_key +
+  -- trg_validate_space_owner) 새 owner를 세우려면 기존 owner를 같은 트랜잭션에서 내려야 한다.
+  -- 그걸 여기서 하면 "남을 승격시킨다"가 조용히 "내 소유권을 넘긴다"가 된다.
+  if p_role='owner' or target_role='owner' then
+    raise exception 'ownership transfer is a separate operation';
+  end if;
+
+  -- admin은 같은 급(admin)을 만들지도 내리지도 못한다. owner만 admin을 세우고 내린다.
+  -- 안 그러면 admin끼리 서로 강등하는 진흙탕이 열린다(먼저 누르는 쪽이 이긴다).
+  if caller_role='admin' and (target_role='admin' or p_role='admin') then
+    raise exception 'only the space owner can change admin roles';
+  end if;
+
+  if target_role=p_role then return; end if;
+  -- trg_notify_on_role_changed가 여기서 도는데, actor는 싣지 않는다
+  -- (notifications_actor_shape_check가 강제 -- 행정 처분은 기관이 한다).
+  update public.space_members set role=p_role where space_id=p_space_id and user_id=p_user_id;
+end;
+$$;
+
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role) to authenticated;

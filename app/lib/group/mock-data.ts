@@ -20,6 +20,11 @@ export const mockGroup: GroupSpace = {
   type: "group",
   pubId: "student-council",
   joinPolicy: "request",
+  // 기본은 멤버 전원이 글을 쓴다. 'managers'로 바꾸면 owner/admin/manager만 메인 글을 쓰고
+  // 나머지는 댓글만 단다(공지형 그룹). 그룹 설정에서 관리자가 켠다.
+  postPolicy: "all",
+  // postPolicy와 내 viewerRole에서 파생한다(로더가 can_post_in_space와 같은 규칙으로 계산).
+  canPost: true,
   allowAnonymous: true,
   // 로더가 space_anonymity_suspensions에서 내 행만 읽어 파생한다. 정지 중이면 false가 되고
   // 작성 화면의 익명 토글이 사라진다.
@@ -219,6 +224,8 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
     author: { name: "박서연" },
     isPinned: false,
     createdAt: "2026-07-09T07:00:00.000Z",
+    // 수정된 글. 서버가 trg_mark_post_edited로 찍는다 -- 이 값이 있으면 "수정됨"이 붙는다.
+    updatedAt: "2026-07-09T09:30:00.000Z",
     images: [{ src: mockImage("#15803d", "#5eead4"), alt: "auditorium-stage.jpg" }],
     reactionCount: 12,
     topReactions: ["👍", "❤️"],

@@ -3,6 +3,7 @@ import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
 import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
@@ -65,7 +66,10 @@ export function GroupPostCard({
               </Badge>
             ) : null}
           </div>
-          <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
+          <div className="text-muted-foreground flex items-center gap-1 text-xs">
+            <RelativeTime value={post.createdAt} />
+            <GroupEditedMark at={post.updatedAt} />
+          </div>
         </div>
         <GroupPostMenu
           isMine={post.isMine}

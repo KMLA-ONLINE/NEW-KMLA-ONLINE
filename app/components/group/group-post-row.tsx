@@ -1,6 +1,7 @@
 import { HeartIcon, MessageSquareIcon, PinIcon } from "lucide-react"
 import { Link } from "react-router"
 
+import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import type { GroupPost } from "~/lib/group/types"
@@ -33,6 +34,7 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
         <span className="truncate">{authorName}</span>
         <span aria-hidden="true">·</span>
         <RelativeTime value={post.createdAt} />
+        <GroupEditedMark at={post.updatedAt} />
         <span className="ml-auto flex shrink-0 items-center gap-3">
           <span className="flex items-center gap-1">
             <HeartIcon className="size-3.5" aria-hidden="true" />

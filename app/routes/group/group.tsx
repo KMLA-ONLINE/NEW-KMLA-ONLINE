@@ -68,17 +68,35 @@ export default function GroupPage() {
   // 가입 정책·멤버·가입 요청은 서로 영향을 줘서(정책 전환 시 대기 요청 정리) 여기서 함께 들고
   // 있는다. 저장(백엔드)만 미루고 mock 동작은 실제처럼 반영한다.
   const [joinPolicy, setJoinPolicy] = useState(mockGroup.joinPolicy)
+  // spaces.post_policy. 'managers'면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹).
+  // 댓글은 이 정책과 무관하게 열려 있다 -- comments_insert는 can_access_post만 본다.
+  const [postPolicy, setPostPolicy] = useState(mockGroup.postPolicy)
   // spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(서버 트리거가 강제).
   // 기존 익명 글은 그대로 익명이다 -- is_anonymous는 불변이라 소급해서 까이지 않는다.
   const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
   const [members, setMembers] = useState(mockGroupMembers)
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
+
+  // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
+  // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
+  const viewerRole = searchParams.get("as") === "admin" ? "admin" : mockGroup.viewerRole
+  const canManage = viewerRole === "owner" || viewerRole === "admin"
+  // private.can_post_in_space와 같은 규칙이다. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
+  // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
+  const canPost =
+    postPolicy === "all"
+      ? viewerRole !== null
+      : viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager"
+
   const liveGroup = {
     ...mockGroup,
     joinPolicy,
+    postPolicy,
+    canPost,
     memberCount,
     allowAnonymous,
+    viewerRole,
     // 내가 익명 정지 중이 아니고 그룹이 익명을 허용해야 익명으로 쓸 수 있다.
     canPostAnonymously: allowAnonymous && mockGroup.anonymitySuspendedUntil === null,
   }
@@ -96,10 +114,6 @@ export default function GroupPage() {
     feedHasMore
   )
 
-  // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
-  // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
-  const viewerRole = searchParams.get("as") === "admin" ? "admin" : mockGroup.viewerRole
-  const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 관리자만 본다.
@@ -184,16 +198,29 @@ export default function GroupPage() {
           {tab === "posts" ? (
             <>
               {/* 모바일에선 카드 스택과 같은 언어로 -- flush + border-b-2 구분선. sm+에선
-                  다른 카드처럼 라운드·테두리 카드가 되고 위 컨테이너 gap이 사이를 벌린다. */}
-              <Link
-                to="new"
-                className="group bg-card border-foreground/20 sm:border-border flex items-center gap-3 overflow-hidden rounded-none border-b-2 px-4 py-3 sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
-              >
-                <div className="bg-muted size-9 shrink-0 rounded-full border" aria-hidden="true" />
-                <span className="bg-muted text-muted-foreground flex-1 rounded-full px-4 py-2 text-sm transition-[filter] group-hover:brightness-95">
-                  글쓰기…
-                </span>
-              </Link>
+                  다른 카드처럼 라운드·테두리 카드가 되고 위 컨테이너 gap이 사이를 벌린다.
+
+                  글을 못 쓰는 사람(post_policy='managers'인데 매니저가 아님)에겐 입력창을 아예
+                  안 띄운다 -- 눌러봤자 서버가 막을 입구를 열어두는 건 거짓말이다. 대신 왜 못 쓰는지
+                  한 줄로 말해준다. 댓글은 여전히 열려 있다는 것도 같이. */}
+              {canPost ? (
+                <Link
+                  to="new"
+                  className="group bg-card border-foreground/20 sm:border-border flex items-center gap-3 overflow-hidden rounded-none border-b-2 px-4 py-3 sm:rounded-xl sm:border sm:px-3 sm:py-2.5"
+                >
+                  <div
+                    className="bg-muted size-9 shrink-0 rounded-full border"
+                    aria-hidden="true"
+                  />
+                  <span className="bg-muted text-muted-foreground flex-1 rounded-full px-4 py-2 text-sm transition-[filter] group-hover:brightness-95">
+                    글쓰기…
+                  </span>
+                </Link>
+              ) : (
+                <p className="text-muted-foreground bg-card border-foreground/20 sm:border-border rounded-none border-b-2 px-4 py-3 text-sm sm:rounded-xl sm:border sm:px-4">
+                  이 그룹은 매니저만 게시물을 올릴 수 있습니다. 댓글은 자유롭게 달 수 있어요.
+                </p>
+              )}
 
               {mockGroupCategories.length > 0 ? (
                 <div className="py-3 sm:py-0">
@@ -224,7 +251,20 @@ export default function GroupPage() {
                 />
               ) : null}
               <div className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">
-                <GroupMemberList members={members} />
+                {/* 역할 변경이 매니저를 임명하는 유일한 통로다 -- 글쓰기 제한만 켜고 매니저가
+                    없으면 owner/admin만 쓰는 그룹이 된다.
+                    TODO(backend): set_space_member_role RPC 호출 후 revalidate. */}
+                <GroupMemberList
+                  members={members}
+                  viewerRole={viewerRole}
+                  onRoleChange={(target, role) =>
+                    setMembers((current) =>
+                      current.map((member) =>
+                        member.id === target.id ? { ...member, role } : member
+                      )
+                    )
+                  }
+                />
               </div>
             </div>
           ) : (
@@ -233,6 +273,8 @@ export default function GroupPage() {
               categories={mockGroupCategories}
               joinPolicy={joinPolicy}
               onJoinPolicyChange={changeJoinPolicy}
+              postPolicy={postPolicy}
+              onPostPolicyChange={setPostPolicy}
               allowAnonymous={allowAnonymous}
               onAllowAnonymousChange={setAllowAnonymous}
             />
