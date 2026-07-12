@@ -16,8 +16,8 @@ Source: [`supabase/schemas/08-clubs.sql`](../../../supabase/schemas/08-clubs.sql
 
 ## Private helper
 
-| 함수 | 용도 |
-| --- | --- |
+| 함수                                   | 용도                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------- |
 | `private.is_club_round_open(round_id)` | 현재 시각이 라운드 모집 기간 내인지 (지원 insert/delete policy의 조건) |
 
 ## Trigger
