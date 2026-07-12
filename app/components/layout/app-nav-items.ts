@@ -13,9 +13,7 @@ export const appNavItems: AppNavItem[] = [
   { to: "/", label: "홈", icon: HomeIcon, end: true },
   { to: "/messenger", label: "메시지", icon: MessagesSquareIcon },
   { to: "/groups", label: "그룹", icon: ShapesIcon },
-  // 커뮤니티는 그룹의 "비공식" 탭으로 흡수돼서 이 자리는 알림이 됐다. 경로가 아직 /community인 건
-  // 페이지 파일이 그대로라서다 -- 라우트 이름을 옮기는 건 별도 작업.
-  { to: "/community", label: "알림", icon: BellIcon },
+  { to: "/noti", label: "알림", icon: BellIcon },
   { to: "/menu", label: "메뉴", icon: MenuIcon },
 ]
 

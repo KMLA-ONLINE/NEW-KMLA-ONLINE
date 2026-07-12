@@ -12,7 +12,7 @@ export default [
       route("posts/:postId", "./routes/group/post.tsx"),
       route("posts/:postId/edit", "./routes/group/edit.tsx"),
     ]),
-    route("community", "./routes/_app.community.tsx"),
+    route("noti", "./routes/_app.noti.tsx"),
     route("messenger", "./routes/messenger/messenger.tsx", [
       index("./routes/messenger/index.tsx"),
       route(":roomId", "./routes/messenger/room.tsx", [
