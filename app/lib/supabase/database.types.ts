@@ -1806,6 +1806,20 @@ export type Database = {
           sender_id: number
         }[]
       }
+      get_encrypted_message_bodies: {
+        Args: {
+          p_before_id?: number
+          p_conversation_id: number
+          p_limit?: number
+        }
+        Returns: {
+          content_ciphertext: string
+          created_at: string
+          message_id: number
+          message_key: Json
+          sender_id: number
+        }[]
+      }
       get_identity_public_keys: {
         Args: { p_user_ids: number[] }
         Returns: {

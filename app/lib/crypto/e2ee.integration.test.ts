@@ -21,6 +21,7 @@ import {
 } from "./account"
 import { base64ToBytes, bytesToUtf8, utf8ToBytes } from "./encoding"
 import { MessageCrypto, type MessageKeyRow } from "./message"
+import { searchDirectMessages } from "./message-search"
 
 const SUPABASE_URL = "http://127.0.0.1:54721"
 const ANON_KEY =
@@ -279,6 +280,8 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
     expect(error?.message).toMatch(/end-to-end encrypted/)
   })
 
+  // 아래 두 테스트는 마지막에 둔다: 검색 테스트가 메시지를 더 보내므로 "마지막 메시지"가
+  // 바뀐다. 미리보기 테스트가 그 뒤로 가면 SECRET이 아니라 새 메시지를 보게 된다.
   it("대화 목록의 미리보기도 암호문으로 온다 -- 서버가 만들 수 없으므로", async () => {
     const { data } = await bob.db.rpc("list_conversations")
     const room = (
@@ -294,5 +297,53 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
     expect(
       await bob.crypto.decrypt(room.last_message_content_ciphertext!, room.last_message_key!)
     ).toBe(SECRET)
+  })
+
+  it(
+    "서버가 못 하는 1:1 검색을 클라이언트가 대신 한다 -- 그룹 검색과 똑같은 규칙으로",
+    async () => {
+      await send(alice, bob, conversationId, "수학 숙제 다 했어?")
+      await send(bob, alice, conversationId, "아직. 내일 아침에 할래")
+
+      // 서버의 그룹 검색과 같은 정규화(소문자화 + 공백 전부 제거 + 부분 문자열)라서,
+      // 붙여 친 "수학숙제"가 띄어 쓴 "수학 숙제"를 찾는다. 사용자가 지금 어느 쪽 대화에
+      // 있는지를 검색 결과로 눈치채면 안 된다.
+      const found = await searchDirectMessages(bob.db, bob.crypto, conversationId, "수학숙제")
+      expect(found.matches.map((match) => match.content)).toEqual(["수학 숙제 다 했어?"])
+      expect(found.reachedStart).toBe(true)
+
+      // 질의 쪽 공백도 무시된다.
+      const spaced = await searchDirectMessages(bob.db, bob.crypto, conversationId, "  내 일  ")
+      expect(spaced.matches.length).toBeGreaterThan(0)
+
+      const nothing = await searchDirectMessages(
+        bob.db,
+        bob.crypto,
+        conversationId,
+        "존재하지않는말"
+      )
+      expect(nothing.matches).toHaveLength(0)
+      expect(nothing.scanned).toBeGreaterThan(0) // 훑기는 훑었다
+
+      // 발신자도 자기가 보낸 것을 찾는다. 봉투는 수신자 앞으로만 있지만 DH가 대칭이라
+      // 발신자가 그 행을 그대로 연다 -- 그 성질이 검색 경로에서도 성립해야 한다.
+      const bySender = await searchDirectMessages(
+        alice.db,
+        alice.crypto,
+        conversationId,
+        "수학숙제"
+      )
+      expect(bySender.matches.map((match) => match.content)).toEqual(["수학 숙제 다 했어?"])
+    },
+    TIMEOUT
+  )
+
+  it("검색이 조용히 자르지 않는다 -- 끝까지 못 갔으면 그렇게 말한다", async () => {
+    // scanLimit에 걸려 멈추면 reachedStart가 false여야 한다. 여기서 true를 주면 UI가
+    // "그런 메시지 없습니다"라고 말하게 되고, 그건 거짓말이다.
+    const capped = await searchDirectMessages(bob.db, bob.crypto, conversationId, "숙제", {
+      scanLimit: 1,
+    })
+    expect(capped.reachedStart).toBe(false)
   })
 })

@@ -222,6 +222,24 @@ begin
     if sqlerrm not like 'direct conversations are end-to-end encrypted%' then raise; end if;
   end;
 
+  -- 대신 클라이언트가 통째로 받아 스스로 푼다. 그 대량 읽기가 이것이고, 복호화에 필요한
+  -- 최소한(암호문 + 봉투)만 준다. 두 함수는 서로의 반대편이라, 한쪽이 받는 대화를 다른
+  -- 쪽은 거절해야 한다.
+  if not exists (
+    select 1 from public.get_encrypted_message_bodies(room1)
+    where message_id = secret1
+      and content_ciphertext = encode(sealed,'base64')
+      and message_key ->> 'wrapped_key' = encode(sealed,'base64')
+  ) then
+    raise exception 'the bulk read for client-side search must hand over the ciphertext and its envelope';
+  end if;
+  begin
+    perform public.get_encrypted_message_bodies(group1);
+    raise exception 'the encrypted bulk read should have rejected a group conversation';
+  exception when others then
+    if sqlerrm not like 'conversation is not end-to-end encrypted%' then raise; end if;
+  end;
+
   -- 본문이 사라진 메시지의 봉투는 아무것도 열지 않는다. 남겨두면 삭제된 메시지에 대해
   -- "누가 누구에게 봉인했는가"만 영원히 남는다.
   perform public.soft_delete_message(secret1);

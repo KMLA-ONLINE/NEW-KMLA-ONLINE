@@ -920,7 +920,7 @@ $$;
 
 -- 그룹 대화 전용이다. 1:1은 서버가 암호문을 열 수 없으니 서버에서 검색할 방법이 없다 --
 -- 조용히 0건을 주면 "검색이 안 되네" 대신 "그런 메시지 없네"로 읽히므로, 명시적으로 거절한다.
--- 클라이언트가 내려받아 복호화한 뒤 로컬에서 찾는다.
+-- 1:1 검색은 public.get_encrypted_message_bodies()로 받아 클라이언트가 푼다.
 create function public.search_messages(p_query text,p_conversation_id bigint)
 returns table(message_id bigint,content_snippet text,sender_name text,created_at timestamptz)
 language plpgsql security invoker set search_path = '' as $$
@@ -940,6 +940,63 @@ begin
   order by m.created_at desc,m.id desc limit 50;
 end;
 $$;
+
+-- 1:1 검색을 위한 대량 읽기. 서버가 암호문을 열 수 없으므로 클라이언트가 통째로 받아 스스로
+-- 푸는 것 말고 방법이 없다 -- Signal도 WhatsApp도 iMessage도 같은 이유로 로컬에서 찾는다.
+-- (검색 가능 암호화는 토큰 빈도를 흘리는데, 짧은 메시지의 trigram 빈도는 사실상 평문이라
+--  이 앱에서는 지키려던 것을 그대로 내주는 셈이 된다.)
+--
+-- get_chat_messages를 쓸 수 없어 따로 있는 함수다: 그쪽은 sender·parent·첨부·반응·읽음을
+-- 전부 lateral join하고 100개에서 끊기므로, 대화 전체를 훑는 데 쓰면 조인 비용과 왕복 횟수가
+-- 둘 다 터진다. 여기서는 복호화에 필요한 최소한만 주고 한 번에 1000개까지 준다
+-- (PostgREST의 max_rows가 1000이라 그 위로는 어차피 잘린다).
+--
+-- 봉투가 없는 행(키를 갈아엎기 전의 옛 메시지)도 그대로 내려간다. 그건 아무도 못 여는
+-- 메시지이고, 조용히 빼면 클라이언트가 "몇 개를 훑었는지"를 잘못 세게 된다.
+create function public.get_encrypted_message_bodies(
+  p_conversation_id bigint,
+  p_before_id bigint default null,
+  p_limit int4 default 500
+)
+returns table(
+  message_id bigint,
+  sender_id bigint,
+  created_at timestamptz,
+  content_ciphertext text,
+  message_key jsonb
+)
+language plpgsql stable security definer set search_path='' as $$
+declare caller_id bigint := private.require_current_profile(true);
+begin
+  if p_conversation_id is null then raise exception 'conversation target required'; end if;
+  if p_limit is null or p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
+  if not private.is_conversation_member(p_conversation_id) then raise exception 'conversation membership required'; end if;
+  if not private.is_direct_conversation(p_conversation_id) then
+    raise exception 'conversation is not end-to-end encrypted: use search_messages';
+  end if;
+
+  return query
+  select
+    m.id,
+    m.sender_id,
+    m.created_at,
+    encode(m.content_ciphertext,'base64'),
+    envelope.value
+  from public.messages m
+  left join lateral (
+    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as value
+    from public.message_keys mk
+    where mk.message_id=m.id and (mk.user_id=caller_id or m.sender_id=caller_id)
+    order by (mk.user_id=caller_id) desc, mk.user_id
+    limit 1
+  ) envelope on true
+  where m.conversation_id=p_conversation_id
+    and m.deleted_at is null
+    and m.content_ciphertext is not null
+    and (p_before_id is null or m.id<p_before_id)
+  order by m.id desc
+  limit p_limit;
+end $$;
 
 -- 메시지 키를 봉인해 줄 대상. 발신자는 뺀다 -- DH 대칭성 덕에 발신자는 수신자 앞으로 봉인된
 -- 행을 그대로 열 수 있어서, 자기 사본을 저장할 이유가 없다.
@@ -1192,10 +1249,10 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
+revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.get_encrypted_message_bodies(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
 grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
-grant execute on function public.search_messages(text,bigint) to authenticated;
+grant execute on function public.search_messages(text,bigint), public.get_encrypted_message_bodies(bigint,bigint,int4) to authenticated;
 grant execute on function public.send_message_with_attachments(bigint,jsonb,bigint,text) to authenticated;
 grant execute on function public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text) to authenticated;
 grant execute on function public.remove_group_member(bigint,bigint) to authenticated;
