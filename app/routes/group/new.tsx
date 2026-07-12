@@ -77,7 +77,7 @@ export default function GroupNewPostPage() {
               (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다.
               그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
               거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {canPostAnonymously ? (
               <GroupAnonymousToggle
                 anonymous={anonymous}
@@ -108,7 +108,7 @@ export default function GroupNewPostPage() {
           />
           <textarea
             placeholder="내용을 입력하세요…"
-            className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
+            className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-6 outline-none"
           />
 
           <GroupAttachmentPreview images={previewImages} files={previewFiles} />

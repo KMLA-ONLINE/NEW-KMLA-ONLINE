@@ -97,7 +97,7 @@ export default function GroupEditPostPage() {
                   grant에서 빠져 있어 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에
                   실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
                   글이 익명이면(author가 null) 그 사실만 보여준다. */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <GroupAuthorAvatar name="나" anonymous={isAnonymous} size="lg" />
                 <div className="text-sm leading-tight">
                   <p className="font-semibold">{isAnonymous ? "익명" : "나"}</p>
@@ -114,7 +114,7 @@ export default function GroupEditPostPage() {
               <textarea
                 defaultValue={post.content}
                 placeholder="내용을 입력하세요…"
-                className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-base outline-none"
+                className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-6 outline-none"
               />
 
               <GroupAttachmentPreview images={previewImages} files={previewFiles} />
