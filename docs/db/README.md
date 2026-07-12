@@ -59,6 +59,8 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 
 seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마가 아니라 migration에 있다 — `supabase/migrations/20260707000000_baseline_schema.sql` 끝부분.
 
+1:1 대화의 종단간 암호화는 01-identity(`user_keys`)·05-chat(`message_keys`)·09-storage(전용 버킷)에 걸쳐 있고, 클라이언트 프로토콜과 위협 모델은 [docs/e2ee.md](../e2ee.md)에 한 번만 적혀 있다. 도메인 문서는 스키마가 그것을 어떻게 강제하는지만 말한다.
+
 ## 검증
 
 `npm run test:db` — `supabase/tests/*.sql`을 순서대로 로컬 DB에 돌린다. 파일마다 자기 `begin`/`rollback`을 갖고 있어 서로 독립이고, 하나만 돌릴 수도 있다(`node supabase/tests/run.mjs 05-chat`).

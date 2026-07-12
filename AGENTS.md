@@ -8,6 +8,7 @@
 - Tailwind CSS v4 is loaded from `app/app.css`.
 - shadcn is configured in `components.json` with style `radix-vega`.
 - Supabase browser helpers live in `app/lib/supabase/client.ts`; server helpers live in `app/lib/supabase/server.ts`.
+- **Auth runs in the browser, not in a server `action`.** Direct messages are end-to-end encrypted, and the key that opens them is derived from the password — so the raw password must never reach our SSR server. `login`/`signup`/`reset-password` therefore call the browser Supabase client and send only a derived `authHash`. Do not "simplify" them back into server actions. See [docs/e2ee.md](docs/e2ee.md).
 
 ## Local Supabase Ports
 
