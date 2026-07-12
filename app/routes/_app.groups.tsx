@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { Link } from "react-router"
-import { SpaceCard } from "../components/layout/space-card"
+import { SpaceCard } from "~/components/space/space-card"
 
 // pubId는 spaces.pub_id 슬러그이고 그룹 내부 경로(/groups/:pubId)에 실린다. 로더가 붙기 전이라
 // 그룹 내부는 아직 pubId와 무관하게 같은 mock 하나를 보여준다 -- 어느 카드를 눌러도 화면은 같다.

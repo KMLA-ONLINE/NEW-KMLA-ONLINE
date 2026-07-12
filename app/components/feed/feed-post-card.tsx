@@ -1,4 +1,4 @@
-import { PostActionBar } from "~/components/post-action-bar"
+import { FeedPostActionBar } from "~/components/feed/feed-post-action-bar"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
@@ -45,7 +45,7 @@ export function FeedPostCard({
       </CardHeader>
       <CardContent className="text-muted-foreground flex flex-col items-start gap-1 px-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <p>Posted by {author}</p>
-        <PostActionBar
+        <FeedPostActionBar
           comments={comments}
           likes={likes}
           className="text-foreground flex flex-wrap items-center gap-2 sm:justify-end sm:gap-1"

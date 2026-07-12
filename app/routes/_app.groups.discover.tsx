@@ -1,6 +1,6 @@
 import { Link } from "react-router"
-import { Input } from "../components/ui/input"
-import { SpaceCard } from "../components/layout/space-card"
+import { Input } from "~/components/ui/input"
+import { SpaceCard } from "~/components/space/space-card"
 
 const unjoinedUnofficialSpaces = [
   {

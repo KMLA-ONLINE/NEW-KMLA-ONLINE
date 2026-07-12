@@ -1,4 +1,4 @@
-import { FeedPostCard, type FeedPostCardProps } from "~/components/layout/feed-post-card"
+import { FeedPostCard, type FeedPostCardProps } from "~/components/feed/feed-post-card"
 import { Separator } from "~/components/ui/separator"
 
 type FeedPostListProps = {
