@@ -77,11 +77,15 @@ export function GroupPostCard({
       </header>
 
       <div className="px-4">
-        <p className="mb-2 text-xl font-semibold">
+        {/* 제목은 문단이 아니라 헤딩이다. Tailwind Preflight가 h1~h6의 크기를 inherit으로 리셋하므로
+            태그를 바꿔도 화면은 그대로고(크기는 클래스가 정한다), 대신 스크린리더가 피드를 헤딩
+            단위로 훑을 수 있게 된다 -- <p>면 게시물 사이를 점프할 수가 없다. 그룹 이름이
+            h1(group-header)이라 게시물 제목은 h2다(상세 모달의 제목과도 같은 레벨). */}
+        <h2 className="mb-2 text-xl font-semibold">
           <Link to={`posts/${post.pubId}`} className="hover:underline">
             {post.title}
           </Link>
-        </p>
+        </h2>
         <p
           ref={measureContent}
           onClick={toggleFromContent}
