@@ -446,6 +446,7 @@ returns table(
   content text,
   is_anonymous boolean,
   author jsonb,
+  anonymous_label text,
   is_mine boolean,
   is_deleted boolean,
   created_at timestamptz,
@@ -457,16 +458,37 @@ language plpgsql stable security definer set search_path = '' as $$
 declare
   caller_id bigint := private.require_current_profile(true);
   after_created_at timestamptz;
+  post_author_id bigint;
+  post_is_anonymous boolean;
 begin
   if not private.can_access_post(p_post_id) then raise exception 'post access required'; end if;
   if p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+
+  select p.author_id, p.is_anonymous into post_author_id, post_is_anonymous
+  from public.posts p where p.id=p_post_id;
 
   if p_after_id is not null then
     select c.created_at into after_created_at from public.comments c where c.id=p_after_id;
   end if;
 
   return query
-  with recursive roots as (
+  with recursive
+  -- 익명 작성자마다 그 글 안에서만 유효한 번호를 매긴다. author_id는 절대 밖으로 안 나가고 번호만
+  -- 나간다. 번호를 서버가 매기는 게 핵심이다 -- 클라이언트가 매기려면 작성자별 키가 필요한데 그게
+  -- 곧 author_id고, 그러면 익명이 깨진다.
+  --
+  -- 페이지가 아니라 글 전체를 기준으로 센다. 페이지마다 새로 세면 2페이지의 "익명1"이 1페이지의
+  -- "익명1"과 다른 사람이 되어버린다. 그리고 이 번호는 이 글 안에서만 유효하다 -- 같은 사람이 다른
+  -- 글에선 다른 번호를 받으므로 여러 글에 걸쳐 "같은 익명"이라고 이어 붙일 수 없다.
+  anon_index as (
+    select c.author_id, dense_rank() over (order by min(c.created_at), min(c.id)) as idx
+    from public.comments c
+    where c.post_id=p_post_id and c.is_anonymous and c.deleted_at is null
+      -- 글쓴이 본인은 번호가 아니라 "글쓴이"로 표시하므로 번호 매김에서 뺀다.
+      and not (post_is_anonymous and c.author_id=post_author_id)
+    group by c.author_id
+  ),
+  roots as (
     select c.id, c.created_at
     from public.comments c
     where c.post_id=p_post_id and c.parent_id is null
@@ -494,6 +516,14 @@ begin
     -- tombstone은 본문도 작성자도 내리지 않는다. 남는 건 "여기 삭제된 댓글이 있었다"는 사실뿐이다.
     case when c.deleted_at is not null then null
          else private.post_author(c.author_id, c.is_anonymous) end,
+    -- 익명 댓글의 표시 이름. 익명 글의 글쓴이가 자기 글에 단 댓글이면 "글쓴이"다 -- 신원은 여전히
+    -- 안 드러나면서(어차피 익명 글이니까) 같은 사람임은 보인다. 글이 실명이면 "글쓴이"를 붙이면
+    -- 안 된다: 글쓴이가 누군지 다 아는데 그 라벨을 달면 익명 댓글이 곧바로 까진다.
+    case
+      when c.deleted_at is not null or not c.is_anonymous then null
+      when post_is_anonymous and c.author_id=post_author_id then '글쓴이'
+      else '익명' || (select ai.idx from anon_index ai where ai.author_id=c.author_id)
+    end,
     c.author_id=caller_id and c.deleted_at is null,
     c.deleted_at is not null,
     c.created_at,
@@ -784,5 +814,115 @@ begin
 end;
 $$;
 
-revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint) from public, anon, authenticated, service_role;
-grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint) to authenticated;
+-- 익명 글/댓글의 작성자를 **모른 채로** 그 사람의 익명 권한만 한시적으로 뺏는다. 관리자는 효과만
+-- 얻고 정보는 못 얻는다(space_anonymity_suspensions의 RLS가 본인에게만 행을 보여준다).
+--
+-- void를 돌려주고 이미 정지 중이어도 조용히 연장만 하는 게 중요하다. "이미 정지됨" 같은 신호를
+-- 주면 관리자가 익명 글 A와 B에 각각 걸어보고 **둘이 같은 사람이 썼는지** 알아낼 수 있다.
+-- 만료 시각도 greatest()로 늘리기만 해서, 응답이든 상태든 관리자가 관측할 수 있는 차이를 남기지 않는다.
+-- 형량은 서버가 정한다: 1일 → 2일 → 4일 → 8일 … 2배씩, 90일 상한.
+--
+-- 관리자가 기간을 고르지 않는 이유: 고르게 하면 그 선택 자체가 신호가 된다. 그리고 애초에 고를 수가
+-- 없다 -- 이 사람이 초범인지 상습범인지 관리자는 알 수 없으니까(그게 익명의 조건이다). 서버는 이력을
+-- 아니까 대신 가중한다. 관리자는 "정지"만 누르고 결과를 관측하지 못한다.
+--
+-- 관리자에게 결과를 돌려준다: 며칠인지, 몇 번째 누범인지, 이미 정지 중이었는지. 이미 정지 중이면
+-- 형량을 쌓지 않고 남은 기간만 알려준다.
+--
+-- 이건 의도적으로 감수하는 유출이다. 기간(=누범 횟수)과 "이미 정지됨"을 알려주면 관리자가 익명 글
+-- A와 B에 각각 걸어보고 **둘이 같은 사람인지** 알아낼 수 있다 -- 이름은 몰라도 익명 글을 작성자별로
+-- 묶을 수 있고, 그 중 하나만 어디선가 새면(글에 신원 단서가 섞이면) 그 사람의 익명 글이 전부 까진다.
+--
+-- 그래도 받아들이는 이유:
+--   1) 신원(누구인가)은 여전히 안 샌다. 새는 건 연결(같은 사람인가)뿐이다.
+--   2) probe가 공짜가 아니다. "B가 A와 같은 사람인가"를 확인하려면 실제로 B 작성자를 정지시켜야 하고,
+--      다른 사람이면 애먼 사람이 처벌을 먹는다. 그 사람은 알게 되고 항의한다 -- 작성자 지도를 만들려면
+--      무고한 사람들에게 처벌을 뿌려야 해서 시끄럽고 티가 난다.
+--   3) 관리자가 초범과 상습범을 구분하지 못하면 모더레이션이 성립하지 않는다.
+--
+-- 다만 이 정보는 **관리자가 실제로 행동했을 때만** 준다. 익명 글 목록에 상시로 누범 횟수를 뿌리면
+-- probe 비용 없이 공짜로 작성자 지도가 나온다 -- 그건 훨씬 나쁘다.
+create function private.suspend_anonymity(p_space_id bigint, p_author_id bigint)
+returns table(suspended_days int4, strike_count int4, already_suspended boolean)
+language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  prior_strikes int4;
+  prior_until timestamptz;
+  effective_days int4;
+begin
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  select x.strike_count, x.suspended_until into prior_strikes, prior_until
+  from public.space_anonymity_suspensions x
+  where x.space_id=p_space_id and x.user_id=p_author_id
+  for update;
+
+  -- 이미 정지 중 -> 형량을 쌓지 않는다. 남은 기간과 누범 횟수만 돌려준다.
+  if found and prior_until > now() then
+    return query select
+      ceil(extract(epoch from prior_until - now()) / 86400)::int4,
+      prior_strikes,
+      true;
+    return;
+  end if;
+
+  -- 마지막 정지가 끝난 지 90일이 지났으면 초범으로 되돌린다. 안 그러면 한 번 걸린 사람이 몇 년
+  -- 뒤에도 상습범 취급을 받는다.
+  if not found or prior_until < now() - interval '90 days' then
+    prior_strikes := 0;
+  end if;
+
+  -- 1일 → 2일 → 4일 → 8일 … 2배씩, 90일 상한.
+  effective_days := least((2 ^ least(prior_strikes, 7))::int4, 90);
+
+  insert into public.space_anonymity_suspensions(space_id,user_id,suspended_until,strike_count,suspended_by)
+  values (p_space_id, p_author_id, now() + make_interval(days => effective_days), prior_strikes + 1, caller_id)
+  on conflict (space_id,user_id) do update
+  set suspended_until=excluded.suspended_until,
+      strike_count=excluded.strike_count,
+      suspended_by=excluded.suspended_by,
+      created_at=now();
+
+  return query select effective_days, prior_strikes + 1, false;
+end;
+$$;
+revoke execute on function private.suspend_anonymity(bigint,bigint) from public, anon, authenticated, service_role;
+
+-- 익명 글에만 쓴다. 실명 글이면 작성자가 이미 보이므로 이 우회로가 필요 없고(그냥 밴하면 된다),
+-- 익명이 아닌 글에 허용하면 "이 글의 작성자"를 특정하는 도구가 하나 더 생길 뿐이다.
+create function public.suspend_post_author_anonymity(p_post_id bigint)
+returns table(suspended_days int4, strike_count int4, already_suspended boolean)
+language plpgsql security definer set search_path = '' as $$
+declare target public.posts;
+begin
+  select * into target from public.posts
+  where id=p_post_id and deleted_at is null and is_anonymous;
+  if not found then raise exception 'anonymous post required'; end if;
+  return query select * from private.suspend_anonymity(target.space_id, target.author_id);
+end;
+$$;
+
+create function public.suspend_comment_author_anonymity(p_comment_id bigint)
+returns table(suspended_days int4, strike_count int4, already_suspended boolean)
+language plpgsql security definer set search_path = '' as $$
+declare target_space_id bigint; target_author_id bigint;
+begin
+  select p.space_id, c.author_id into target_space_id, target_author_id
+  from public.comments c join public.posts p on p.id=c.post_id
+  where c.id=p_comment_id and c.deleted_at is null and c.is_anonymous;
+  if not found then raise exception 'anonymous comment required'; end if;
+  return query select * from private.suspend_anonymity(target_space_id, target_author_id);
+end;
+$$;
+
+create trigger trg_enforce_anonymous_allowed_posts
+before insert on public.posts
+for each row execute function private.enforce_anonymous_allowed();
+
+create trigger trg_enforce_anonymous_allowed_comments
+before insert on public.comments
+for each row execute function private.enforce_anonymous_allowed();
+
+revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint) to authenticated;

@@ -13,7 +13,7 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 
 ## RPC
 
-작성·수정은 RPC가 아니라 direct insert/update + RLS + 컬럼 grant다 (insert: posts `space_id,author_id,title,content,is_anonymous,category_id` / comments `post_id,author_id,parent_id,content,is_anonymous`. update: posts `title,content,is_anonymous,category_id` / comments `content`).
+작성·수정은 RPC가 아니라 direct insert/update + RLS + 컬럼 grant다 (insert: posts `space_id,author_id,title,content,is_anonymous,category_id` / comments `post_id,author_id,parent_id,content,is_anonymous`. update: posts `title,content,category_id` / comments `content` — **`is_anonymous`는 update에 없다**(불변)).
 
 고정·삭제만 RPC인 이유: `posts_update`/`comments_update` 정책이 `author_id=current_profile_id()`라 "**관리자가 남의 글을** 고정하거나 지운다"를 정책으로 표현할 수 없고, `pinned_by`/`deleted_by`는 클라이언트가 아니라 서버가 찍어야 한다.
 
@@ -30,6 +30,30 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 | `set_post_pinned(id, pinned)` | space 관리자 (`can_manage_space`) | O | 게시물 고정/해제. 순수 모더레이션이라 작성자여도 자기 글을 고정할 수 없다 |
 | `soft_delete_post(id)` | 작성자 본인 **또는** space 관리자 | O | post soft delete + 첨부/반응 제거 + blob 삭제 큐 등록. 댓글은 손대지 않는다(`can_access_post`가 알아서 막음) |
 | `soft_delete_comment(id)` | 작성자 본인 **또는** space 관리자 | O | comment soft delete + 반응 제거 + **본문 비움**(tombstone이 원문을 싣지 않도록) |
+| `suspend_post_author_anonymity(post_id)` | space 관리자 | O | 익명 글의 작성자를 **모른 채로** 그 사람의 익명 권한만 정지. 형량은 서버가 정한다(1→2→4→8일…, 90일 상한). `(suspended_days, strike_count, already_suspended)` 반환 |
+| `suspend_comment_author_anonymity(comment_id)` | space 관리자 | O | 위와 같되 익명 댓글 대상 |
+
+### 익명 악용은 밴이 아니라 "익명 정지"로 다룬다
+
+밴을 만들면 익명이 깨진다. 밴은 해제·감사·이의신청 때문에 **관리자가 밴 목록을 봐야만** 하는데, 익명 글의 작성자를 밴하면 그 목록에 새로 뜬 단 한 명이 곧 작성자다(집합 차집합 한 번). "누군지 안 보여준다"는 장식이고, 밴은 그냥 느린 unmask다.
+
+익명 정지는 다르다. **스스로 만료되므로 관리자가 볼 이유가 없고**, 그래서 관리자에게 아무 관측 가능한 상태도 남기지 않을 수 있다 — `space_anonymity_suspensions`의 RLS가 행을 **본인에게만** 보여준다. 관리자는 효과만 얻고 정보는 못 얻는다. 처방도 더 정확하다: 문제가 "익명을 악용한다"면 뺏을 것은 익명이지 계정이 아니다.
+
+형량은 관리자가 고르지 않는다 — **고를 수가 없다.** 이 사람이 초범인지 상습범인지 관리자는 알 수 없으니까(그게 익명의 조건이다). 서버는 이력을 아니까 대신 가중한다: **1일 → 2일 → 4일 → 8일…** 90일 상한, 마지막 정지가 끝난 지 90일 지나면 초범으로 리셋. 이미 정지 중이면 형량을 쌓지 않고 남은 기간만 돌려준다.
+
+**의도적으로 감수하는 유출**: 두 RPC는 `(suspended_days, strike_count, already_suspended)`를 관리자에게 돌려준다. 기간(=누범 횟수)과 "이미 정지됨"을 알려주면 관리자가 익명 글 A와 B에 각각 걸어보고 **둘이 같은 사람인지** 알아낼 수 있다 — 이름은 몰라도 익명 글을 작성자별로 묶을 수 있고, 그 중 하나에 신원 단서가 섞이면 그 사람의 익명 글이 전부 까진다. 그래도 받아들이는 이유: (1) 신원은 여전히 안 샌다, 새는 건 연결뿐이다. (2) **probe가 공짜가 아니다** — "B가 A와 같은 사람인가"를 확인하려면 실제로 B 작성자를 정지시켜야 하고, 다른 사람이면 애먼 사람이 처벌을 먹고 항의한다. (3) 초범과 상습범을 구분 못 하면 모더레이션이 성립하지 않는다.
+
+단, 이 정보는 **관리자가 실제로 행동했을 때만** 준다. `strike_count`는 select grant에서 빠져 있어 익명 글 목록에 상시로 뿌릴 수 없다 — 그러면 probe 비용 없이 공짜 작성자 지도가 나온다.
+
+### 익명끼리는 서로 구분된다 (익명1, 익명2, 글쓴이)
+
+`get_post_comments`가 `anonymous_label`을 내려준다. **번호를 서버가 매기는 게 핵심이다** — 클라이언트가 매기려면 작성자별 키가 필요한데 그게 곧 `author_id`고, 그러면 익명이 깨진다.
+
+번호는 **그 글 안에서만 유효하다.** 같은 사람이 다른 글에선 다른 번호를 받으므로 여러 글에 걸쳐 "같은 익명"이라고 이어 붙일 수 없다. 페이지가 아니라 글 전체를 기준으로 세므로 2페이지의 "익명1"과 1페이지의 "익명1"은 같은 사람이다.
+
+익명 글의 글쓴이가 자기 글에 단 익명 댓글은 **"글쓴이"**로 표시한다(신원은 여전히 안 드러난다 — 어차피 익명 글이니까). 글이 **실명**이면 "글쓴이" 라벨을 붙이지 않는다: 글쓴이가 누군지 다 아는데 그 라벨을 달면 익명 댓글이 곧바로 까진다.
+
+강제는 RPC가 아니라 **트리거**(`trg_enforce_anonymous_allowed_*`)가 한다. posts/comments는 컬럼 grant로 직접 insert할 수 있어서, RPC에서만 막으면 테이블에 바로 꽂아 우회할 수 있다.
 
 `purge_deleted_content`는 아직 없다.
 
@@ -55,6 +79,10 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 | `private.can_access_post(post_id)` | 활성 post + `can_participate_space`(멤버이거나 `open` 공간의 accepted 사용자) |
 | `private.can_access_comment(comment_id)` | 활성 comment + `can_access_post` 위임 |
 | `private.has_active_descendant(comment_id)` | 임의 깊이 하위에 활성 답글이 있는지 (재귀, depth 50 상한). 삭제 comment를 tombstone으로 노출할지 판단 |
+| `private.post_author(author_id, is_anonymous)` | 작성자를 jsonb로. 익명이면 null. 읽기 RPC들이 이걸로 익명을 지운다 |
+| `private.validate_post_attachments(post_id, space_pub_id, attachments)` | 첨부 검증(MIME 허용·크기·경로·스토리지 객체 존재). create/set이 같은 규칙을 쓰도록 한 곳에 |
+| `private.suspend_anonymity(space_id, author_id)` | 익명 정지의 실제 구현. 형량 가중·no-op 판단이 여기 |
+| `private.max_post_attachments()` | 10 |
 
 ## Trigger
 
@@ -62,6 +90,9 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 | --- | --- | --- | --- |
 | `trg_validate_comment_parent` | `comments` | BEFORE INSERT/UPDATE of `post_id`,`parent_id` | 답글 부모가 같은 post의 활성 comment가 아니면 예외 (깊이 제한 없음) |
 | `trg_validate_post_category` | `posts` | BEFORE INSERT/UPDATE of `space_id`,`category_id` | `category_id`가 글과 다른 space의 카테고리면 예외 (같은 space 강제) |
+| `trg_enforce_anonymous_allowed_posts` | `posts` | BEFORE INSERT | 익명인데 그 space가 익명을 껐거나 작성자가 익명 정지 중이면 예외. **RPC가 아니라 트리거인 이유**: posts/comments는 컬럼 grant로 직접 insert할 수 있어 RPC에서만 막으면 테이블에 바로 꽂아 우회된다 |
+| `trg_enforce_anonymous_allowed_comments` | `comments` | BEFORE INSERT | 위와 같음 |
+| `trg_enforce_post_attachment_shape` | `post_attachments` | AFTER INSERT (statement) | 한 글의 첨부가 `max_post_attachments()`(10)를 넘으면 예외 |
 
 ## 주의
 

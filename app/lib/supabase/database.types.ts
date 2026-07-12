@@ -1213,6 +1213,55 @@ export type Database = {
           },
         ]
       }
+      space_anonymity_suspensions: {
+        Row: {
+          created_at: string
+          space_id: number
+          strike_count: number
+          suspended_by: number | null
+          suspended_until: string
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          space_id: number
+          strike_count?: number
+          suspended_by?: number | null
+          suspended_until: string
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          space_id?: number
+          strike_count?: number
+          suspended_by?: number | null
+          suspended_until?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "space_anonymity_suspensions_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_anonymity_suspensions_suspended_by_fkey"
+            columns: ["suspended_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "space_anonymity_suspensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_categories: {
         Row: {
           created_at: string
@@ -1393,6 +1442,7 @@ export type Database = {
       }
       spaces: {
         Row: {
+          allow_anonymous_posts: boolean
           created_at: string
           created_by: number | null
           deleted_at: string | null
@@ -1408,6 +1458,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          allow_anonymous_posts?: boolean
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1423,6 +1474,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          allow_anonymous_posts?: boolean
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1606,6 +1658,7 @@ export type Database = {
       get_post_comments: {
         Args: { p_after_id?: number; p_limit?: number; p_post_id: number }
         Returns: {
+          anonymous_label: string
           author: Json
           comment_id: number
           content: string
@@ -1742,6 +1795,22 @@ export type Database = {
           p_type: Database["public"]["Enums"]["profile_type"]
         }
         Returns: undefined
+      }
+      suspend_comment_author_anonymity: {
+        Args: { p_comment_id: number }
+        Returns: {
+          already_suspended: boolean
+          strike_count: number
+          suspended_days: number
+        }[]
+      }
+      suspend_post_author_anonymity: {
+        Args: { p_post_id: number }
+        Returns: {
+          already_suspended: boolean
+          strike_count: number
+          suspended_days: number
+        }[]
       }
       withdraw_profile: { Args: never; Returns: undefined }
     }
