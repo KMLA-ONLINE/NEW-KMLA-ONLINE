@@ -1,3 +1,60 @@
 set -e
+
+# 스테이지된 목록은 lint-staged가 파일을 건드리기 전에 잡아둔다.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
 npm run typecheck
 npx lint-staged
+
+# ---------------------------------------------------------------------------
+# 아래는 **건드린 곳에 따라서만** 돈다.
+#
+# 전부 매번 돌리면 훅이 느려지고, 느린 훅은 --no-verify를 습관으로 만든다. 그러면 검사가
+# 아예 없는 것보다 나쁘다 -- 있다고 믿게 되니까. 스키마도 크립토도 안 건드린 커밋은
+# 지금까지와 똑같이 빠르다.
+# ---------------------------------------------------------------------------
+
+CONTAINER="${SUPABASE_DB_CONTAINER:-supabase_db_NEW-KMLA-ONLINE}"
+
+if echo "$STAGED" | grep -qE '^supabase/'; then
+  if ! command -v docker >/dev/null 2>&1 || ! docker exec "$CONTAINER" true >/dev/null 2>&1; then
+    echo ""
+    echo "✗ supabase/ 를 고쳤는데 로컬 Supabase가 안 떠 있어 DB 검사를 돌릴 수 없습니다."
+    echo ""
+    echo "  이 검사가 실제로 잡아낸 것들:"
+    echo "    · 아무 로그인 학생이나 private.anonymize_profile() 한 줄로 남의 계정을 영구 삭제"
+    echo "    · drop+recreate된 RPC가 grant를 잃고 anon에게 열린 사고"
+    echo "  둘 다 스키마 파일은 멀쩡해 보였다. supabase db diff 는 함수 grant를 아예 내지 않는다."
+    echo ""
+    echo "  npx supabase start   후 다시 커밋하세요."
+    echo "  정말 건너뛰려면:      git commit --no-verify"
+    echo ""
+    exit 1
+  fi
+
+  # 로컬 DB가 schemas/ 와 어긋나 있으면 아래 테스트는 '옛 스키마'를 검사하고 통과한다.
+  # 그 초록은 거짓말이므로, 둘이 같은지부터 확인한다.
+  # 2>&1 이어야 한다. supabase CLI는 "No schema changes found"를 **stderr로** 낸다
+  # (stdout에는 JSON만 간다). stderr를 버리면 이 검사가 언제나 실패한다.
+  echo "→ supabase db diff  (로컬 DB가 schemas/ 와 일치하는가)"
+  if ! npx supabase db diff 2>&1 | grep -q "No schema changes found"; then
+    echo ""
+    echo "✗ 로컬 DB가 supabase/schemas/ 와 다릅니다. 이대로 DB 테스트를 돌리면 '옛 스키마'를"
+    echo "  검사하고 통과합니다 -- 그 초록은 거짓말입니다."
+    echo ""
+    echo "  마이그레이션을 만들었나요?   npx supabase db diff -f <name>"
+    echo "  적용했나요?                 npx supabase db reset"
+    echo ""
+    exit 1
+  fi
+
+  echo "→ npm run test:db"
+  npm run test:db
+fi
+
+if echo "$STAGED" | grep -qE '^app/lib/crypto/'; then
+  # KDF 고정 벡터(파라미터가 조용히 바뀌면 배포 후 전 계정 로그인 불가), AAD 바인딩,
+  # 그리고 진짜 DB 왕복. 통합 테스트는 로컬 Supabase가 없으면 스스로 skip한다.
+  echo "→ 크립토 테스트"
+  npx vitest run app/lib/crypto
+fi

@@ -223,3 +223,5 @@ grant execute on function public.request_attachment_removal(text,bigint) to auth
 revoke execute on function public.request_attachment_removal(text,bigint) from public, anon, service_role;
 grant execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) to service_role;
 revoke execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) from public,anon,authenticated;
+
+-- 무해한 주석

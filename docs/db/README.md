@@ -65,6 +65,8 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 
 `npm run test:db` — `supabase/tests/*.sql`을 순서대로 로컬 DB에 돌린다. 파일마다 자기 `begin`/`rollback`을 갖고 있어 서로 독립이고, 하나만 돌릴 수도 있다(`node supabase/tests/run.mjs 05-chat`).
 
+**`supabase/` 아래를 건드린 커밋은 pre-commit 훅이 이걸 강제한다** (`.husky/pre-commit`): 먼저 `db diff`가 "No schema changes found"여야 하고(아니면 아래 테스트가 *옛 스키마*를 검사하고 통과한다 — 그 초록은 거짓말이다), 그다음 `test:db`가 통과해야 한다. 로컬 Supabase가 안 떠 있으면 조용히 건너뛰지 않고 **커밋을 막는다.** 스키마를 안 건드린 커밋은 지금까지와 똑같이 빠르다 — 느린 훅은 `--no-verify`를 습관으로 만들고, 그러면 검사가 아예 없는 것보다 나쁘다(있다고 믿게 되니까).
+
 | 파일                | 픽스처 | 내용                                                        |
 | ------------------- | ------ | ----------------------------------------------------------- |
 | `00-privileges.sql` | 없음   | public 스키마 전체의 권한 불변식                            |
