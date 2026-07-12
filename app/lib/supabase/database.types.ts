@@ -1916,6 +1916,10 @@ export type Database = {
           suspended_days: number
         }[]
       }
+      transfer_space_ownership: {
+        Args: { p_new_owner_id: number; p_space_id: number }
+        Returns: undefined
+      }
       undo_comment_anonymity_suspension: {
         Args: { p_comment_id: number }
         Returns: undefined

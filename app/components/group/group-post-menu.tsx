@@ -11,8 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 
-// 게시물 ⋯ 메뉴. 내 글이면 수정/삭제, 관리자(owner/admin)면 모더레이션(고정·삭제·익명 제한).
-// 둘 다 아니면(일반 멤버가 남의 글을 볼 때) 아예 렌더하지 않는다 -- 숨기기/신고는 스키마에
+// 게시물 ⋯ 메뉴. 권한이 **두 층**이라 항목마다 다른 걸 본다:
+// - 수정: 작성자 본인만(posts_update가 author_id=current_profile_id())
+// - 고정/해제: canCurate = owner/admin/**manager** (set_post_pinned → can_curate_space).
+//   게시판을 정리하는 일이라 매니저도 한다.
+// - 삭제: 작성자 본인 또는 canManage = owner/admin (soft_delete_post). 매니저는 남의 글을 못 지운다.
+// - 익명 제한: canManage만. 사람을 다루는 일이다.
+// 아무것도 못 하면(일반 멤버가 남의 글을 볼 때) 아예 렌더하지 않는다 -- 숨기기/신고는 스키마에
 // 대응 테이블이 없어(가짜 메뉴였음) 걷어냈다.
 // editTo는 호출부 라우트 기준 상대 경로다(피드에선 posts/:pubId/edit, 상세에선 edit).
 export function GroupPostMenu({
@@ -20,17 +25,20 @@ export function GroupPostMenu({
   isPinned,
   isAnonymous,
   canManage,
+  canCurate,
   editTo,
 }: {
   isMine?: boolean
   isPinned?: boolean
   /** 익명 글인지(author가 null). 익명 제한 항목은 익명 글에만 뜬다. */
   isAnonymous?: boolean
-  /** owner/admin. 남의 글도 고정·삭제할 수 있다(can_manage_space). */
+  /** owner/admin (can_manage_space). 남의 글 삭제·익명 제한. */
   canManage?: boolean
+  /** owner/admin/manager (can_curate_space). 남의 글도 고정할 수 있다. */
+  canCurate?: boolean
   editTo: string
 }) {
-  if (!isMine && !canManage) return null
+  if (!isMine && !canCurate) return null
 
   return (
     <DropdownMenu>
@@ -52,14 +60,20 @@ export function GroupPostMenu({
           </DropdownMenuItem>
         ) : null}
 
-        {/* TODO(backend): action에서 set_post_pinned(id, pinned) RPC. 관리자만 통과하고
-            pinned_at/pinned_by는 서버가 찍는다(컬럼 grant로는 남의 글을 못 고정해서 RPC로 뒀다). */}
-        {canManage ? <DropdownMenuItem>{isPinned ? "고정 해제" : "고정"}</DropdownMenuItem> : null}
+        {/* TODO(backend): action에서 set_post_pinned(id, pinned) RPC. can_curate_space(매니저 포함)만
+            통과하고 pinned_at/pinned_by는 서버가 찍는다(컬럼 grant로는 남의 글을 못 고정해서 RPC로 뒀다). */}
+        {canCurate ? <DropdownMenuItem>{isPinned ? "고정 해제" : "고정"}</DropdownMenuItem> : null}
 
-        {isMine && canManage ? <DropdownMenuSeparator /> : null}
-        {/* TODO(backend): action에서 soft_delete_post(id) RPC. 작성자 또는 관리자를 함수가 직접 검사하고,
-            첨부 blob은 삭제 큐로 넘어간다. */}
-        <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
+        {/* 매니저는 남의 글을 못 지운다(soft_delete_post는 작성자 또는 can_manage_space). 그래서
+            내 글이 아닌데 canManage도 아니면 -- 즉 매니저가 남의 글을 볼 때 -- 삭제는 안 띄운다. */}
+        {isMine || canManage ? (
+          <>
+            {isMine && canCurate ? <DropdownMenuSeparator /> : null}
+            {/* TODO(backend): action에서 soft_delete_post(id) RPC. 작성자 또는 관리자를 함수가 직접
+                검사하고, 첨부 blob은 삭제 큐로 넘어간다. */}
+            <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
+          </>
+        ) : null}
 
         {/* 익명 악용 대응. 관리자는 이 글의 작성자가 누구인지 끝내 알 수 없고, 그 사람의 익명 권한만
             뺏는다. 밴이 아닌 이유: 밴은 목록을 관리자가 봐야 하고, 그러면 새로 뜬 한 명이 곧 작성자라

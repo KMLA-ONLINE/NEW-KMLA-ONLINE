@@ -18,6 +18,7 @@ import {
   mockGroupPosts,
   mockJoinRequests,
 } from "~/lib/group/mock-data"
+import type { GroupMemberRole } from "~/lib/group/types"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -30,15 +31,22 @@ const FEED_PAGE_SIZE = 6
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
 export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
 
-/** group 라우트가 모달 자식(상세·수정)에 내려주는 컨텍스트. 자식은 useOutletContext로 읽는다. */
-export type GroupOutletContext = { canManage: boolean }
+/**
+ * group 라우트가 모달 자식(상세·수정)에 내려주는 컨텍스트. 자식은 useOutletContext로 읽는다.
+ * 권한이 두 층이라 둘 다 내려준다 -- canManage(owner/admin: 삭제·익명 제한)와
+ * canCurate(owner/admin/manager: 고정). 하나로 합치면 매니저가 남의 글 삭제 버튼을 보게 된다.
+ */
+export type GroupOutletContext = { canManage: boolean; canCurate: boolean }
 
 type GroupTab = "posts" | "members" | "settings"
 
-const TABS: { id: GroupTab; label: string; manageOnly?: boolean }[] = [
+// curateOnly: 매니저도 볼 수 있다. 설정 탭에 카테고리 관리가 들어 있고 그건 can_curate_space라
+// 매니저에게도 열려 있기 때문이다 -- 탭 자체를 관리자로 잠그면 매니저가 카테고리를 못 만진다.
+// 탭 안에서 운영 섹션(기본정보·가입정책·글쓰기제한·익명)은 GroupSettings가 canManage로 다시 가린다.
+const TABS: { id: GroupTab; label: string; curateOnly?: boolean }[] = [
   { id: "posts", label: "게시물" },
   { id: "members", label: "멤버" },
-  { id: "settings", label: "그룹 설정", manageOnly: true },
+  { id: "settings", label: "그룹 설정", curateOnly: true },
 ]
 
 // 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
@@ -78,16 +86,20 @@ export default function GroupPage() {
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
 
-  // 개발용 미리보기: ?as=admin 이면 관리자 시점으로 본다. 백엔드 붙으면 로더가 내려주는
+  // 개발용 미리보기: ?as=admin|manager 로 그 시점을 본다. 백엔드 붙으면 로더가 내려주는
   // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
-  const viewerRole = searchParams.get("as") === "admin" ? "admin" : mockGroup.viewerRole
+  const roleOverride = searchParams.get("as")
+  const viewerRole: GroupMemberRole | null =
+    roleOverride === "admin" || roleOverride === "manager" ? roleOverride : mockGroup.viewerRole
+
+  // 권한은 두 층이다(private.can_manage_space / private.can_curate_space).
+  // 사람과 규칙을 다루는 일(설정·초대·가입승인·삭제·익명정지·역할변경)은 owner/admin만.
   const canManage = viewerRole === "owner" || viewerRole === "admin"
-  // private.can_post_in_space와 같은 규칙이다. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
+  // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
+  const canCurate = canManage || viewerRole === "manager"
+  // private.can_post_in_space와 같은 규칙. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
   // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
-  const canPost =
-    postPolicy === "all"
-      ? viewerRole !== null
-      : viewerRole === "owner" || viewerRole === "admin" || viewerRole === "manager"
+  const canPost = postPolicy === "all" ? viewerRole !== null : canCurate
 
   const liveGroup = {
     ...mockGroup,
@@ -116,8 +128,8 @@ export default function GroupPage() {
 
   // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
   const showJoinRequests = canManage && joinPolicy === "request"
-  // 그룹 설정 탭은 관리자만 본다.
-  const visibleTabs = TABS.filter((item) => !item.manageOnly || canManage)
+  // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
+  const visibleTabs = TABS.filter((item) => !item.curateOnly || canCurate)
 
   // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
   // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
@@ -240,6 +252,7 @@ export default function GroupPage() {
                 hasMore={feedHasMore}
                 sentinelRef={feedSentinelRef}
                 canManage={canManage}
+                canCurate={canCurate}
               />
             </>
           ) : tab === "members" ? (
@@ -265,6 +278,17 @@ export default function GroupPage() {
                       )
                     )
                   }
+                  // 이양은 **맞바꿈**이다: 상대가 owner가 되고 기존 owner는 admin이 된다.
+                  // 한쪽만 바꾸면 owner가 둘이 되거나 없어진다(서버도 같은 이유로 UPDATE가 둘이다).
+                  onTransferOwnership={(target) =>
+                    setMembers((current) =>
+                      current.map((member) => {
+                        if (member.id === target.id) return { ...member, role: "owner" as const }
+                        if (member.role === "owner") return { ...member, role: "admin" as const }
+                        return member
+                      })
+                    )
+                  }
                 />
               </div>
             </div>
@@ -272,6 +296,7 @@ export default function GroupPage() {
             <GroupSettings
               group={liveGroup}
               categories={mockGroupCategories}
+              canManage={canManage}
               joinPolicy={joinPolicy}
               onJoinPolicyChange={changeJoinPolicy}
               postPolicy={postPolicy}
@@ -304,7 +329,7 @@ export default function GroupPage() {
 
       {/* 모달 라우트(상세·수정)는 URL에 ?as=admin이 안 따라가므로 뷰어 권한을 context로 내려준다.
           백엔드 붙으면 부모 로더의 viewerRole이 그 자리를 대신한다. */}
-      <Outlet context={{ canManage } satisfies GroupOutletContext} />
+      <Outlet context={{ canManage, canCurate } satisfies GroupOutletContext} />
 
       <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
     </div>

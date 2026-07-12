@@ -406,9 +406,7 @@ begin
 end;
 $$;
 
--- 역할을 바꾸는 경로는 아직 없다(space_members_update 정책은 본인 행의 notification_setting/
--- pinned_at만 연다. 매니저용 RPC가 아직 없다). 트리거를 먼저 두는 이유는 그 경로가 생기는 날
--- 알림이 자동으로 따라오게 하려는 것 -- 그때 이 파일을 다시 열 필요가 없다.
+-- 역할 변경 통보. set_space_member_role과 transfer_space_ownership이 이 트리거를 돌린다.
 create function private.notify_on_role_changed()
 returns trigger
 language plpgsql
@@ -416,6 +414,12 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- 내가 바꾼 내 역할은 알릴 게 없다. transfer_space_ownership이 기존 owner를 admin으로
+  -- 내리는 게 정확히 이 경우다 -- 방금 자기가 누른 버튼의 결과를 알림으로 다시 받는 건 잡음이다.
+  -- notifications_no_self_notify는 이걸 못 잡는다: 그 제약은 actor_id를 보는데, 역할 변경 알림은
+  -- actor를 아예 싣지 않기 때문이다(notifications_actor_shape_check가 금지한다).
+  if new.user_id = private.current_profile_id() then return null; end if;
+
   insert into public.notifications(recipient_id,type,space_id,payload)
   values (new.user_id,'space_role_changed',new.space_id,
           jsonb_build_object('from',old.role,'to',new.role));

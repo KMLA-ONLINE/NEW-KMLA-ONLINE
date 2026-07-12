@@ -431,9 +431,13 @@ function AnonymousSection({
   )
 }
 
+// 이 탭은 **매니저에게도** 열려 있다 -- 카테고리 관리가 can_curate_space라 매니저도 하기 때문이다.
+// 나머지 섹션은 전부 운영 권한(can_manage_space)이므로 canManage가 아니면 아예 감춘다.
+// 매니저에게 보여주고 저장만 막으면, 서버가 어차피 거절할 버튼을 띄우는 거짓말이 된다.
 export function GroupSettings({
   group,
   categories,
+  canManage,
   joinPolicy,
   onJoinPolicyChange,
   postPolicy,
@@ -443,6 +447,8 @@ export function GroupSettings({
 }: {
   group: GroupSpace
   categories: GroupCategory[]
+  /** owner/admin. false면(= 매니저) 카테고리 섹션만 보인다. */
+  canManage: boolean
   joinPolicy: GroupSpace["joinPolicy"]
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
   postPolicy: GroupSpace["postPolicy"]
@@ -452,11 +458,15 @@ export function GroupSettings({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <BasicInfoSection group={group} />
-      <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
-      {/* 누가 들어오는가(가입) 다음에 누가 쓰는가(글쓰기), 그 다음 어떻게 쓰는가(익명) 순이다. */}
-      <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
-      <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
+      {canManage ? (
+        <>
+          <BasicInfoSection group={group} />
+          <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
+          {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
+          <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
+          <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
+        </>
+      ) : null}
       <CategorySection initial={categories} />
     </div>
   )

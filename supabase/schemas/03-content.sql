@@ -898,8 +898,10 @@ begin
   from public.posts where id=p_id and deleted_at is null
   for update;
   if not found then return; end if;
-  if not private.can_manage_space(target_space_id) then
-    raise exception 'space manager required';
+  -- can_manage_space가 아니라 can_curate_space다: 고정은 게시판을 정리하는 일이라 manager도 한다.
+  -- (남의 글 삭제·익명 정지는 여전히 can_manage_space -- 그건 사람을 다루는 일이다.)
+  if not private.can_curate_space(target_space_id) then
+    raise exception 'space curator required';
   end if;
 
   update public.posts

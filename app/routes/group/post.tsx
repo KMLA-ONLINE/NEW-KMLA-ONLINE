@@ -30,7 +30,7 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const { canManage } = useOutletContext<GroupOutletContext>()
+  const { canManage, canCurate } = useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -90,11 +90,14 @@ export default function GroupPostDetailPage() {
                       <GroupEditedMark at={post.updatedAt} />
                     </div>
                   </div>
+                  {/* 댓글 목록은 canCurate를 안 받는다 -- 댓글엔 고정이 없고, 매니저는 남의 댓글을
+                      지우거나 익명을 정지시킬 수 없다(둘 다 can_manage_space다). */}
                   <GroupPostMenu
                     isMine={post.isMine}
                     isPinned={post.isPinned}
                     isAnonymous={post.author === null}
                     canManage={canManage}
+                    canCurate={canCurate}
                     editTo="edit"
                   />
                 </header>

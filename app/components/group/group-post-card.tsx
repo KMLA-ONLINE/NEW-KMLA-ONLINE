@@ -20,11 +20,14 @@ export function GroupPostCard({
   post,
   reactionTypes,
   canManage,
+  canCurate,
 }: {
   post: GroupPost
   reactionTypes: ReactionType[]
   /** owner/admin이면 남의 글에도 ⋯ 모더레이션 메뉴가 뜬다. */
   canManage?: boolean
+  /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
+  canCurate?: boolean
 }) {
   const authorName = post.author?.name ?? "익명"
   const [expanded, setExpanded] = useState(false)
@@ -76,6 +79,7 @@ export function GroupPostCard({
           isPinned={post.isPinned}
           isAnonymous={post.author === null}
           canManage={canManage}
+          canCurate={canCurate}
           editTo={`posts/${post.pubId}/edit`}
         />
       </header>
