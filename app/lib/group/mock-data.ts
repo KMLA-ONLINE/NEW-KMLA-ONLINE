@@ -15,7 +15,7 @@ function mockImage(from: string, to: string): string {
 
 // 로더가 space와 글을 읽어올 때까지의 대역. 값은 스키마가 실제로 담는 것만 쓴다.
 export const mockGroup: GroupSpace = {
-  name: "학생회",
+  name: "행정위원회",
   description: "학생 자치 활동, 행사 공지, 건의사항을 나누는 공간입니다.",
   type: "group",
   pubId: "student-council",

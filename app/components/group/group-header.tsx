@@ -79,9 +79,6 @@ export function GroupHeader({
           </p>
         </div>
         <div className="flex items-center gap-1 pt-1">
-          <Button size="sm" variant={group.isMember ? "outline" : "default"}>
-            {group.isMember ? "가입됨" : "가입"}
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
