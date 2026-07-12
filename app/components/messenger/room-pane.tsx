@@ -13,6 +13,7 @@ import {
   getRoomSubtitle,
   isDeletedMessage,
 } from "~/lib/messenger/utils"
+import { useIsomorphicLayoutEffect } from "~/lib/use-isomorphic-layout-effect"
 import type { ReactionType } from "~/lib/reactions"
 import type { Message, ReplyPreview, Room } from "~/lib/messenger/types"
 
@@ -92,13 +93,17 @@ export function RoomPane({
     return () => window.cancelAnimationFrame(frameId)
   }, [showBackButton])
 
-  useEffect(() => {
-    // focusedMessageId is intentionally excluded from the deps: it flips back
-    // to null once MessageList finishes scrolling to the focused message, and
-    // reacting to that transition here would immediately re-scroll the
-    // viewport to the bottom and undo it. Reading the latest value in the
-    // body still skips the initial autoscroll when a room is opened via a
-    // search result.
+  // 페인트 전에 내려야 한다. useEffect는 브라우저가 이미 그린 다음에 돌고, 거기서 rAF로 한
+  // 프레임 더 미루면 "맨 위에 있는 대화"가 실제로 화면에 나왔다가 사라진다 -- 메시지가 많을수록
+  // 그 프레임의 페인트가 길어서 눈에 띄게 깜빡인다.
+  //
+  // focusedMessageId is intentionally excluded from the deps: it flips back
+  // to null once MessageList finishes scrolling to the focused message, and
+  // reacting to that transition here would immediately re-scroll the
+  // viewport to the bottom and undo it. Reading the latest value in the
+  // body still skips the initial autoscroll when a room is opened via a
+  // search result.
+  useIsomorphicLayoutEffect(() => {
     if (!isMessageListReady || focusedMessageId) {
       return
     }
@@ -108,13 +113,11 @@ export function RoomPane({
       return
     }
 
+    // 방을 처음 열 때는 즉시 바닥이고(애니메이션할 "이전 위치"가 없다), 같은 방에 메시지가
+    // 하나 붙었을 때만 부드럽게 따라간다.
     const isSameRoom = previousRoomIdRef.current === room.id
-    const frameId = window.requestAnimationFrame(() => {
-      viewport.scrollTo({ top: viewport.scrollHeight, behavior: isSameRoom ? "smooth" : "auto" })
-      previousRoomIdRef.current = room.id
-    })
-
-    return () => window.cancelAnimationFrame(frameId)
+    previousRoomIdRef.current = room.id
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: isSameRoom ? "smooth" : "auto" })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMessageListReady, room.id, lastMessageId])
 

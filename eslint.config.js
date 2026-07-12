@@ -25,6 +25,10 @@ export default defineConfig([
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-empty-object-type": "warn", // error → warn
       "react-refresh/only-export-components": "warn", // error → warn
+      // useIsomorphicLayoutEffect은 useLayoutEffect의 SSR 안전판이다. 등록하지 않으면
+      // exhaustive-deps가 커스텀 훅이라 보고 그냥 지나쳐, 그 안의 의존성 배열만 조용히
+      // 검사에서 빠진다.
+      "react-hooks/exhaustive-deps": ["warn", { additionalHooks: "^useIsomorphicLayoutEffect$" }],
     },
   },
   {
