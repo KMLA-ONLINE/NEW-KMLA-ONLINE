@@ -1730,14 +1730,6 @@ export type Database = {
         Args: { p_attachment_id: number; p_owner_type: string }
         Returns: undefined
       }
-      reset_comment_author_anonymity: {
-        Args: { p_comment_id: number }
-        Returns: undefined
-      }
-      reset_post_author_anonymity: {
-        Args: { p_post_id: number }
-        Returns: undefined
-      }
       review_profile: {
         Args: {
           p_profile_id: number
@@ -1819,6 +1811,14 @@ export type Database = {
           strike_count: number
           suspended_days: number
         }[]
+      }
+      undo_comment_anonymity_suspension: {
+        Args: { p_comment_id: number }
+        Returns: undefined
+      }
+      undo_post_anonymity_suspension: {
+        Args: { p_post_id: number }
+        Returns: undefined
       }
       withdraw_profile: { Args: never; Returns: undefined }
     }
