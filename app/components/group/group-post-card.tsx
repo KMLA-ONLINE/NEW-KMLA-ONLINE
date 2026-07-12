@@ -118,7 +118,7 @@ export function GroupPostCard({
         commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
-        commentHref={`posts/${post.pubId}`}
+        postPath={`posts/${post.pubId}`}
         className="mt-1"
       />
     </article>

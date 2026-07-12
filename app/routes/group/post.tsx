@@ -1,4 +1,5 @@
 import { PinIcon, XIcon } from "lucide-react"
+import { useRef } from "react"
 import { useOutletContext, useParams } from "react-router"
 
 import type { GroupOutletContext } from "~/routes/group/group"
@@ -30,6 +31,8 @@ export default function GroupPostDetailPage() {
   const { postId } = useParams()
   const { canManage } = useOutletContext<GroupOutletContext>()
   const close = useModalClose()
+  // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
   const post = mockGroupPosts.find((item) => item.pubId === postId)
   const authorName = post?.author?.name ?? "익명"
@@ -111,12 +114,18 @@ export default function GroupPostDetailPage() {
                 commentCount={post.commentCount}
                 topReactions={post.topReactions}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
+                postPath="."
+                onComment={() => composerRef.current?.focus()}
               />
             </article>
 
             <section className="border-t p-4">
               {comments.length > 0 ? (
-                <GroupCommentList comments={comments} reactionTypes={PLACEHOLDER_REACTION_TYPES} />
+                <GroupCommentList
+                  comments={comments}
+                  reactionTypes={PLACEHOLDER_REACTION_TYPES}
+                  canManage={canManage}
+                />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
                   <p className="text-foreground font-semibold">아직 댓글이 없습니다</p>
@@ -131,7 +140,7 @@ export default function GroupPostDetailPage() {
           </div>
         )}
 
-        <GroupCommentComposer />
+        <GroupCommentComposer inputRef={composerRef} />
       </DialogContent>
     </Dialog>
   )

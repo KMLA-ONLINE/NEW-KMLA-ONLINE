@@ -48,11 +48,13 @@ export function GroupPostMenu({
           </DropdownMenuItem>
         ) : null}
 
-        {/* TODO(backend): 고정은 posts.pinned_at/pinned_by, 삭제는 deleted_at/deleted_by.
-            둘 다 지금 authenticated update grant에 없어 매니저 게이트 RPC가 필요하다. */}
+        {/* TODO(backend): action에서 set_post_pinned(id, pinned) RPC를 부르면 된다. 관리자만 통과하고
+            pinned_at/pinned_by는 서버가 찍는다(컬럼 grant로는 남의 글을 못 고정해서 RPC로 뒀다). */}
         {canManage ? <DropdownMenuItem>{isPinned ? "고정 해제" : "고정"}</DropdownMenuItem> : null}
 
         {isMine && canManage ? <DropdownMenuSeparator /> : null}
+        {/* TODO(backend): action에서 soft_delete_post(id) RPC. 작성자 또는 관리자를 함수가 직접 검사하고,
+            첨부 blob은 삭제 큐로 넘어간다. */}
         <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

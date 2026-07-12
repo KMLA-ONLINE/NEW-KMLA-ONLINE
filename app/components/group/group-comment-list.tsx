@@ -21,9 +21,12 @@ import { cn } from "~/lib/utils"
 export function GroupCommentList({
   comments,
   reactionTypes,
+  canManage,
 }: {
   comments: GroupComment[]
   reactionTypes: ReactionType[]
+  /** owner/admin이면 남의 댓글도 삭제할 수 있다(soft_delete_comment). 수정은 작성자 본인만. */
+  canManage?: boolean
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -61,6 +64,7 @@ export function GroupCommentList({
           reactionTypes={reactionTypes}
           highlightedId={highlightedId}
           onNavigate={navigateToComment}
+          canManage={canManage}
         />
       ))}
     </ul>
@@ -73,6 +77,7 @@ function GroupCommentItem({
   reactionTypes,
   highlightedId,
   onNavigate,
+  canManage,
   depth = 0,
 }: {
   comment: GroupComment
@@ -80,6 +85,7 @@ function GroupCommentItem({
   reactionTypes: ReactionType[]
   highlightedId: number | null
   onNavigate: (id: number) => void
+  canManage?: boolean
   depth?: number
 }) {
   const name = comment.author?.name ?? "익명"
@@ -166,7 +172,9 @@ function GroupCommentItem({
             </div>
           </div>
 
-          {comment.isMine ? (
+          {/* 수정은 작성자 본인만이다 -- comments_update 정책이 author_id=current_profile_id()라
+              관리자도 남의 댓글 본문은 못 고친다. 삭제만 모더레이션 대상(soft_delete_comment). */}
+          {comment.isMine || canManage ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -180,7 +188,10 @@ function GroupCommentItem({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>수정</DropdownMenuItem>
+                {/* TODO(backend): 수정은 comments.content를 직접 update(컬럼 grant + 작성자 RLS로 이미
+                    열려 있다). 삭제는 soft_delete_comment(id) RPC -- 본문을 비워 tombstone이 원문을
+                    흘리지 않게 한다. */}
+                {comment.isMine ? <DropdownMenuItem>수정</DropdownMenuItem> : null}
                 <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -198,6 +209,7 @@ function GroupCommentItem({
               reactionTypes={reactionTypes}
               highlightedId={highlightedId}
               onNavigate={onNavigate}
+              canManage={canManage}
               depth={depth + 1}
             />
           ))}

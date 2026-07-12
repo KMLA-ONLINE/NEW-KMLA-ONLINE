@@ -1,5 +1,5 @@
 import { SendIcon } from "lucide-react"
-import { useRef, useState } from "react"
+import { useRef, useState, type RefObject } from "react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
@@ -25,14 +25,18 @@ export function GroupCommentComposer({
   autoFocus = false,
   onSubmit,
   className = "border-t p-3",
+  inputRef,
 }: {
   placeholder?: string
   autoFocus?: boolean
   onSubmit?: (text: string) => void
   className?: string
+  /** 바깥에서 포커스를 주려면 넘긴다(상세의 댓글 아이콘). 안 넘기면 내부 ref를 쓴다. */
+  inputRef?: RefObject<HTMLTextAreaElement | null>
 }) {
   const [draft, setDraft] = useState("")
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fallbackRef = useRef<HTMLTextAreaElement>(null)
+  const textareaRef = inputRef ?? fallbackRef
   const canSend = draft.trim().length > 0
 
   const send = () => {
