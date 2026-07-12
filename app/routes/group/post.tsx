@@ -1,5 +1,7 @@
 import { PinIcon, XIcon } from "lucide-react"
-import { useParams } from "react-router"
+import { useOutletContext, useParams } from "react-router"
+
+import type { GroupOutletContext } from "~/routes/group/group"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupCommentList } from "~/components/group/group-comment-list"
@@ -26,6 +28,7 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
+  const { canManage } = useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
   const post = mockGroupPosts.find((item) => item.pubId === postId)
@@ -78,7 +81,12 @@ export default function GroupPostDetailPage() {
                       className="text-muted-foreground text-xs"
                     />
                   </div>
-                  <GroupPostMenu isMine={post.isMine} editTo="edit" />
+                  <GroupPostMenu
+                    isMine={post.isMine}
+                    isPinned={post.isPinned}
+                    canManage={canManage}
+                    editTo="edit"
+                  />
                 </header>
 
                 <div>

@@ -18,9 +18,12 @@ import { cn } from "~/lib/utils"
 export function GroupPostCard({
   post,
   reactionTypes,
+  canManage,
 }: {
   post: GroupPost
   reactionTypes: ReactionType[]
+  /** owner/admin이면 남의 글에도 ⋯ 모더레이션 메뉴가 뜬다. */
+  canManage?: boolean
 }) {
   const authorName = post.author?.name ?? "익명"
   const [expanded, setExpanded] = useState(false)
@@ -66,7 +69,12 @@ export function GroupPostCard({
           </div>
           <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
         </div>
-        <GroupPostMenu isMine={post.isMine} editTo={`posts/${post.pubId}/edit`} />
+        <GroupPostMenu
+          isMine={post.isMine}
+          isPinned={post.isPinned}
+          canManage={canManage}
+          editTo={`posts/${post.pubId}/edit`}
+        />
       </header>
 
       <div className="px-4">

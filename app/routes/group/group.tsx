@@ -30,6 +30,9 @@ const FEED_PAGE_SIZE = 6
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
 export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
 
+/** group 라우트가 모달 자식(상세·수정)에 내려주는 컨텍스트. 자식은 useOutletContext로 읽는다. */
+export type GroupOutletContext = { canManage: boolean }
+
 type GroupTab = "posts" | "members" | "settings"
 
 const TABS: { id: GroupTab; label: string; manageOnly?: boolean }[] = [
@@ -134,7 +137,7 @@ export default function GroupPage() {
         onViewMembers={() => setTab("members")}
       />
 
-      <nav className="mx-2 mt-4 flex items-center gap-1 border-b" aria-label="그룹 메뉴">
+      <nav className="mx-2 mt-1 flex items-center gap-1 border-b md:mb-3" aria-label="그룹 메뉴">
         {visibleTabs.map((item) => (
           <button
             key={item.id}
@@ -198,6 +201,7 @@ export default function GroupPage() {
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
                 hasMore={feedHasMore}
                 sentinelRef={feedSentinelRef}
+                canManage={canManage}
               />
             </>
           ) : tab === "members" ? (
@@ -243,7 +247,9 @@ export default function GroupPage() {
         </aside>
       </div>
 
-      <Outlet />
+      {/* 모달 라우트(상세·수정)는 URL에 ?as=admin이 안 따라가므로 뷰어 권한을 context로 내려준다.
+          백엔드 붙으면 부모 로더의 viewerRole이 그 자리를 대신한다. */}
+      <Outlet context={{ canManage } satisfies GroupOutletContext} />
 
       <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
     </div>

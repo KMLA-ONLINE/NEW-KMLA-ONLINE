@@ -33,12 +33,15 @@ export function GroupPostFeed({
   reactionTypes,
   hasMore = false,
   sentinelRef,
+  canManage,
 }: {
   posts: GroupPost[]
   viewMode: PostViewMode
   reactionTypes: ReactionType[]
   hasMore?: boolean
   sentinelRef?: Ref<HTMLDivElement>
+  /** owner/admin이면 카드 ⋯에 모더레이션 메뉴가 뜬다. */
+  canManage?: boolean
 }) {
   if (posts.length === 0) {
     return (
@@ -69,7 +72,12 @@ export function GroupPostFeed({
   return (
     <div className="flex flex-col sm:gap-3">
       {posts.map((post) => (
-        <GroupPostCard key={post.id} post={post} reactionTypes={reactionTypes} />
+        <GroupPostCard
+          key={post.id}
+          post={post}
+          reactionTypes={reactionTypes}
+          canManage={canManage}
+        />
       ))}
       <FeedFooter hasMore={hasMore} sentinelRef={sentinelRef} />
     </div>
