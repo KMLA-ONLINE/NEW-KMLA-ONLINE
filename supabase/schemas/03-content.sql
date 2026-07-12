@@ -867,11 +867,9 @@ begin
     return;
   end if;
 
-  -- 마지막 정지가 끝난 지 90일이 지났으면 초범으로 되돌린다. 안 그러면 한 번 걸린 사람이 몇 년
-  -- 뒤에도 상습범 취급을 받는다.
-  if not found or prior_until < now() - interval '90 days' then
-    prior_strikes := 0;
-  end if;
+  -- 시간이 지났다고 누범을 자동으로 지우지 않는다. 그러면 띄엄띄엄 반복하는 사람이 영원히 초범으로
+  -- 남는다. 오판이었다면 관리자가 reset_*_author_anonymity로 명시적으로 지운다.
+  if not found then prior_strikes := 0; end if;
 
   -- 1일 → 2일 → 4일 → 8일 … 2배씩, 90일 상한.
   effective_days := least((2 ^ least(prior_strikes, 7))::int4, 90);
@@ -916,6 +914,56 @@ begin
 end;
 $$;
 
+-- 오판 취소. **현재 정지를 풀고 누범 단계를 하나 되돌린다** -- 전과 말소가 아니라 "이번 건 없던 일로"다.
+-- 2회차(2일)를 취소하면 다음 위반은 다시 2회차(2일)로 들어간다. 통째로 지우면 상습범이 한 번
+-- 봐줬다는 이유로 초범으로 돌아가 버린다. 단계가 0이 되면 행을 지운다(기록 없음 == 초범).
+--
+-- **반드시 void여야 한다.** "2회차를 취소했습니다"나 "기록이 없습니다" 같은 응답을 주면 그게 공짜
+-- probe가 된다: 정지(suspend)는 다른 사람이면 애먼 사람을 처벌하는 비용이 들지만, 취소는 아무도
+-- 다치지 않으므로 관리자가 익명 글을 마음껏 찔러 작성자별로 묶을 수 있다. 그건 감수하기로 한
+-- 유출보다 훨씬 나쁘다. 기록이 없어도 조용히 넘어간다.
+--
+-- 관리자가 사후에 임의로 사면할 수는 없다(누가 누적을 갖고 있는지 못 보니까). 오직 그 글을 통해서만
+-- 되돌릴 수 있고, 그게 이 버튼의 유일한 용도다.
+create function private.undo_anonymity_suspension(p_space_id bigint, p_author_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  delete from public.space_anonymity_suspensions
+  where space_id=p_space_id and user_id=p_author_id and strike_count <= 1;
+
+  update public.space_anonymity_suspensions
+  set suspended_until=now(), strike_count=strike_count-1
+  where space_id=p_space_id and user_id=p_author_id;
+end;
+$$;
+revoke execute on function private.undo_anonymity_suspension(bigint,bigint) from public, anon, authenticated, service_role;
+
+create function public.undo_post_anonymity_suspension(p_post_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare target public.posts;
+begin
+  select * into target from public.posts
+  where id=p_post_id and deleted_at is null and is_anonymous;
+  if not found then raise exception 'anonymous post required'; end if;
+  perform private.undo_anonymity_suspension(target.space_id, target.author_id);
+end;
+$$;
+
+create function public.undo_comment_anonymity_suspension(p_comment_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare target_space_id bigint; target_author_id bigint;
+begin
+  select p.space_id, c.author_id into target_space_id, target_author_id
+  from public.comments c join public.posts p on p.id=c.post_id
+  where c.id=p_comment_id and c.deleted_at is null and c.is_anonymous;
+  if not found then raise exception 'anonymous comment required'; end if;
+  perform private.undo_anonymity_suspension(target_space_id, target_author_id);
+end;
+$$;
+
 create trigger trg_enforce_anonymous_allowed_posts
 before insert on public.posts
 for each row execute function private.enforce_anonymous_allowed();
@@ -924,5 +972,5 @@ create trigger trg_enforce_anonymous_allowed_comments
 before insert on public.comments
 for each row execute function private.enforce_anonymous_allowed();
 
-revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint) from public, anon, authenticated, service_role;
-grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint) to authenticated;
+revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;

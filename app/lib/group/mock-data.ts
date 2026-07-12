@@ -20,6 +20,11 @@ export const mockGroup: GroupSpace = {
   type: "group",
   pubId: "student-council",
   joinPolicy: "request",
+  allowAnonymous: true,
+  // 로더가 space_anonymity_suspensions에서 내 행만 읽어 파생한다. 정지 중이면 false가 되고
+  // 작성 화면의 익명 토글이 사라진다.
+  canPostAnonymously: true,
+  anonymitySuspendedUntil: null,
   memberCount: 128,
   isMember: true,
   // mock상 현재 사용자는 일반 멤버(mockGroupMembers의 id:1 "나" = member). 관리자 화면은
@@ -88,12 +93,32 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
         content: "네 신청했어요, 감사합니다!",
         createdAt: "2026-07-11T06:20:00.000Z",
       },
+      // 익명 댓글. author는 서버가 지우고 anonymousLabel만 내려준다. 번호는 이 글 안에서만 유효하다.
       {
         id: 2,
         parentId: null,
         author: null,
+        anonymousLabel: "익명1",
         content: "봉사 시간 인증서는 어디서 받을 수 있나요?",
         createdAt: "2026-07-11T06:30:00.000Z",
+      },
+      // 같은 사람이 또 달면 같은 번호 -- 익명끼리 구분되는지 보이는 케이스.
+      {
+        id: 11,
+        parentId: 2,
+        author: null,
+        anonymousLabel: "익명1",
+        content: "아 그리고 봉사 확인서 양식도 있나요?",
+        createdAt: "2026-07-11T06:33:00.000Z",
+      },
+      // 다른 익명 사람이면 다른 번호.
+      {
+        id: 12,
+        parentId: null,
+        author: null,
+        anonymousLabel: "익명2",
+        content: "저도 같은 게 궁금했어요.",
+        createdAt: "2026-07-11T06:36:00.000Z",
       },
       // 삭제됐지만 답글이 살아 있어 tombstone으로 남는 댓글. get_post_comments가 이런 행을 계속
       // 내려주고(has_active_descendant), content와 author는 서버가 비운다.
@@ -169,8 +194,19 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
         id: 6,
         parentId: null,
         author: null,
+        anonymousLabel: "익명1",
         content: "저도요! 요거트도 있으면 좋겠어요.",
         createdAt: "2026-07-10T09:00:00.000Z",
+      },
+      // 익명 글의 글쓴이가 자기 글에 단 익명 댓글 -- 번호 대신 "글쓴이". 신원은 여전히 안 드러난다
+      // (어차피 익명 글이니까). 글이 실명이면 이 라벨을 붙이면 안 된다 -- 곧바로 까진다.
+      {
+        id: 13,
+        parentId: 6,
+        author: null,
+        anonymousLabel: "글쓴이",
+        content: "요거트 좋네요, 같이 건의해 볼게요.",
+        createdAt: "2026-07-10T09:30:00.000Z",
       },
     ],
   },

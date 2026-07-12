@@ -9,6 +9,7 @@ import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
+import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -30,6 +31,9 @@ export default function GroupNewPostPage() {
   const { isDragging, dropHandlers } = useFileDrop(add)
   const [categoryId, setCategoryId] = useState<number | null>(null)
   // posts.is_anonymous. 작성 시점에만 정해지고 그 뒤로는 불변이다(update 컬럼 grant에서 빠져 있다).
+  // 그룹이 익명을 껐거나 내가 익명 정지 중이면 애초에 못 고른다 -- 로더가 파생해 내려줄 값이다.
+  const canPostAnonymously = mockGroup.canPostAnonymously
+  const suspendedUntil = mockGroup.anonymitySuspendedUntil
   const [anonymous, setAnonymous] = useState(false)
 
   const previewImages = attachments.flatMap((item) =>
@@ -70,16 +74,30 @@ export default function GroupNewPostPage() {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
           {/* 아바타를 눌러 익명 ↔ 실명 전환. 작성할 때만 정할 수 있고 올린 뒤엔 못 바꾼다
-              (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다. */}
+              (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다.
+              그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
+              거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
           <div className="flex items-center gap-2">
-            <GroupAnonymousToggle
-              anonymous={anonymous}
-              onToggle={() => setAnonymous((value) => !value)}
-              size="lg"
-            />
+            {canPostAnonymously ? (
+              <GroupAnonymousToggle
+                anonymous={anonymous}
+                onToggle={() => setAnonymous((value) => !value)}
+                size="lg"
+              />
+            ) : (
+              <Avatar size="lg">
+                <AvatarFallback>나</AvatarFallback>
+              </Avatar>
+            )}
             <div className="text-sm leading-tight">
               <p className="font-semibold">{anonymous ? "익명" : "나"}</p>
-              <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
+              <p className="text-muted-foreground text-xs">
+                {suspendedUntil
+                  ? `익명 작성 제한 중 · ${new Date(suspendedUntil).toLocaleDateString("ko-KR")}까지`
+                  : mockGroup.allowAnonymous
+                    ? mockGroup.name
+                    : `${mockGroup.name} · 익명 작성이 꺼져 있습니다`}
+              </p>
             </div>
           </div>
 

@@ -72,6 +72,7 @@ export function GroupPostCard({
         <GroupPostMenu
           isMine={post.isMine}
           isPinned={post.isPinned}
+          isAnonymous={post.author === null}
           canManage={canManage}
           editTo={`posts/${post.pubId}/edit`}
         />

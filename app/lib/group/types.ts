@@ -11,6 +11,16 @@ export type GroupSpace = {
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
   joinPolicy: "public" | "request" | "invite_only"
+  /** spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(기존 익명 글은 그대로). */
+  allowAnonymous: boolean
+  /**
+   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고 + 내가 익명 정지 중이
+   * 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가 남의
+   * 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
+   */
+  canPostAnonymously: boolean
+  /** 내가 익명 정지 중이면 해제 시각. 아니면 null. 왜 토글이 없는지 알려주는 데 쓴다. */
+  anonymitySuspendedUntil: string | null
   memberCount: number
   /** 현재 사용자가 이 space의 멤버인지(space_members). */
   isMember: boolean
@@ -125,6 +135,13 @@ export type GroupComment = {
    * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
    */
   author: GroupPostAuthor | null
+  /**
+   * 익명 댓글의 표시 이름: "익명1", "익명2", 또는 익명 글의 글쓴이면 "글쓴이". 익명이 아니거나
+   * 삭제됐으면 null. **번호는 서버가 매긴다** -- 클라이언트가 매기려면 작성자별 키가 필요한데
+   * 그게 곧 author_id고, 그러면 익명이 깨진다. 번호는 그 글 안에서만 유효하다(같은 사람이 다른
+   * 글에선 다른 번호를 받으므로 여러 글에 걸쳐 이어 붙일 수 없다).
+   */
+  anonymousLabel?: string | null
   /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
   isMine?: boolean
   /**

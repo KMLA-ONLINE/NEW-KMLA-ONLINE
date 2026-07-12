@@ -10,6 +10,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import type { GroupComment } from "~/lib/group/types"
@@ -111,12 +113,16 @@ function GroupCommentItem({
   canManage?: boolean
   depth?: number
 }) {
-  const name = comment.author?.name ?? "익명"
+  // 익명이면 서버가 매긴 라벨을 쓴다("익명1", "익명2", 익명 글의 글쓴이면 "글쓴이"). 클라이언트가
+  // 번호를 매기려면 작성자별 키가 필요한데 그게 곧 author_id고, 그러면 익명이 깨진다.
+  const displayName = (item: GroupComment) => item.author?.name ?? item.anonymousLabel ?? "익명"
+
+  const name = displayName(comment)
   const replies = childrenOf.get(comment.id) ?? []
   // 답글이면 부모 댓글 작성자를 본문 앞 @이름 칩으로 붙인다(평탄화돼도 누구 답글인지 보이게).
   // 부모가 삭제된 tombstone이면 붙일 이름이 없다 -- 서버가 작성자를 지워서 내려주기 때문이다.
   const parent = comment.parentId !== null ? byId.get(comment.parentId) : null
-  const parentName = parent && !parent.isDeleted ? (parent.author?.name ?? "익명") : null
+  const parentName = parent && !parent.isDeleted ? displayName(parent) : null
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
@@ -255,6 +261,21 @@ function GroupCommentItem({
                     흘리지 않게 한다. */}
                 {comment.isMine ? <DropdownMenuItem>수정</DropdownMenuItem> : null}
                 <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
+
+                {/* 익명 댓글에만. 관리자는 작성자가 누구인지 끝내 모르고 익명 권한만 뺏는다. */}
+                {canManage && comment.anonymousLabel ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+                      작성자는 익명으로 남습니다
+                    </DropdownMenuLabel>
+                    {/* TODO(backend): suspend_comment_author_anonymity(id) / 
+                        undo_comment_anonymity_suspension(id). 후자는 void다 -- 자세한 이유는
+                        group-post-menu.tsx의 같은 항목 주석 참고. */}
+                    <DropdownMenuItem>익명 작성 제한</DropdownMenuItem>
+                    <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}

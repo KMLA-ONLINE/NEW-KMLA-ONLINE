@@ -68,10 +68,20 @@ export default function GroupPage() {
   // 가입 정책·멤버·가입 요청은 서로 영향을 줘서(정책 전환 시 대기 요청 정리) 여기서 함께 들고
   // 있는다. 저장(백엔드)만 미루고 mock 동작은 실제처럼 반영한다.
   const [joinPolicy, setJoinPolicy] = useState(mockGroup.joinPolicy)
+  // spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(서버 트리거가 강제).
+  // 기존 익명 글은 그대로 익명이다 -- is_anonymous는 불변이라 소급해서 까이지 않는다.
+  const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
   const [members, setMembers] = useState(mockGroupMembers)
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
-  const liveGroup = { ...mockGroup, joinPolicy, memberCount }
+  const liveGroup = {
+    ...mockGroup,
+    joinPolicy,
+    memberCount,
+    allowAnonymous,
+    // 내가 익명 정지 중이 아니고 그룹이 익명을 허용해야 익명으로 쓸 수 있다.
+    canPostAnonymously: allowAnonymous && mockGroup.anonymitySuspendedUntil === null,
+  }
 
   const isPrivate = joinPolicy === "invite_only"
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
@@ -223,6 +233,8 @@ export default function GroupPage() {
               categories={mockGroupCategories}
               joinPolicy={joinPolicy}
               onJoinPolicyChange={changeJoinPolicy}
+              allowAnonymous={allowAnonymous}
+              onAllowAnonymousChange={setAllowAnonymous}
             />
           )}
         </div>

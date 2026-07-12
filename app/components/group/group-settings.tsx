@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import type { GroupCategory, GroupSpace } from "~/lib/group/types"
+import { cn } from "~/lib/utils"
 
 // 관리자 전용 그룹 설정. 실수로 바꾸기 쉽지 않게 각 섹션은 읽기 모드가 기본이고, "편집"을
 // 누른 뒤에만 수정할 수 있다(저장/취소). 백엔드 전이라 저장은 로컬 상태만 갱신한다 --
@@ -338,21 +339,68 @@ function CategorySection({ initial }: { initial: GroupCategory[] }) {
   )
 }
 
+// spaces.allow_anonymous_posts. 다른 섹션과 달리 edit 모드가 없다 -- 값이 하나뿐이라 토글이 곧
+// 저장이다. TODO(backend): action에서 spaces.allow_anonymous_posts를 update(매니저 컬럼 grant).
+function AnonymousSection({
+  allowed,
+  onChange,
+}: {
+  allowed: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <SettingsCard>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">익명 글 허용</h2>
+          <p className="text-muted-foreground mt-1 text-xs">
+            끄면 새 익명 글과 익명 댓글을 쓸 수 없습니다. 이미 올라간 익명 글은 그대로 익명으로
+            남습니다 — 소급해서 작성자를 공개하지 않습니다.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={allowed}
+          aria-label="익명 글 허용"
+          onClick={() => onChange(!allowed)}
+          className={cn(
+            "focus-visible:ring-ring relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none",
+            allowed ? "bg-primary" : "bg-muted-foreground/30"
+          )}
+        >
+          <span
+            className={cn(
+              "bg-background absolute top-0.5 size-5 rounded-full shadow transition-[left]",
+              allowed ? "left-[1.375rem]" : "left-0.5"
+            )}
+          />
+        </button>
+      </div>
+    </SettingsCard>
+  )
+}
+
 export function GroupSettings({
   group,
   categories,
   joinPolicy,
   onJoinPolicyChange,
+  allowAnonymous,
+  onAllowAnonymousChange,
 }: {
   group: GroupSpace
   categories: GroupCategory[]
   joinPolicy: GroupSpace["joinPolicy"]
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
+  allowAnonymous: boolean
+  onAllowAnonymousChange: (next: boolean) => void
 }) {
   return (
     <div className="flex flex-col gap-4">
       <BasicInfoSection group={group} />
       <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
+      <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
       <CategorySection initial={categories} />
     </div>
   )

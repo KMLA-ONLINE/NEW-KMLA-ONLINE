@@ -87,6 +87,7 @@ export default function GroupPostDetailPage() {
                   <GroupPostMenu
                     isMine={post.isMine}
                     isPinned={post.isPinned}
+                    isAnonymous={post.author === null}
                     canManage={canManage}
                     editTo="edit"
                   />
