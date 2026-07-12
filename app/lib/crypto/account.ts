@@ -108,6 +108,11 @@ export type NewAccount = {
   authHash: string
   keys: AccountKeys
   stored: StoredUserKeys
+  /**
+   * Handed straight to the vault, which imports it as a non-extractable
+   * CryptoKey and drops these bytes. Nothing else should hold onto it.
+   */
+  encKey: Uint8Array
   /** Shown to the user exactly once. Not recoverable from anything stored. */
   recoveryCode: string
 }
@@ -123,6 +128,7 @@ export async function createAccount(password: string, email: string): Promise<Ne
   return {
     authHash,
     keys,
+    encKey,
     recoveryCode,
     stored: await sealAccount(keys, encKey, deriveRecoveryKey(recoveryCode, email)),
   }
@@ -144,7 +150,7 @@ export async function unlockWithPassword(
   password: string,
   email: string,
   stored: StoredUserKeys
-): Promise<{ authHash: string; keys: AccountKeys }> {
+): Promise<{ authHash: string; encKey: Uint8Array; keys: AccountKeys }> {
   const { authHash, encKey } = splitMasterKey(password, email)
   let userKey: Uint8Array
   try {
@@ -154,7 +160,27 @@ export async function unlockWithPassword(
     // a plausible-looking wrong key.
     throw new WrongPasswordError()
   }
-  return { authHash, keys: await unwrapIdentity(userKey, stored) }
+  return { authHash, encKey, keys: await unwrapIdentity(userKey, stored) }
+}
+
+/**
+ * Reopening a session that is still logged in but whose keys went away with the
+ * page -- a refresh, a new tab. The password is long gone; what survives is the
+ * non-extractable `encKey` the vault kept in IndexedDB.
+ */
+export async function unlockWithEncKey(
+  encKey: CryptoKey,
+  stored: StoredUserKeys
+): Promise<AccountKeys> {
+  let userKey: Uint8Array
+  try {
+    userKey = await open(encKey, base64ToBytes(stored.wrapped_user_key))
+  } catch {
+    // The stored key no longer opens the vault: the password was changed
+    // somewhere else. Ask for the password again rather than guessing.
+    throw new WrongPasswordError()
+  }
+  return unwrapIdentity(userKey, stored)
 }
 
 /** Password reset: the user has the code but not the old password. */
@@ -185,11 +211,17 @@ export async function resealAccount(
   keys: AccountKeys,
   newPassword: string,
   email: string
-): Promise<{ authHash: string; stored: StoredUserKeys; recoveryCode: string }> {
+): Promise<{
+  authHash: string
+  encKey: Uint8Array
+  stored: StoredUserKeys
+  recoveryCode: string
+}> {
   const { authHash, encKey } = splitMasterKey(newPassword, email)
   const recoveryCode = generateRecoveryCode()
   return {
     authHash,
+    encKey,
     recoveryCode,
     stored: await sealAccount(keys, encKey, deriveRecoveryKey(recoveryCode, email)),
   }

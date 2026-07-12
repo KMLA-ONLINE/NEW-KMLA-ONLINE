@@ -560,7 +560,8 @@ export type Database = {
           content_type: string
           created_at: string
           duration_ms: number | null
-          file_name: string
+          file_name: string | null
+          file_name_ciphertext: string | null
           height: number | null
           id: number
           message_id: number
@@ -574,7 +575,8 @@ export type Database = {
           content_type: string
           created_at?: string
           duration_ms?: number | null
-          file_name: string
+          file_name?: string | null
+          file_name_ciphertext?: string | null
           height?: number | null
           id?: number
           message_id: number
@@ -588,7 +590,8 @@ export type Database = {
           content_type?: string
           created_at?: string
           duration_ms?: number | null
-          file_name?: string
+          file_name?: string | null
+          file_name_ciphertext?: string | null
           height?: number | null
           id?: number
           message_id?: number
@@ -611,6 +614,48 @@ export type Database = {
             columns: ["message_id"]
             isOneToOne: false
             referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_keys: {
+        Row: {
+          created_at: string
+          message_id: number
+          recipient_public_key: string
+          sender_public_key: string
+          user_id: number
+          wrapped_key: string
+        }
+        Insert: {
+          created_at?: string
+          message_id: number
+          recipient_public_key: string
+          sender_public_key: string
+          user_id: number
+          wrapped_key: string
+        }
+        Update: {
+          created_at?: string
+          message_id?: number
+          recipient_public_key?: string
+          sender_public_key?: string
+          user_id?: number
+          wrapped_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_keys_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -664,6 +709,7 @@ export type Database = {
       messages: {
         Row: {
           content: string | null
+          content_ciphertext: string | null
           conversation_id: number
           created_at: string
           deleted_at: string | null
@@ -677,6 +723,7 @@ export type Database = {
         }
         Insert: {
           content?: string | null
+          content_ciphertext?: string | null
           conversation_id: number
           created_at?: string
           deleted_at?: string | null
@@ -690,6 +737,7 @@ export type Database = {
         }
         Update: {
           content?: string | null
+          content_ciphertext?: string | null
           conversation_id?: number
           created_at?: string
           deleted_at?: string | null
@@ -1578,6 +1626,44 @@ export type Database = {
           },
         ]
       }
+      user_keys: {
+        Row: {
+          created_at: string
+          identity_public_key: string
+          recovery_wrapped_user_key: string
+          updated_at: string | null
+          user_id: number
+          wrapped_identity_secret_key: string
+          wrapped_user_key: string
+        }
+        Insert: {
+          created_at?: string
+          identity_public_key: string
+          recovery_wrapped_user_key: string
+          updated_at?: string | null
+          user_id: number
+          wrapped_identity_secret_key: string
+          wrapped_user_key: string
+        }
+        Update: {
+          created_at?: string
+          identity_public_key?: string
+          recovery_wrapped_user_key?: string
+          updated_at?: string | null
+          user_id?: number
+          wrapped_identity_secret_key?: string
+          wrapped_user_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_keys_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           granted_at: string
@@ -1671,6 +1757,19 @@ export type Database = {
         }
         Returns: string
       }
+      create_user_keys: {
+        Args: {
+          p_identity_public_key: string
+          p_recovery_wrapped_user_key: string
+          p_wrapped_identity_secret_key: string
+          p_wrapped_user_key: string
+        }
+        Returns: undefined
+      }
+      edit_encrypted_message: {
+        Args: { p_content_ciphertext: string; p_id: number }
+        Returns: undefined
+      }
       enqueue_due_storage_cleanup: { Args: never; Returns: number }
       fail_storage_cleanup: {
         Args: { p_error: string; p_id: number }
@@ -1690,12 +1789,14 @@ export type Database = {
         Returns: {
           attachments: Json
           content: string
+          content_ciphertext: string
           conversation_id: number
           created_at: string
           deleted_at: string
           edited_at: string
           is_edited: boolean
           message_id: number
+          message_key: Json
           parent_message: Json
           pinned_at: string
           pinned_by: Json
@@ -1703,6 +1804,22 @@ export type Database = {
           reads: Json
           sender: Json
           sender_id: number
+        }[]
+      }
+      get_identity_public_keys: {
+        Args: { p_user_ids: number[] }
+        Returns: {
+          identity_public_key: string
+          user_id: number
+        }[]
+      }
+      get_my_key_vault: {
+        Args: never
+        Returns: {
+          identity_public_key: string
+          recovery_wrapped_user_key: string
+          wrapped_identity_secret_key: string
+          wrapped_user_key: string
         }[]
       }
       get_post: {
@@ -1757,9 +1874,11 @@ export type Database = {
           display_initials: string
           display_name: string
           last_message_content: string
+          last_message_content_ciphertext: string
           last_message_created_at: string
           last_message_has_attachment: boolean
           last_message_id: number
+          last_message_key: Json
           last_message_sender_id: number
           last_message_sender_name: string
           member_count: number
@@ -1826,6 +1945,13 @@ export type Database = {
         Args: { p_attachment_id: number; p_owner_type: string }
         Returns: undefined
       }
+      reseal_user_keys: {
+        Args: {
+          p_recovery_wrapped_user_key: string
+          p_wrapped_user_key: string
+        }
+        Returns: undefined
+      }
       review_profile: {
         Args: {
           p_profile_id: number
@@ -1834,6 +1960,15 @@ export type Database = {
         Returns: undefined
       }
       revoke_space_invite: { Args: { p_invite_id: number }; Returns: undefined }
+      rotate_user_keys: {
+        Args: {
+          p_identity_public_key: string
+          p_recovery_wrapped_user_key: string
+          p_wrapped_identity_secret_key: string
+          p_wrapped_user_key: string
+        }
+        Returns: undefined
+      }
       search_messages: {
         Args: { p_conversation_id: number; p_query: string }
         Returns: {
@@ -1853,6 +1988,16 @@ export type Database = {
           pub_id: string
           title: string
         }[]
+      }
+      send_encrypted_message: {
+        Args: {
+          p_attachments?: Json
+          p_content_ciphertext?: string
+          p_conversation_id: number
+          p_keys?: Json
+          p_parent_id?: number
+        }
+        Returns: number
       }
       send_message_with_attachments: {
         Args: {

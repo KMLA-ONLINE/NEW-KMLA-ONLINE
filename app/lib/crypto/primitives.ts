@@ -52,33 +52,46 @@ export function accountSalt(email: string, domain: string): Uint8Array {
   return sha256(utf8ToBytes(`${domain}|${email.trim().toLowerCase()}`)).slice(0, 16)
 }
 
-async function importAesKey(key: Uint8Array): Promise<CryptoKey> {
+/**
+ * A key that WebCrypto will use but never hand back. Stored in IndexedDB so an
+ * unlocked session survives a page reload without keeping the password around --
+ * and so that a script which gets into the origin can *use* it but cannot copy it
+ * out. See ./vault.ts.
+ */
+export function importUnextractableKey(key: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", key as BufferSource, "AES-GCM", false, [
     "encrypt",
     "decrypt",
   ])
 }
 
+async function aesKey(key: Uint8Array | CryptoKey): Promise<CryptoKey> {
+  return key instanceof Uint8Array ? importUnextractableKey(key) : key
+}
+
 /**
  * AES-256-GCM. The nonce is random and prefixed to the ciphertext, so a sealed
  * blob is self-contained: `nonce(12) || ciphertext || tag(16)`.
  */
-export async function seal(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
+export async function seal(
+  key: Uint8Array | CryptoKey,
+  plaintext: Uint8Array
+): Promise<Uint8Array> {
   const nonce = randomBytes(NONCE_BYTES)
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce as BufferSource },
-    await importAesKey(key),
+    await aesKey(key),
     plaintext as BufferSource
   )
   return concatBytes(nonce, new Uint8Array(ciphertext))
 }
 
 /** Throws if the key is wrong or the blob was tampered with -- GCM authenticates. */
-export async function open(key: Uint8Array, sealed: Uint8Array): Promise<Uint8Array> {
+export async function open(key: Uint8Array | CryptoKey, sealed: Uint8Array): Promise<Uint8Array> {
   if (sealed.length <= NONCE_BYTES) throw new Error("sealed blob is truncated")
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: sealed.subarray(0, NONCE_BYTES) as BufferSource },
-    await importAesKey(key),
+    await aesKey(key),
     sealed.subarray(NONCE_BYTES) as BufferSource
   )
   return new Uint8Array(plaintext)

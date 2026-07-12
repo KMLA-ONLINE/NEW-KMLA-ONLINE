@@ -1,39 +1,71 @@
-import { useEffect, useRef, useState } from "react"
-import { Link, redirect, useFetcher, type ActionFunctionArgs } from "react-router"
+import { useEffect, useRef, useState, type FormEvent } from "react"
+import { Link, useNavigate } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 
-import { createClient } from "~/lib/supabase/server"
+import { createClient } from "~/lib/supabase/client"
+import { deriveAuthHash } from "~/lib/crypto/account"
+import { openVault } from "~/lib/crypto/vault"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { supabase, headers } = createClient(request)
-
-  const formData = await request.formData()
-  const email = String(formData.get("email") ?? "")
-  const password = String(formData.get("password") ?? "")
-
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-  if (error) {
-    return { error: "이메일 또는 비밀번호를 확인해 주세요." }
-  }
-
-  return redirect("/", { headers })
-}
-
+/**
+ * 로그인은 서버 action이 아니라 브라우저에서 돈다. 그래야만 하는 이유가 하나 있다:
+ * **비밀번호가 우리 서버를 지나가면 안 된다.**
+ *
+ * action은 SSR 서버에서 실행되므로, 거기서 signInWithPassword를 부르면 원문 비밀번호가
+ * 브라우저 -> 우리 서버 -> Supabase 순으로 흐른다. 그 순간 우리는 모든 DM을 복호화할 수 있는
+ * 키를 유도할 수 있게 되고, 종단간 암호화는 겉보기에만 멀쩡한 연극이 된다.
+ *
+ * 그래서 브라우저에서 Argon2id를 돌려 masterKey를 만들고, 거기서 갈라낸 authHash만 Supabase
+ * Auth에 보낸다. encKey는 같은 masterKey에서 나오지만 서버로 가지 않는다. HKDF의 두 출력은
+ * 서로 독립이라, authHash를 손에 쥔 서버도 encKey를 재현할 수 없다. (docs/e2ee.md)
+ *
+ * createBrowserClient가 세션을 쿠키에 쓰므로 SSR 로더는 그대로 동작한다.
+ */
 export default function Login() {
-  const fetcher = useFetcher<typeof action>()
+  const navigate = useNavigate()
   const [showPw, setShowPw] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     emailRef.current?.focus()
   }, [])
 
-  const error = fetcher.data?.error
-  const loading = fetcher.state === "submitting"
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const email = String(form.get("email") ?? "").trim()
+    const password = String(form.get("password") ?? "")
+
+    setError(null)
+    setLoading(true)
+    // Argon2id는 메인 스레드를 ~0.5초 붙잡는다. 여기서 한 번 양보하지 않으면 위에서 세운
+    // 로딩 상태가 그려지지 않아, 버튼이 죽은 것처럼 보인다.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    try {
+      const db = createClient()
+      const { data, error: authError } = await db.auth.signInWithPassword({
+        email,
+        password: deriveAuthHash(password, email),
+      })
+
+      if (authError || !data.user) {
+        setError("이메일 또는 비밀번호를 확인해 주세요.")
+        return
+      }
+
+      await openVault(db, data.user.id, password, email)
+      navigate("/")
+    } catch {
+      setError("로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-4 md:p-10">
@@ -46,7 +78,8 @@ export default function Login() {
 
           <div className="bg-card text-card-foreground rounded-xl border shadow-xs">
             <div className="p-6 md:p-8">
-              <fetcher.Form method="post" className="flex flex-col gap-5">
+              {/* action이 없다: 이 폼은 절대 서버로 POST되지 않는다. 그게 요점이다. */}
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 {error && (
                   <p
                     role="alert"
@@ -79,12 +112,12 @@ export default function Login() {
                     <Label htmlFor="password" className="text-sm font-medium">
                       비밀번호
                     </Label>
-                    <a
-                      href="/forgot-password"
+                    <Link
+                      to="/forgot-password"
                       className="text-primary hover:text-primary/80 text-xs font-medium underline-offset-2 hover:underline"
                     >
                       비밀번호 찾기
-                    </a>
+                    </Link>
                   </div>
                   <div className="relative">
                     <Input
@@ -115,7 +148,7 @@ export default function Login() {
                   {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
                   {loading ? "로그인 중..." : "로그인"}
                 </Button>
-              </fetcher.Form>
+              </form>
 
               <p className="text-muted-foreground mt-6 text-center text-sm">
                 아직 계정이 없으신가요?{" "}

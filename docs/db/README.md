@@ -36,7 +36,7 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 - public schema의 모든 테이블에 RLS를 활성화한다.
 - `anon`, `authenticated`, `service_role`, `PUBLIC` 권한은 필요한 객체에만 명시적으로 부여한다. `on all functions/tables` 형태의 전역 sweep은 파일 분할 구조에서 적용 순서에 따라 깨지므로 금지 — 객체 생성 직후 명시적 grant/revoke를 함께 둔다.
 - **client 쓰기 권한은 항상 컬럼 단위다** (`grant insert (a,b)`, `grant update (c)`). RLS는 행 수준이지 컬럼 수준이 아니라서, 테이블 단위 grant를 주면 정책이 허용한 행에서 `sender_id`·`created_at`·`deleted_at` 같은 컬럼까지 함께 열린다. `messages`가 이 구분에 직접 의존한다.
-- `public` schema의 어떤 객체도 `anon`에게 열지 않는다. 주의: 00-foundation의 `alter default privileges`는 **`postgres`가 만든 객체에만** 걸린다. Supabase의 `supabase_admin` 기본값은 여전히 anon에게 `arwdDxtm`를 주므로, 다른 롤로 DDL이 돌면 새 테이블이 anon에게 열린 채 태어나고 스키마 파일 어디에도 그 사실이 남지 않는다. `schema_runtime_check.sql`이 anon의 테이블·컬럼·시퀀스·함수 권한을 전부 0으로 강제한다.
+- `public` schema의 어떤 객체도 `anon`에게 열지 않는다. 주의: 00-foundation의 `alter default privileges`는 **`postgres`가 만든 객체에만** 걸린다. Supabase의 `supabase_admin` 기본값은 여전히 anon에게 `arwdDxtm`를 주므로, 다른 롤로 DDL이 돌면 새 테이블이 anon에게 열린 채 태어나고 스키마 파일 어디에도 그 사실이 남지 않는다. `tests/00-privileges.sql`이 anon의 테이블·컬럼·시퀀스·함수 권한을 전부 0으로 강제한다.
 - `SECURITY DEFINER` 함수는 `SET search_path = ''`와 내부 권한 검사를 포함한다. search_path 의존 참조(예: `gin_trgm_ops`)는 `extensions.` 접두어로 스키마를 명시한다.
 - 명시되지 않은 client 권한은 허용하지 않는다. 판단이 필요하면 권한을 추가하지 말고 작업을 중단한다.
 
