@@ -264,6 +264,57 @@ for each row execute function private.validate_post_category();
 
 revoke execute on function private.validate_post_category() from public, anon, authenticated, service_role;
 
+-- posts.updated_at / comments.updated_at은 컬럼도 있고 읽기 RPC가 내려주기까지 하는데 여태 아무도
+-- 쓰지 않아 **영원히 null**이었다 -- "수정됨" 표시가 원리적으로 불가능했다. 클라이언트가 채우게
+-- 하지 않는 건 맞다(소급해 꾸밀 수 있다). 그래서 update 컬럼 grant에서 빼 두고 서버가 찍는다.
+-- BEFORE 트리거가 NEW를 고치는 건 컬럼 grant와 무관하다 -- grant는 문장의 SET 절만 본다.
+--
+-- messages와 달리 여기서 권한을 재검증하지 않는 이유: posts_update/comments_update는 작성자
+-- 본인 하나뿐인 정책이라 행 가시성을 넓히는 두 번째 permissive 정책이 없다. messages에는 pin
+-- 정책이 있어서 trg_mark_message_edited가 발신자 여부를 다시 봐야 했다.
+create function private.mark_post_edited()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  new.title := btrim(new.title);
+  new.content := btrim(new.content);
+  -- 카테고리 이동도 작성자가 한 변경이라 수정으로 친다(글에서 그 사람이 바꿀 수 있는 건 이 셋뿐이다).
+  if new.title is distinct from old.title
+    or new.content is distinct from old.content
+    or new.category_id is distinct from old.category_id
+  then
+    new.updated_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+create function private.mark_comment_edited()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.content is not null then
+    new.content := nullif(btrim(new.content), '');
+  end if;
+  -- soft_delete_comment도 content를 건드리므로(원문을 비운다) 이 트리거가 돈다. 삭제는 수정이
+  -- 아니니 스탬프하지 않는다 -- 안 그러면 tombstone의 updated_at이 "삭제한 시각"이 돼 버린다.
+  if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
+    new.updated_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+-- pinned_at(set_post_pinned)이나 deleted_at(soft_delete_post)만 바꾸는 UPDATE는 이 컬럼들을
+-- 언급하지 않으므로 트리거가 돌지 않는다 -- 고정이 "수정됨"을 찍지 않는다.
+create trigger trg_mark_post_edited
+before update of title, content, category_id on public.posts
+for each row execute function private.mark_post_edited();
+
+create trigger trg_mark_comment_edited
+before update of content on public.comments
+for each row execute function private.mark_comment_edited();
+
+revoke execute on function private.mark_post_edited(), private.mark_comment_edited() from public, anon, authenticated, service_role;
+
 create trigger trg_enforce_post_attachment_shape
 after insert on public.post_attachments
 referencing new table as new_rows
@@ -277,7 +328,9 @@ alter table public.post_mentions enable row level security;
 alter table public.comment_mentions enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
-create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_participate_space(space_id));
+-- can_participate_space가 아니라 can_post_in_space다: post_policy='managers'인 공지형 그룹에서는
+-- 멤버여도 메인 글을 못 쓴다(댓글은 comments_insert가 can_access_post로 여전히 열어 둔다).
+create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_post_in_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
@@ -751,7 +804,9 @@ begin
   select s.pub_id into space_pub_id
   from public.spaces s where s.id=p_space_id and s.deleted_at is null;
   if not found then raise exception 'space not found'; end if;
-  if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
+  -- security definer라 posts_insert 정책이 적용되지 않는다 -- 같은 검사를 여기서 다시 해야
+  -- 이 RPC가 post_policy를 우회하는 뒷문이 되지 않는다.
+  if not private.can_post_in_space(p_space_id) then raise exception 'not allowed to post in this space'; end if;
 
   -- 길이 제약과 카테고리 동일 space 검사는 테이블 check와 trg_validate_post_category가 한다.
   insert into public.posts(space_id,author_id,title,content,is_anonymous,category_id)
@@ -1075,5 +1130,95 @@ create trigger trg_enforce_anonymous_allowed_comments
 before insert on public.comments
 for each row execute function private.enforce_anonymous_allowed();
 
+-- 소프트 삭제된 글·댓글의 하드 정리. 이 경로가 없어서 지금까지 tombstone이 영원히 쌓였고,
+-- 그중에는 익명 글의 author_id도 있다 -- 안 지우면 "지운 익명 글의 작성자"가 DB에 영구 보존된다.
+--
+-- blob은 여기서 안 지운다. storage-maintenance가 먼저 걷어간다(enqueue_due_storage_cleanup이
+-- 7일 지난 삭제 글의 첨부를 큐에 넣고, complete_storage_cleanup이 post_attachments 행을 지운다).
+-- 그래서 첨부 행이 아직 남아 있는 글은 **건너뛴다**. cleanup_conversation은 같은 상황에서 예외를
+-- 던지지만, 여기는 배치라 그러면 글 하나 때문에 배치 전체가 죽는다 -- 다음 실행에 다시 만난다.
+create function public.purge_deleted_content(
+  p_older_than interval default interval '30 days',
+  p_limit int4 default 100
+)
+returns table(purged_posts bigint, purged_comments bigint)
+language plpgsql security definer set search_path = '' as $$
+declare
+  cutoff timestamptz;
+  target_posts bigint[];
+  target_comments bigint[];
+  post_total bigint := 0;
+  comment_total bigint := 0;
+  removed bigint;
+begin
+  perform private.require_service_role();
+  if p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
+  if p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
+  cutoff := now() - p_older_than;
+
+  select array_agg(t.id) into target_posts
+  from (
+    select p.id from public.posts p
+    where p.deleted_at < cutoff
+      and not exists(select 1 from public.post_attachments a where a.post_id=p.id)
+    order by p.deleted_at
+    limit p_limit
+  ) t;
+
+  if target_posts is not null then
+    -- 글이 사라지면 그 댓글은 어차피 아무도 못 본다(can_access_post가 post.deleted_at을 본다).
+    -- 살아 있는 댓글도 같이 간다 -- comments.post_id가 restrict라 남겨두면 글을 못 지운다.
+    delete from public.comment_reactions cr using public.comments c
+    where cr.comment_id=c.id and c.post_id=any(target_posts);
+    delete from public.post_reactions where post_id=any(target_posts);
+
+    -- parent_id가 restrict라 잎부터 벗겨야 한다. 답글->루트 2단계로는 임의 깊이를 못 지운다
+    -- (cleanup_conversation이 messages에 같은 루프를 도는 것과 같은 이유).
+    loop
+      delete from public.comments c
+      where c.post_id=any(target_posts)
+        and not exists(select 1 from public.comments child where child.parent_id=c.id);
+      get diagnostics removed = row_count;
+      comment_total := comment_total + removed;
+      exit when removed = 0;
+    end loop;
+
+    -- notifications / post_mentions / comment_mentions는 cascade라 알아서 따라간다.
+    delete from public.posts where id=any(target_posts);
+    get diagnostics post_total = row_count;
+  end if;
+
+  -- 살아 있는 글에 달린, 삭제된 지 오래된 댓글. 자식이 하나라도 있으면(살아 있든 죽었든) restrict
+  -- 때문에 못 지운다 -- 그래서 잎만 걷는다. 자식이 전부 죽은 서브트리는 잎부터 차례로 걷혀 결국
+  -- 통째로 사라지고, 살아 있는 답글이 하나라도 달린 tombstone은 계속 남는다(답글 사슬이 끊기면
+  -- 안 되니 comments_select가 has_active_descendant로 그걸 계속 보여준다).
+  select array_agg(t.id) into target_comments
+  from (
+    select c.id from public.comments c
+    where c.deleted_at < cutoff
+    order by c.deleted_at
+    limit p_limit
+  ) t;
+
+  if target_comments is not null then
+    -- soft_delete_comment가 이미 지웠지만, service_role이 직접 소프트 삭제한 행도 있을 수 있다.
+    delete from public.comment_reactions where comment_id=any(target_comments);
+    loop
+      delete from public.comments c
+      where c.id=any(target_comments)
+        and not exists(select 1 from public.comments child where child.parent_id=c.id);
+      get diagnostics removed = row_count;
+      comment_total := comment_total + removed;
+      exit when removed = 0;
+    end loop;
+  end if;
+
+  return query select post_total, comment_total;
+end;
+$$;
+
 revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
 grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
+
+revoke execute on function public.purge_deleted_content(interval,int4) from public, anon, authenticated, service_role;
+grant execute on function public.purge_deleted_content(interval,int4) to service_role;

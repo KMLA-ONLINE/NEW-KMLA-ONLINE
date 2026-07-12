@@ -1522,6 +1522,7 @@ export type Database = {
           join_policy: Database["public"]["Enums"]["space_join_policy"]
           member_count: number
           name: string
+          post_policy: Database["public"]["Enums"]["space_post_policy"]
           pub_id: string
           type: Database["public"]["Enums"]["space_type"]
           updated_at: string | null
@@ -1538,6 +1539,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["space_join_policy"]
           member_count?: number
           name: string
+          post_policy?: Database["public"]["Enums"]["space_post_policy"]
           pub_id?: string
           type: Database["public"]["Enums"]["space_type"]
           updated_at?: string | null
@@ -1554,6 +1556,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["space_join_policy"]
           member_count?: number
           name?: string
+          post_policy?: Database["public"]["Enums"]["space_post_policy"]
           pub_id?: string
           type?: Database["public"]["Enums"]["space_type"]
           updated_at?: string | null
@@ -1808,6 +1811,13 @@ export type Database = {
           top_reactions: Json
         }[]
       }
+      purge_deleted_content: {
+        Args: { p_limit?: number; p_older_than?: string }
+        Returns: {
+          purged_comments: number
+          purged_posts: number
+        }[]
+      }
       remove_group_member: {
         Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined
@@ -1936,6 +1946,7 @@ export type Database = {
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
       space_join_policy: "public" | "request" | "invite_only"
+      space_post_policy: "all" | "managers"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -2095,6 +2106,7 @@ export const Constants = {
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
       space_join_policy: ["public", "request", "invite_only"],
+      space_post_policy: ["all", "managers"],
       space_type: ["group", "community"],
     },
   },

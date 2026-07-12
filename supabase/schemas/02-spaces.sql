@@ -13,6 +13,12 @@ create type public.notification_setting as enum ('off', 'mentions', 'all');
 create type public.space_join_policy as enum ('public', 'request', 'invite_only');
 create type public.space_type as enum ('group', 'community');
 
+-- 누가 '메인 글'을 쓸 수 있는가. 댓글은 이 정책과 무관하게 언제나 멤버 전원에게 열려 있다.
+-- 'managers'는 공지형 그룹을 위한 것이다 -- 학생회가 글을 올리고 나머지는 댓글로만 반응하는 형태.
+-- 그게 member_role의 manager가 존재하는 이유이고, 그래서 이 축은 can_manage_space(운영 권한)와
+-- 별개다: manager는 글을 쓸 수 있지만 그룹 설정·모더레이션은 여전히 못 한다.
+create type public.space_post_policy as enum ('all', 'managers');
+
 create table public.spaces (
   id bigserial primary key,
   pub_id text not null default left(replace(gen_random_uuid()::text, '-', ''), 12),
@@ -21,6 +27,7 @@ create table public.spaces (
   description text null,
   image_url text null,
   join_policy public.space_join_policy not null default 'public',
+  post_policy public.space_post_policy not null default 'all',
   -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
   -- allowed). 이미 올라간 익명 글은 그대로 익명이다 -- is_anonymous는 불변이고, 소급해서 까면
   -- 익명을 믿고 쓴 사람을 배신하는 것이다.
@@ -169,8 +176,19 @@ create function private.can_participate_space(p_space_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_space_member(p_space_id)
 $$;
-revoke execute on function private.is_space_member(bigint,public.member_role[]), private.can_manage_space(bigint,public.member_role[]), private.can_participate_space(bigint) from public, anon, service_role;
-grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint) to authenticated;
+-- 이 공간에 **메인 글**을 쓸 수 있는지. 참여(댓글·반응)와 갈라지는 유일한 지점이다.
+-- posts_insert 정책과 create_post_with_attachments가 **둘 다** 이걸 불러야 한다: 후자는
+-- security definer라 RLS를 지나치므로, 정책만 고치면 RPC로 그대로 우회된다.
+create function private.can_post_in_space(p_space_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select case
+    when (select s.post_policy from public.spaces s where s.id=p_space_id) = 'managers'
+      then private.is_space_member(p_space_id, array['owner','admin','manager']::public.member_role[])
+    else private.can_participate_space(p_space_id)
+  end
+$$;
+revoke execute on function private.is_space_member(bigint,public.member_role[]), private.can_manage_space(bigint,public.member_role[]), private.can_participate_space(bigint), private.can_post_in_space(bigint) from public, anon, service_role;
+grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint),private.can_post_in_space(bigint) to authenticated;
 
 create function private.validate_space_owner()
 returns trigger
@@ -248,7 +266,8 @@ create policy spaces_select on public.spaces for select to authenticated using (
     or private.is_space_member(id)
   )
 );
--- 매니저(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description, allow_anonymous_posts.
+-- 관리자(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description,
+-- allow_anonymous_posts, post_policy.
 -- join_policy는 전환 시 대기 중인 가입 요청을 정리해야 해서 여기 없다(RPC가 갈 자리).
 -- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 storage finalize RPC가 필요하다.
 create policy spaces_update on public.spaces for update to authenticated
@@ -267,10 +286,10 @@ create policy space_categories_insert on public.space_categories for insert to a
 create policy space_categories_update on public.space_categories for update to authenticated using (private.can_manage_space(space_id)) with check (private.can_manage_space(space_id));
 create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_manage_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,join_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
 -- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
 grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
-grant update (name,description,allow_anonymous_posts) on public.spaces to authenticated;
+grant update (name,description,allow_anonymous_posts,post_policy) on public.spaces to authenticated;
 grant select on public.space_members to authenticated;
 grant update (notification_setting,pinned_at) on public.space_members to authenticated;
 grant select on public.space_invites to authenticated;
