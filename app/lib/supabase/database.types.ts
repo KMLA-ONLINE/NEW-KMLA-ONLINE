@@ -227,6 +227,39 @@ export type Database = {
           },
         ]
       }
+      comment_mentions: {
+        Row: {
+          comment_id: number
+          created_at: string
+          user_id: number
+        }
+        Insert: {
+          comment_id: number
+          created_at?: string
+          user_id: number
+        }
+        Update: {
+          comment_id?: number
+          created_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_mentions_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_mentions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comment_reactions: {
         Row: {
           comment_id: number
@@ -727,42 +760,45 @@ export type Database = {
       notifications: {
         Row: {
           actor_id: number | null
-          body: string | null
+          actor_is_anonymous: boolean
           comment_id: number | null
           created_at: string
           id: number
           message_id: number | null
+          payload: Json | null
           post_id: number | null
           read_at: string | null
           recipient_id: number
           space_id: number | null
-          title: string | null
+          type: Database["public"]["Enums"]["notification_type"]
         }
         Insert: {
           actor_id?: number | null
-          body?: string | null
+          actor_is_anonymous?: boolean
           comment_id?: number | null
           created_at?: string
           id?: number
           message_id?: number | null
+          payload?: Json | null
           post_id?: number | null
           read_at?: string | null
           recipient_id: number
           space_id?: number | null
-          title?: string | null
+          type: Database["public"]["Enums"]["notification_type"]
         }
         Update: {
           actor_id?: number | null
-          body?: string | null
+          actor_is_anonymous?: boolean
           comment_id?: number | null
           created_at?: string
           id?: number
           message_id?: number | null
+          payload?: Json | null
           post_id?: number | null
           read_at?: string | null
           recipient_id?: number
           space_id?: number | null
-          title?: string | null
+          type?: Database["public"]["Enums"]["notification_type"]
         }
         Relationships: [
           {
@@ -909,6 +945,39 @@ export type Database = {
             columns: ["post_id"]
             isOneToOne: false
             referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      post_mentions: {
+        Row: {
+          created_at: string
+          post_id: number
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          post_id: number
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          post_id?: number
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_mentions_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_mentions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1453,6 +1522,7 @@ export type Database = {
           join_policy: Database["public"]["Enums"]["space_join_policy"]
           member_count: number
           name: string
+          post_policy: Database["public"]["Enums"]["space_post_policy"]
           pub_id: string
           type: Database["public"]["Enums"]["space_type"]
           updated_at: string | null
@@ -1469,6 +1539,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["space_join_policy"]
           member_count?: number
           name: string
+          post_policy?: Database["public"]["Enums"]["space_post_policy"]
           pub_id?: string
           type: Database["public"]["Enums"]["space_type"]
           updated_at?: string | null
@@ -1485,6 +1556,7 @@ export type Database = {
           join_policy?: Database["public"]["Enums"]["space_join_policy"]
           member_count?: number
           name?: string
+          post_policy?: Database["public"]["Enums"]["space_post_policy"]
           pub_id?: string
           type?: Database["public"]["Enums"]["space_type"]
           updated_at?: string | null
@@ -1673,6 +1745,7 @@ export type Database = {
         }[]
       }
       get_unread_message_count: { Args: never; Returns: number }
+      get_unread_notification_count: { Args: never; Returns: number }
       join_space: { Args: { p_space_id: number }; Returns: string }
       leave_space: { Args: { p_space_id: number }; Returns: undefined }
       list_conversations: {
@@ -1695,6 +1768,22 @@ export type Database = {
           notification_level: Database["public"]["Enums"]["notification_level"]
           type: Database["public"]["Enums"]["conversation_type"]
           unread_count: number
+        }[]
+      }
+      list_notifications: {
+        Args: { p_before_id?: number; p_limit?: number }
+        Returns: {
+          actor: Json
+          actor_is_anonymous: boolean
+          comment: Json
+          conversation: Json
+          created_at: string
+          id: number
+          payload: Json
+          post: Json
+          read_at: string
+          space: Json
+          type: Database["public"]["Enums"]["notification_type"]
         }[]
       }
       list_space_posts: {
@@ -1720,6 +1809,13 @@ export type Database = {
           reaction_count: number
           title: string
           top_reactions: Json
+        }[]
+      }
+      purge_deleted_content: {
+        Args: { p_limit?: number; p_older_than?: string }
+        Returns: {
+          purged_comments: number
+          purged_posts: number
         }[]
       }
       remove_group_member: {
@@ -1775,6 +1871,14 @@ export type Database = {
         Args: { p_id: number; p_pinned: boolean }
         Returns: undefined
       }
+      set_space_member_role: {
+        Args: {
+          p_role: Database["public"]["Enums"]["member_role"]
+          p_space_id: number
+          p_user_id: number
+        }
+        Returns: undefined
+      }
       soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
       soft_delete_post: { Args: { p_id: number }; Returns: undefined }
@@ -1812,6 +1916,10 @@ export type Database = {
           suspended_days: number
         }[]
       }
+      transfer_space_ownership: {
+        Args: { p_new_owner_id: number; p_space_id: number }
+        Returns: undefined
+      }
       undo_comment_anonymity_suspension: {
         Args: { p_comment_id: number }
         Returns: undefined
@@ -1831,11 +1939,26 @@ export type Database = {
       member_role: "owner" | "admin" | "manager" | "member"
       notification_level: "mention" | "all"
       notification_setting: "off" | "mentions" | "all"
+      notification_type:
+        | "post_comment"
+        | "comment_reply"
+        | "post_mention"
+        | "comment_mention"
+        | "message_mention"
+        | "space_join_request"
+        | "space_join_approved"
+        | "space_join_rejected"
+        | "space_invited"
+        | "space_role_changed"
+        | "space_anonymity_suspended"
+        | "post_removed"
+        | "comment_removed"
       profile_gender: "male" | "female"
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
       space_join_policy: "public" | "request" | "invite_only"
+      space_post_policy: "all" | "managers"
       space_type: "group" | "community"
     }
     CompositeTypes: {
@@ -1975,11 +2098,27 @@ export const Constants = {
       member_role: ["owner", "admin", "manager", "member"],
       notification_level: ["mention", "all"],
       notification_setting: ["off", "mentions", "all"],
+      notification_type: [
+        "post_comment",
+        "comment_reply",
+        "post_mention",
+        "comment_mention",
+        "message_mention",
+        "space_join_request",
+        "space_join_approved",
+        "space_join_rejected",
+        "space_invited",
+        "space_role_changed",
+        "space_anonymity_suspended",
+        "post_removed",
+        "comment_removed",
+      ],
       profile_gender: ["male", "female"],
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
       space_join_policy: ["public", "request", "invite_only"],
+      space_post_policy: ["all", "managers"],
       space_type: ["group", "community"],
     },
   },

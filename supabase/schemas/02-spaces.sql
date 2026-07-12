@@ -1,3 +1,9 @@
+-- 역할은 두 축이다. (1) 운영 권한: can_manage_space() = owner/admin. (2) 글 작성 권한: manager.
+-- manager는 "메인 글은 manager 이상만, 댓글은 멤버 전원"인 공지형 그룹을 위한 예약값이라
+-- can_manage_space가 이 값을 안 보는 건 설계다. 다만 아직 그 축을 읽는 곳이 없어 member와
+-- 구분되지 않는다 -- 살리려면 spaces에 공간별 스위치(예: post_policy) + posts_insert 정책 +
+-- create_post_with_attachments(security definer라 RLS를 지나친다)의 검사가 같이 필요하다.
+-- is_space_member의 p_allowed_roles가 정확히 그때 쓰라고 있는 인자다. 자세한 건 docs/db/domains/02-spaces.md.
 create type public.member_role as enum ('owner', 'admin', 'manager', 'member');
 create type public.notification_setting as enum ('off', 'mentions', 'all');
 -- 참여(읽기/쓰기)는 언제나 멤버십이 있어야 한다. 정책은 '어떻게 멤버가 되는가'만 가른다.
@@ -7,6 +13,12 @@ create type public.notification_setting as enum ('off', 'mentions', 'all');
 create type public.space_join_policy as enum ('public', 'request', 'invite_only');
 create type public.space_type as enum ('group', 'community');
 
+-- 누가 '메인 글'을 쓸 수 있는가. 댓글은 이 정책과 무관하게 언제나 멤버 전원에게 열려 있다.
+-- 'managers'는 공지형 그룹을 위한 것이다 -- 학생회가 글을 올리고 나머지는 댓글로만 반응하는 형태.
+-- 그게 member_role의 manager가 존재하는 이유이고, 그래서 이 축은 can_manage_space(운영 권한)와
+-- 별개다: manager는 글을 쓸 수 있지만 그룹 설정·모더레이션은 여전히 못 한다.
+create type public.space_post_policy as enum ('all', 'managers');
+
 create table public.spaces (
   id bigserial primary key,
   pub_id text not null default left(replace(gen_random_uuid()::text, '-', ''), 12),
@@ -15,6 +27,7 @@ create table public.spaces (
   description text null,
   image_url text null,
   join_policy public.space_join_policy not null default 'public',
+  post_policy public.space_post_policy not null default 'all',
   -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
   -- allowed). 이미 올라간 익명 글은 그대로 익명이다 -- is_anonymous는 불변이고, 소급해서 까면
   -- 익명을 믿고 쓴 사람을 배신하는 것이다.
@@ -163,8 +176,30 @@ create function private.can_participate_space(p_space_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_space_member(p_space_id)
 $$;
-revoke execute on function private.is_space_member(bigint,public.member_role[]), private.can_manage_space(bigint,public.member_role[]), private.can_participate_space(bigint) from public, anon, service_role;
-grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint) to authenticated;
+-- 게시판을 정리할 수 있는지 = owner/admin/manager. **운영 권한(can_manage_space)과 다른 층이다.**
+-- manager가 가진 건 정확히 셋뿐이다: 글 고정/해제, 카테고리 관리, 그리고 post_policy='managers'인
+-- 그룹에서의 글쓰기. 그룹 설정을 바꾸거나, 초대장을 만들거나, 가입을 승인하거나, 남의 글을 지우거나,
+-- 익명을 정지시키는 건 여전히 못 한다 -- 그건 전부 can_manage_space다.
+--
+-- 이 구분이 요점이다: 게시판을 굴리는 일(고정·분류)과 사람·규칙을 다루는 일(설정·모더레이션·권한)은
+-- 다른 신뢰를 요구한다. 공지 그룹의 학생회 간부는 앞엣것만 필요하다.
+create function private.can_curate_space(p_space_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select private.is_space_member(p_space_id, array['owner','admin','manager']::public.member_role[])
+$$;
+-- 이 공간에 **메인 글**을 쓸 수 있는지. 참여(댓글·반응)와 갈라지는 유일한 지점이다.
+-- posts_insert 정책과 create_post_with_attachments가 **둘 다** 이걸 불러야 한다: 후자는
+-- security definer라 RLS를 지나치므로, 정책만 고치면 RPC로 그대로 우회된다.
+create function private.can_post_in_space(p_space_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select case
+    when (select s.post_policy from public.spaces s where s.id=p_space_id) = 'managers'
+      then private.can_curate_space(p_space_id)
+    else private.can_participate_space(p_space_id)
+  end
+$$;
+revoke execute on function private.is_space_member(bigint,public.member_role[]), private.can_manage_space(bigint,public.member_role[]), private.can_participate_space(bigint), private.can_curate_space(bigint), private.can_post_in_space(bigint) from public, anon, service_role;
+grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint),private.can_curate_space(bigint),private.can_post_in_space(bigint) to authenticated;
 
 create function private.validate_space_owner()
 returns trigger
@@ -242,7 +277,8 @@ create policy spaces_select on public.spaces for select to authenticated using (
     or private.is_space_member(id)
   )
 );
--- 매니저(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description, allow_anonymous_posts.
+-- 관리자(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description,
+-- allow_anonymous_posts, post_policy.
 -- join_policy는 전환 시 대기 중인 가입 요청을 정리해야 해서 여기 없다(RPC가 갈 자리).
 -- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 storage finalize RPC가 필요하다.
 create policy spaces_update on public.spaces for update to authenticated
@@ -255,16 +291,17 @@ create policy space_invites_select on public.space_invites for select to authent
 -- 겸한다 -- 승인만 멤버십·member_count를 건드리므로 RPC(approve_join_request)로 간다.
 create policy space_join_requests_select on public.space_join_requests for select to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
 create policy space_join_requests_delete on public.space_join_requests for delete to authenticated using (user_id=private.current_profile_id() or private.can_manage_space(space_id));
--- 카테고리 조회는 멤버, 관리(생성·수정·삭제)는 매니저(owner/admin).
+-- 카테고리 조회는 멤버 전원, 관리(생성·수정·삭제)는 can_curate_space = owner/admin/**manager**.
+-- 게시판을 분류하는 일은 게시판을 굴리는 일이지 사람·규칙을 다루는 일이 아니다.
 create policy space_categories_select on public.space_categories for select to authenticated using (private.is_space_member(space_id));
-create policy space_categories_insert on public.space_categories for insert to authenticated with check (private.can_manage_space(space_id));
-create policy space_categories_update on public.space_categories for update to authenticated using (private.can_manage_space(space_id)) with check (private.can_manage_space(space_id));
-create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_manage_space(space_id));
+create policy space_categories_insert on public.space_categories for insert to authenticated with check (private.can_curate_space(space_id));
+create policy space_categories_update on public.space_categories for update to authenticated using (private.can_curate_space(space_id)) with check (private.can_curate_space(space_id));
+create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_curate_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,join_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
 -- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
 grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
-grant update (name,description,allow_anonymous_posts) on public.spaces to authenticated;
+grant update (name,description,allow_anonymous_posts,post_policy) on public.spaces to authenticated;
 grant select on public.space_members to authenticated;
 grant update (notification_setting,pinned_at) on public.space_members to authenticated;
 grant select on public.space_invites to authenticated;
@@ -382,5 +419,71 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint) to authenticated;
+-- 멤버 역할 변경. RPC인 이유: space_members_update 정책은 **본인 행**만 열고 컬럼 grant도
+-- notification_setting/pinned_at뿐이라, "관리자가 남의 role을 바꾼다"는 정책으로 표현할 수 없다
+-- (set_post_pinned가 RPC인 것과 같은 이유).
+--
+-- 이게 없으면 manager를 임명할 방법이 없어서 post_policy='managers'가 사실상 owner/admin 전용
+-- 그룹이 된다 -- 즉 "특정 사람만 글 쓰게" 하려던 게 안 된다.
+-- owner와 admin은 권한이 같고, **서로를 임명하고 서로를 내릴 수 있다.** 그래야 실제로 대등하다.
+-- 단 하나의 예외가 owner이고, 그게 이 함수와 transfer_space_ownership을 가르는 선이다.
+create function public.set_space_member_role(p_space_id bigint, p_user_id bigint, p_role public.member_role)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_role public.member_role;
+begin
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  select role into target_role from public.space_members
+  where space_id=p_space_id and user_id=p_user_id and banned_at is null
+  for update;
+  if target_role is null then raise exception 'not a member of this space'; end if;
+
+  -- owner는 이 함수로 세우지도 내리지도 못한다. 이 한 줄이 두 가지를 동시에 막는다.
+  -- (1) admin이 owner를 끌어내리는 쿠데타. owner만이 자기 자리를 넘길 수 있다.
+  -- (2) "남을 승격시킨다"가 조용히 "내 소유권을 넘긴다"가 되는 사고 -- owner는 space당 정확히
+  --     1명이라(space_members_one_owner_key) 새 owner를 세우는 건 반드시 기존 owner를 내리는
+  --     일이기도 하다. 그 맞바꿈은 transfer_space_ownership이 명시적으로 한다.
+  if p_role='owner' or target_role='owner' then
+    raise exception 'ownership transfer is a separate operation';
+  end if;
+
+  if target_role=p_role then return; end if;
+  -- trg_notify_on_role_changed가 여기서 도는데, actor는 싣지 않는다
+  -- (notifications_actor_shape_check가 강제 -- 행정 처분은 기관이 한다).
+  update public.space_members set role=p_role where space_id=p_space_id and user_id=p_user_id;
+end;
+$$;
+
+-- 소유권 이양. owner만 부를 수 있고, **현재 admin에게만** 넘긴다 -- 일반 멤버에게 바로 넘기려면
+-- 먼저 admin으로 올려야 한다(그룹을 통째로 넘기는 일이라 한 단계 더 밟게 한다).
+-- 끝나면 기존 owner는 admin이 된다. 권한이 같으므로 실질적으로 잃는 건 '이양권' 하나뿐이다.
+create function public.transfer_space_ownership(p_space_id bigint, p_new_owner_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_role public.member_role;
+begin
+  if not private.is_space_member(p_space_id, array['owner']::public.member_role[]) then
+    raise exception 'space owner required';
+  end if;
+  if p_new_owner_id=caller_id then return; end if;
+
+  select role into target_role from public.space_members
+  where space_id=p_space_id and user_id=p_new_owner_id and banned_at is null
+  for update;
+  if target_role is null then raise exception 'not a member of this space'; end if;
+  if target_role<>'admin' then raise exception 'ownership can only be transferred to an admin'; end if;
+
+  -- 순서가 중요하다. space_members_one_owner_key는 deferrable이 아닌 부분 유니크 인덱스라
+  -- 커밋까지 미룰 수가 없다 -- 새 owner를 먼저 세우면 그 순간 owner가 둘이 되어 즉시 걸린다.
+  -- 기존 owner를 먼저 내리면 잠깐 owner가 0명인데, 부분 유니크 인덱스는 0을 문제 삼지 않는다.
+  -- "정확히 1명"을 보는 건 trg_validate_space_owner이고 그건 deferred라 커밋 시점에만 센다.
+  update public.space_members set role='admin' where space_id=p_space_id and user_id=caller_id;
+  update public.space_members set role='owner' where space_id=p_space_id and user_id=p_new_owner_id;
+end;
+$$;
+
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;

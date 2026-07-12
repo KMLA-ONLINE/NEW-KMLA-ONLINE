@@ -3,6 +3,7 @@ import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
 import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
@@ -19,11 +20,14 @@ export function GroupPostCard({
   post,
   reactionTypes,
   canManage,
+  canCurate,
 }: {
   post: GroupPost
   reactionTypes: ReactionType[]
   /** owner/admin이면 남의 글에도 ⋯ 모더레이션 메뉴가 뜬다. */
   canManage?: boolean
+  /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
+  canCurate?: boolean
 }) {
   const authorName = post.author?.name ?? "익명"
   const [expanded, setExpanded] = useState(false)
@@ -65,13 +69,17 @@ export function GroupPostCard({
               </Badge>
             ) : null}
           </div>
-          <RelativeTime value={post.createdAt} className="text-muted-foreground text-xs" />
+          <div className="text-muted-foreground flex items-center gap-1 text-xs">
+            <RelativeTime value={post.createdAt} />
+            <GroupEditedMark at={post.updatedAt} />
+          </div>
         </div>
         <GroupPostMenu
           isMine={post.isMine}
           isPinned={post.isPinned}
           isAnonymous={post.author === null}
           canManage={canManage}
+          canCurate={canCurate}
           editTo={`posts/${post.pubId}/edit`}
         />
       </header>

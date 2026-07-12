@@ -15,10 +15,9 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 ## RPC
 
-
 | 함수                                    | 인증                                                     | 쓰기 | 목적                                                        |
-| ----------------------------------------- | ---------------------------------------------------------- | ------ | ------------------------------------------------------------- |
-| `submit_onboarding(...)`                | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                    |
+| --------------------------------------- | -------------------------------------------------------- | ---- | ----------------------------------------------------------- |
+| `submit_onboarding(...)`                | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                     |
 | `review_profile(profile_id, status)`    | app admin                                                | O    | pending profile을`accepted`/`rejected`로 심사               |
 | `withdraw_profile()`                    | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                    |
 | `finalize_avatar(storage_path)`         | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결             |
@@ -37,23 +36,21 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 ## Private helper
 
-
-| 함수                                        | 용도                                            |
-| --------------------------------------------- | ------------------------------------------------- |
-| `private.current_profile_id()`              | 현재 auth user의 profile id                     |
-| `private.is_accepted_user()`                | 현재 사용자가 accepted + non-deleted인지        |
-| `private.is_app_admin()`                    | 현재 사용자가 accepted admin인지                |
-| `private.has_permission(key)`               | accepted + 해당 permission 보유 여부            |
-| `private.require_current_profile(accepted)` | active profile 강제, 없으면 예외. RPC 공통 가드 |
-| `private.require_app_admin()`               | accepted admin 강제, 아니면 예외                |
+| 함수                                        | 용도                                                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `private.current_profile_id()`              | 현재 auth user의 profile id                                                                                                                                                     |
+| `private.is_accepted_user()`                | 현재 사용자가 accepted + non-deleted인지                                                                                                                                        |
+| `private.is_app_admin()`                    | 현재 사용자가 accepted admin인지                                                                                                                                                |
+| `private.has_permission(key)`               | accepted + 해당 permission 보유 여부                                                                                                                                            |
+| `private.require_current_profile(accepted)` | active profile 강제, 없으면 예외. RPC 공통 가드                                                                                                                                 |
+| `private.require_app_admin()`               | accepted admin 강제, 아니면 예외                                                                                                                                                |
 | `private.anonymize_profile(profile_id)`     | profile 필드를 탈퇴 상태로 일괄 스크럽(`withdrawn`). `withdraw_profile`과 auth 삭제 트리거가 공유. `auth_user_id`는 건드리지 않음(자기 탈퇴는 유지, auth 삭제는 FK가 null 처리) |
 
 ## Trigger
 
-
 | 트리거                 | 테이블       | 이벤트        | side effect                                                                                                         |
-| ------------------------ | -------------- | --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `on_auth_user_created` | `auth.users` | AFTER INSERT  | `profiles` 1행 자동 생성 (이름: metadata `full_name` → `name` → `사용자`, 50자 절단)                              |
+| ---------------------- | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `on_auth_user_created` | `auth.users` | AFTER INSERT  | `profiles` 1행 자동 생성 (이름: metadata `full_name` → `name` → `사용자`, 50자 절단)                                |
 | `on_auth_user_deleted` | `auth.users` | BEFORE DELETE | admin/space owner면 예외로 삭제 거부. 아니면 profile 삭제 처리(`탈퇴한 사용자`) + `withdrawn` + `auth_user_id` null |
 
 ## 주의

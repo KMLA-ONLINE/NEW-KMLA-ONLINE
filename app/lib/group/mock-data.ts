@@ -20,6 +20,11 @@ export const mockGroup: GroupSpace = {
   type: "group",
   pubId: "student-council",
   joinPolicy: "request",
+  // 기본은 멤버 전원이 글을 쓴다. 'managers'로 바꾸면 owner/admin/manager만 메인 글을 쓰고
+  // 나머지는 댓글만 단다(공지형 그룹). 그룹 설정에서 관리자가 켠다.
+  postPolicy: "all",
+  // postPolicy와 내 viewerRole에서 파생한다(로더가 can_post_in_space와 같은 규칙으로 계산).
+  canPost: true,
   allowAnonymous: true,
   // 로더가 space_anonymity_suspensions에서 내 행만 읽어 파생한다. 정지 중이면 false가 되고
   // 작성 화면의 익명 토글이 사라진다.
@@ -219,6 +224,8 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
     author: { name: "박서연" },
     isPinned: false,
     createdAt: "2026-07-09T07:00:00.000Z",
+    // 수정된 글. 서버가 trg_mark_post_edited로 찍는다 -- 이 값이 있으면 "수정됨"이 붙는다.
+    updatedAt: "2026-07-09T09:30:00.000Z",
     images: [{ src: mockImage("#15803d", "#5eead4"), alt: "auditorium-stage.jpg" }],
     reactionCount: 12,
     topReactions: ["👍", "❤️"],
@@ -392,10 +399,14 @@ export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => ({
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
 // 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.
+//
+// 동명이인(김도윤 30기/32기, 이민서 31기/33기)을 일부러 심어 뒀다 -- 기수를 안 보여주면 목록에서
+// 누가 누군지 가를 수가 없다. profiles.name엔 유니크 제약이 없고, 실제로 흔하다.
 export const mockGroupMembers: GroupMember[] = [
   {
     id: 101,
     name: "김지원",
+    cohort: 29,
     avatarUrl: null,
     role: "owner",
     joinedAt: "2025-03-02T00:00:00.000Z",
@@ -403,6 +414,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 102,
     name: "이현우",
+    cohort: 30,
     avatarUrl: null,
     role: "admin",
     joinedAt: "2025-03-05T00:00:00.000Z",
@@ -410,6 +422,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 103,
     name: "박서연",
+    cohort: 30,
     avatarUrl: null,
     role: "admin",
     joinedAt: "2025-04-10T00:00:00.000Z",
@@ -417,6 +430,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 104,
     name: "정하늘",
+    cohort: 31,
     avatarUrl: null,
     role: "manager",
     joinedAt: "2025-05-21T00:00:00.000Z",
@@ -424,6 +438,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 1,
     name: "나",
+    cohort: 32,
     avatarUrl: null,
     role: "member",
     joinedAt: "2025-06-01T00:00:00.000Z",
@@ -432,6 +447,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 105,
     name: "이민서",
+    cohort: 31,
     avatarUrl: null,
     role: "member",
     joinedAt: "2025-06-15T00:00:00.000Z",
@@ -439,13 +455,24 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 106,
     name: "김도윤",
+    cohort: 30,
     avatarUrl: null,
     role: "member",
     joinedAt: "2025-09-03T00:00:00.000Z",
   },
+  // 위 김도윤(30기)과 동명이인. 기수가 없으면 이 둘은 목록에서 구분이 불가능하다.
+  {
+    id: 121,
+    name: "김도윤",
+    cohort: 32,
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-03-04T00:00:00.000Z",
+  },
   {
     id: 107,
     name: "최유진",
+    cohort: 32,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-01-12T00:00:00.000Z",
@@ -453,6 +480,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 108,
     name: "한지호",
+    cohort: 31,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-03-28T00:00:00.000Z",
@@ -462,6 +490,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 109,
     name: "강서윤",
+    cohort: 33,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-04-02T00:00:00.000Z",
@@ -469,6 +498,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 110,
     name: "조은우",
+    cohort: 32,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-04-11T00:00:00.000Z",
@@ -476,6 +506,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 111,
     name: "임채원",
+    cohort: 33,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-04-19T00:00:00.000Z",
@@ -483,6 +514,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 112,
     name: "신도현",
+    cohort: 31,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-05-03T00:00:00.000Z",
@@ -490,13 +522,24 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 113,
     name: "오지안",
+    cohort: 33,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-05-15T00:00:00.000Z",
   },
+  // 위 이민서(31기)와 동명이인.
+  {
+    id: 122,
+    name: "이민서",
+    cohort: 33,
+    avatarUrl: null,
+    role: "member",
+    joinedAt: "2026-05-20T00:00:00.000Z",
+  },
   {
     id: 114,
     name: "배준서",
+    cohort: 32,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-05-27T00:00:00.000Z",
@@ -504,6 +547,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 115,
     name: "홍시우",
+    cohort: 30,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-06-08T00:00:00.000Z",
@@ -511,6 +555,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 116,
     name: "문가람",
+    cohort: 33,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-06-20T00:00:00.000Z",
@@ -518,6 +563,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 117,
     name: "안예린",
+    cohort: 31,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-06-30T00:00:00.000Z",
@@ -525,6 +571,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 118,
     name: "유하준",
+    cohort: 32,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-07-04T00:00:00.000Z",
@@ -532,6 +579,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 119,
     name: "곽민준",
+    cohort: 33,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-07-08T00:00:00.000Z",
@@ -539,6 +587,7 @@ export const mockGroupMembers: GroupMember[] = [
   {
     id: 120,
     name: "남서아",
+    cohort: 30,
     avatarUrl: null,
     role: "member",
     joinedAt: "2026-07-11T00:00:00.000Z",
@@ -548,7 +597,7 @@ export const mockGroupMembers: GroupMember[] = [
 // space_join_requests 목데이터. request 정책 그룹에서 승인 대기 중인 가입 요청 -- 관리자
 // (owner/admin)만 본다. 승인 전까지는 멤버가 아니므로 space_members가 아닌 별도 테이블.
 export const mockJoinRequests: GroupJoinRequest[] = [
-  { id: 201, name: "서준혁", avatarUrl: null, createdAt: "2026-07-11T22:00:00.000Z" },
-  { id: 202, name: "윤가은", avatarUrl: null, createdAt: "2026-07-12T01:30:00.000Z" },
-  { id: 203, name: "장민재", avatarUrl: null, createdAt: "2026-07-12T06:45:00.000Z" },
+  { id: 201, name: "서준혁", cohort: 33, avatarUrl: null, createdAt: "2026-07-11T22:00:00.000Z" },
+  { id: 202, name: "윤가은", cohort: 32, avatarUrl: null, createdAt: "2026-07-12T01:30:00.000Z" },
+  { id: 203, name: "장민재", cohort: 33, avatarUrl: null, createdAt: "2026-07-12T06:45:00.000Z" },
 ]

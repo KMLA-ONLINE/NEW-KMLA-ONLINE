@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 
 import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
+import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
 import { Button } from "~/components/ui/button"
@@ -234,7 +235,12 @@ function GroupCommentItem({
               >
                 답글
               </button>
-              <RelativeTime value={comment.createdAt} />
+              {/* 삭제된 댓글은 위에서 조기 반환하므로 여기까지 오지 않는다 -- tombstone에
+                  "수정됨"이 붙는 일은 없다. */}
+              <span className="flex items-center gap-1">
+                <RelativeTime value={comment.createdAt} />
+                <GroupEditedMark at={comment.updatedAt} />
+              </span>
             </div>
           </div>
 

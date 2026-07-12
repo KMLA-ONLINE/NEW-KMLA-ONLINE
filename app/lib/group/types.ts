@@ -11,6 +11,17 @@ export type GroupSpace = {
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
   joinPolicy: "public" | "request" | "invite_only"
+  /**
+   * spaces.post_policy. 누가 **메인 글**을 쓸 수 있는가. 'managers'면 owner/admin/manager만 쓴다
+   * (공지형 그룹). 댓글은 이 정책과 무관하게 언제나 멤버 전원에게 열려 있다 -- 공지에 달리는
+   * 반응까지 잠그면 게시판이 아니라 공고문이다.
+   */
+  postPolicy: "all" | "managers"
+  /**
+   * 내가 지금 이 그룹에 글을 쓸 수 있는지(private.can_post_in_space). postPolicy가 'all'이면
+   * 멤버 전원, 'managers'면 내 viewerRole이 owner/admin/manager일 때만 true. 로더가 파생한다.
+   */
+  canPost: boolean
   /** spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(기존 익명 글은 그대로). */
   allowAnonymous: boolean
   /**
@@ -55,6 +66,11 @@ export type GroupJoinRequest = {
   id: number
   /** profiles.name */
   name: string
+  /**
+   * profiles.cohort (기수). 멤버 목록보다 여기가 더 중요하다 -- 목록은 잘못 읽어도 다시 보면
+   * 되지만, 동명이인 중 엉뚱한 사람을 승인하면 그 사람이 그룹에 들어와 있다.
+   */
+  cohort: number | null
   /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
   /** space_join_requests.created_at (ISO 8601). */
@@ -67,6 +83,13 @@ export type GroupMember = {
   id: number
   /** profiles.name */
   name: string
+  /**
+   * profiles.cohort (기수). 이름만으로는 사람을 못 가른다 -- 동명이인이 흔하고 profiles.name엔
+   * 유니크 제약이 없다(그래서 @멘션도 handle 파싱이 아니라 id를 저장한다).
+   * 교사 등 학생이 아닌 프로필은 기수가 없어서 null이다(profiles_student_identity_check는
+   * type='student'일 때만 cohort를 요구한다).
+   */
+  cohort: number | null
   /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
   role: GroupMemberRole
@@ -108,6 +131,14 @@ export type GroupPost = {
   isPinned: boolean
   /** ISO 8601, posts.created_at 그대로. 표시 시점에 상대시간으로 변환. */
   createdAt: string
+  /**
+   * posts.updated_at. 없으면(null) 한 번도 수정되지 않았다 -- "수정됨" 표시는 이걸로 판단한다.
+   * 서버(trg_mark_post_edited)가 제목·본문·카테고리가 **실제로 바뀐** UPDATE에만 찍는다.
+   * 고정도 삭제도 여기 안 찍힌다(그건 수정이 아니다). 클라이언트는 이 값을 쓸 수 없다 --
+   * update 컬럼 grant에 없다(쓸 수 있으면 수정 시각을 소급해 꾸밀 수 있다).
+   * isMine처럼 "없으면 아니다"라 optional이다.
+   */
+  updatedAt?: string | null
   /** posts.category_id가 가리키는 그룹 카테고리(로더가 조인해 내려줌, author처럼 비정규화). null=미분류. */
   category: GroupCategory | null
   images: GroupPostImage[]
@@ -153,4 +184,10 @@ export type GroupComment = {
   /** 삭제된 댓글이면 null. comments.content가 nullable인 이유다. */
   content: string | null
   createdAt: string
+  /**
+   * comments.updated_at. 글과 같은 계약(trg_mark_comment_edited). **삭제는 수정이 아니다** --
+   * soft_delete_comment가 content를 비우지만 그때는 스탬프하지 않는다. 안 그러면 tombstone의
+   * updated_at이 "삭제한 시각"이 돼 버린다.
+   */
+  updatedAt?: string | null
 }

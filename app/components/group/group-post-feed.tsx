@@ -34,6 +34,7 @@ export function GroupPostFeed({
   hasMore = false,
   sentinelRef,
   canManage,
+  canCurate,
 }: {
   posts: GroupPost[]
   viewMode: PostViewMode
@@ -42,6 +43,8 @@ export function GroupPostFeed({
   sentinelRef?: Ref<HTMLDivElement>
   /** owner/admin이면 카드 ⋯에 모더레이션 메뉴가 뜬다. */
   canManage?: boolean
+  /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
+  canCurate?: boolean
 }) {
   if (posts.length === 0) {
     return (
@@ -77,6 +80,7 @@ export function GroupPostFeed({
           post={post}
           reactionTypes={reactionTypes}
           canManage={canManage}
+          canCurate={canCurate}
         />
       ))}
       <FeedFooter hasMore={hasMore} sentinelRef={sentinelRef} />

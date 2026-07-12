@@ -339,6 +339,56 @@ function CategorySection({ initial }: { initial: GroupCategory[] }) {
   )
 }
 
+// spaces.post_policy. 켜면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹).
+//
+// 켜는 것 자체는 **운영 권한**이다(spaces의 컬럼 grant가 owner/admin에게만 열려 있다) --
+// 매니저는 글을 쓸 뿐 자기 권한을 스스로 열지 못한다. 그래서 이 섹션은 그룹 설정 탭 안에 있고,
+// 그 탭은 이미 관리자에게만 보인다.
+//
+// TODO(backend): action에서 spaces.post_policy를 update. 멤버에게 manager를 부여하는 건
+// 멤버 탭의 역할 드롭다운(set_space_member_role RPC)이 한다.
+function PostPolicySection({
+  policy,
+  onChange,
+}: {
+  policy: GroupSpace["postPolicy"]
+  onChange: (next: GroupSpace["postPolicy"]) => void
+}) {
+  const restricted = policy === "managers"
+
+  return (
+    <SettingsCard>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">글쓰기 제한</h2>
+          <p className="text-muted-foreground mt-1 text-xs">
+            켜면 매니저 이상만 게시물을 올릴 수 있습니다. <strong>댓글, 반응은 그대로</strong> 멤버
+            모두 달 수 있습니다.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={restricted}
+          aria-label="글쓰기 제한"
+          onClick={() => onChange(restricted ? "all" : "managers")}
+          className={cn(
+            "focus-visible:ring-ring relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none",
+            restricted ? "bg-primary" : "bg-muted-foreground/30"
+          )}
+        >
+          <span
+            className={cn(
+              "bg-background absolute top-0.5 size-5 rounded-full shadow transition-[left]",
+              restricted ? "left-[1.375rem]" : "left-0.5"
+            )}
+          />
+        </button>
+      </div>
+    </SettingsCard>
+  )
+}
+
 // spaces.allow_anonymous_posts. 다른 섹션과 달리 edit 모드가 없다 -- 값이 하나뿐이라 토글이 곧
 // 저장이다. TODO(backend): action에서 spaces.allow_anonymous_posts를 update(매니저 컬럼 grant).
 function AnonymousSection({
@@ -355,7 +405,7 @@ function AnonymousSection({
           <h2 className="text-sm font-semibold">익명 글 허용</h2>
           <p className="text-muted-foreground mt-1 text-xs">
             끄면 새 익명 글과 익명 댓글을 쓸 수 없습니다. 이미 올라간 익명 글은 그대로 익명으로
-            남습니다 — 소급해서 작성자를 공개하지 않습니다.
+            남습니다.
           </p>
         </div>
         <button
@@ -381,26 +431,42 @@ function AnonymousSection({
   )
 }
 
+// 이 탭은 **매니저에게도** 열려 있다 -- 카테고리 관리가 can_curate_space라 매니저도 하기 때문이다.
+// 나머지 섹션은 전부 운영 권한(can_manage_space)이므로 canManage가 아니면 아예 감춘다.
+// 매니저에게 보여주고 저장만 막으면, 서버가 어차피 거절할 버튼을 띄우는 거짓말이 된다.
 export function GroupSettings({
   group,
   categories,
+  canManage,
   joinPolicy,
   onJoinPolicyChange,
+  postPolicy,
+  onPostPolicyChange,
   allowAnonymous,
   onAllowAnonymousChange,
 }: {
   group: GroupSpace
   categories: GroupCategory[]
+  /** owner/admin. false면(= 매니저) 카테고리 섹션만 보인다. */
+  canManage: boolean
   joinPolicy: GroupSpace["joinPolicy"]
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
+  postPolicy: GroupSpace["postPolicy"]
+  onPostPolicyChange: (next: GroupSpace["postPolicy"]) => void
   allowAnonymous: boolean
   onAllowAnonymousChange: (next: boolean) => void
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <BasicInfoSection group={group} />
-      <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
-      <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
+      {canManage ? (
+        <>
+          <BasicInfoSection group={group} />
+          <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
+          {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
+          <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
+          <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
+        </>
+      ) : null}
       <CategorySection initial={categories} />
     </div>
   )

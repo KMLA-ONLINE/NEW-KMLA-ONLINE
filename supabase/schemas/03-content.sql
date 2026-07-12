@@ -58,6 +58,27 @@ create table public.comments (
   constraint comments_content_present check (content is not null or deleted_at is not null)
 );
 
+-- 본문에서 언급된 사람. 본문을 파싱하지 않는다 -- 에디터가 고른 대상의 profile id를 그대로 저장한다.
+-- 파싱하려면 유니크 handle이 필요한데 profiles엔 name뿐이고 유니크도 아니라 동명이인을 가를 수가
+-- 없다(게다가 코드블록·이메일 오탐이 따라붙는다). 이 테이블이 없으면 space_members의 기본
+-- notification_setting인 'mentions'가 "아무 알림도 안 받음"과 같은 뜻이 된다.
+--
+-- 익명 글/댓글도 멘션할 수 있다: 이 행은 "누가 언급됐나"만 담고 "누가 언급했나"는 담지 않는다.
+-- 작성자는 여전히 posts/comments.author_id에만 있고 거기 select grant는 회수돼 있다.
+create table public.post_mentions (
+  post_id bigint not null references public.posts (id) on delete cascade,
+  user_id bigint not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (post_id, user_id)
+);
+
+create table public.comment_mentions (
+  comment_id bigint not null references public.comments (id) on delete cascade,
+  user_id bigint not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (comment_id, user_id)
+);
+
 create index idx_posts_author_created_at on public.posts (author_id, created_at);
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
 where deleted_at is null;
@@ -67,6 +88,9 @@ create index idx_posts_pinned on public.posts (space_id, pinned_at desc)
 where pinned_at is not null and deleted_at is null;
 
 create index idx_comments_tree on public.comments (post_id, parent_id, created_at);
+-- 멘션은 (owner, user)가 PK라 "이 글의 멘션"은 이미 빠르다. 역방향("나를 언급한 것들")만 인덱스가 없다.
+create index idx_post_mentions_user on public.post_mentions (user_id);
+create index idx_comment_mentions_user on public.comment_mentions (user_id);
 create index idx_posts_title_search_gin on public.posts
   using gin (regexp_replace(lower(title), '\s+', '', 'g') extensions.gin_trgm_ops)
   where deleted_at is null;
@@ -137,8 +161,39 @@ returns boolean language sql stable security definer set search_path = '' as $$
 $$;
 create function private.max_post_attachments()
 returns int4 language sql immutable set search_path = '' as $$ select 10 $$;
-revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint), private.max_post_attachments() from public, anon, service_role;
+-- 멘션 하나가 알림 하나다. 상한이 없으면 글 한 개로 전교생에게 알림을 쏠 수 있다.
+create function private.max_mentions()
+returns int4 language sql immutable set search_path = '' as $$ select 20 $$;
+revoke execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint), private.max_post_attachments(), private.max_mentions() from public, anon, service_role;
 grant execute on function private.can_access_post(bigint), private.can_access_comment(bigint), private.has_active_descendant(bigint) to authenticated;
+
+-- post_mentions와 comment_mentions는 소유자 컬럼 이름만 다르고(post_id / comment_id) 규칙이 같다.
+-- 소유자 컬럼명을 tg_argv로 받아 한 함수로 처리한다 -- 테이블마다 같은 함수를 복사하는 것보다
+-- 규칙이 하나뿐임이 분명해진다. tg_table_name은 %I로 인용하고 search_path는 비어 있어 주입 여지가 없다.
+create function private.enforce_mention_limit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  owner_column text := tg_argv[0];
+  owner_id bigint := (to_jsonb(new) ->> owner_column)::bigint;
+  existing int4;
+begin
+  execute format('select count(*) from public.%I where %I = $1', tg_table_name, owner_column)
+  into existing using owner_id;
+  if existing >= private.max_mentions() then
+    raise exception 'at most % people can be mentioned', private.max_mentions();
+  end if;
+  return new;
+end;
+$$;
+revoke execute on function private.enforce_mention_limit() from public, anon, authenticated, service_role;
+
+create trigger trg_enforce_post_mention_limit
+before insert on public.post_mentions
+for each row execute function private.enforce_mention_limit('post_id');
+
+create trigger trg_enforce_comment_mention_limit
+before insert on public.comment_mentions
+for each row execute function private.enforce_mention_limit('comment_id');
 
 -- set_post_attachments가 이미 개수를 검사하지만, 테이블에서도 다시 막는다(service_role 직접 삽입 등).
 -- 메시지와 달리 글은 이미지와 파일을 섞을 수 있어서(카드가 이미지 그리드와 파일 목록을 함께 렌더한다)
@@ -209,6 +264,57 @@ for each row execute function private.validate_post_category();
 
 revoke execute on function private.validate_post_category() from public, anon, authenticated, service_role;
 
+-- posts.updated_at / comments.updated_at은 컬럼도 있고 읽기 RPC가 내려주기까지 하는데 여태 아무도
+-- 쓰지 않아 **영원히 null**이었다 -- "수정됨" 표시가 원리적으로 불가능했다. 클라이언트가 채우게
+-- 하지 않는 건 맞다(소급해 꾸밀 수 있다). 그래서 update 컬럼 grant에서 빼 두고 서버가 찍는다.
+-- BEFORE 트리거가 NEW를 고치는 건 컬럼 grant와 무관하다 -- grant는 문장의 SET 절만 본다.
+--
+-- messages와 달리 여기서 권한을 재검증하지 않는 이유: posts_update/comments_update는 작성자
+-- 본인 하나뿐인 정책이라 행 가시성을 넓히는 두 번째 permissive 정책이 없다. messages에는 pin
+-- 정책이 있어서 trg_mark_message_edited가 발신자 여부를 다시 봐야 했다.
+create function private.mark_post_edited()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  new.title := btrim(new.title);
+  new.content := btrim(new.content);
+  -- 카테고리 이동도 작성자가 한 변경이라 수정으로 친다(글에서 그 사람이 바꿀 수 있는 건 이 셋뿐이다).
+  if new.title is distinct from old.title
+    or new.content is distinct from old.content
+    or new.category_id is distinct from old.category_id
+  then
+    new.updated_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+create function private.mark_comment_edited()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.content is not null then
+    new.content := nullif(btrim(new.content), '');
+  end if;
+  -- soft_delete_comment도 content를 건드리므로(원문을 비운다) 이 트리거가 돈다. 삭제는 수정이
+  -- 아니니 스탬프하지 않는다 -- 안 그러면 tombstone의 updated_at이 "삭제한 시각"이 돼 버린다.
+  if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
+    new.updated_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+-- pinned_at(set_post_pinned)이나 deleted_at(soft_delete_post)만 바꾸는 UPDATE는 이 컬럼들을
+-- 언급하지 않으므로 트리거가 돌지 않는다 -- 고정이 "수정됨"을 찍지 않는다.
+create trigger trg_mark_post_edited
+before update of title, content, category_id on public.posts
+for each row execute function private.mark_post_edited();
+
+create trigger trg_mark_comment_edited
+before update of content on public.comments
+for each row execute function private.mark_comment_edited();
+
+revoke execute on function private.mark_post_edited(), private.mark_comment_edited() from public, anon, authenticated, service_role;
+
 create trigger trg_enforce_post_attachment_shape
 after insert on public.post_attachments
 referencing new table as new_rows
@@ -218,15 +324,60 @@ alter table public.posts enable row level security;
 alter table public.post_attachment_mime_types enable row level security;
 alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
+alter table public.post_mentions enable row level security;
+alter table public.comment_mentions enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
-create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_participate_space(space_id));
+-- can_participate_space가 아니라 can_post_in_space다: post_policy='managers'인 공지형 그룹에서는
+-- 멤버여도 메인 글을 못 쓴다(댓글은 comments_insert가 can_access_post로 여전히 열어 둔다).
+create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_post_in_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
 create policy comments_select on public.comments for select to authenticated using (private.can_access_post(post_id) and (deleted_at is null or private.has_active_descendant(id)));
 create policy comments_insert on public.comments for insert to authenticated with check (author_id=private.current_profile_id() and private.can_access_post(post_id));
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
+
+-- 멘션은 작성자만 달고, 대상은 그 공간의 멤버여야 한다. 멤버 검사가 없으면 읽지도 못하는 글의
+-- 알림을 받게 되고(딥링크를 눌러도 403), 나아가 아무 공간에서나 아무에게나 알림을 쏘는 통로가 된다.
+-- update는 없다: 멘션은 붙이거나 떼거나 둘 중 하나다.
+create policy post_mentions_select on public.post_mentions for select to authenticated using (private.can_access_post(post_id));
+create policy post_mentions_insert on public.post_mentions for insert to authenticated with check (
+  exists(
+    select 1 from public.posts p
+    where p.id=post_mentions.post_id and p.author_id=private.current_profile_id() and p.deleted_at is null
+  )
+  and exists(
+    select 1 from public.posts p join public.space_members sm on sm.space_id=p.space_id
+    where p.id=post_mentions.post_id and sm.user_id=post_mentions.user_id and sm.banned_at is null
+  )
+);
+create policy post_mentions_delete on public.post_mentions for delete to authenticated using (
+  exists(
+    select 1 from public.posts p
+    where p.id=post_mentions.post_id and p.author_id=private.current_profile_id() and p.deleted_at is null
+  )
+);
+
+create policy comment_mentions_select on public.comment_mentions for select to authenticated using (private.can_access_comment(comment_id));
+create policy comment_mentions_insert on public.comment_mentions for insert to authenticated with check (
+  exists(
+    select 1 from public.comments c
+    where c.id=comment_mentions.comment_id and c.author_id=private.current_profile_id() and c.deleted_at is null
+  )
+  and exists(
+    select 1 from public.comments c
+    join public.posts p on p.id=c.post_id
+    join public.space_members sm on sm.space_id=p.space_id
+    where c.id=comment_mentions.comment_id and sm.user_id=comment_mentions.user_id and sm.banned_at is null
+  )
+);
+create policy comment_mentions_delete on public.comment_mentions for delete to authenticated using (
+  exists(
+    select 1 from public.comments c
+    where c.id=comment_mentions.comment_id and c.author_id=private.current_profile_id() and c.deleted_at is null
+  )
+);
 
 -- 익명이 익명이려면 author_id를 클라이언트가 못 읽어야 한다. 테이블 전체 select를 주면
 -- `select author_id from posts where is_anonymous`로 익명 글 작성자 명단이 그대로 나온다 --
@@ -245,8 +396,13 @@ grant insert (space_id,author_id,title,content,is_anonymous,category_id) on publ
 grant update (title,content,category_id) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
+-- 멘션은 update가 없다(붙이거나 떼거나 둘 중 하나). insert는 컬럼 단위라 created_at을 클라이언트가
+-- 정할 수 없다 -- 정할 수 있으면 멘션 시각을 소급해 꾸밀 수 있다.
+grant select, delete on public.post_mentions, public.comment_mentions to authenticated;
+grant insert (post_id,user_id) on public.post_mentions to authenticated;
+grant insert (comment_id,user_id) on public.comment_mentions to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
-grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments to service_role;
+grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
 
 -- 읽기 경로가 RPC인 이유는 두 가지다.
@@ -648,7 +804,9 @@ begin
   select s.pub_id into space_pub_id
   from public.spaces s where s.id=p_space_id and s.deleted_at is null;
   if not found then raise exception 'space not found'; end if;
-  if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
+  -- security definer라 posts_insert 정책이 적용되지 않는다 -- 같은 검사를 여기서 다시 해야
+  -- 이 RPC가 post_policy를 우회하는 뒷문이 되지 않는다.
+  if not private.can_post_in_space(p_space_id) then raise exception 'not allowed to post in this space'; end if;
 
   -- 길이 제약과 카테고리 동일 space 검사는 테이블 check와 trg_validate_post_category가 한다.
   insert into public.posts(space_id,author_id,title,content,is_anonymous,category_id)
@@ -740,8 +898,10 @@ begin
   from public.posts where id=p_id and deleted_at is null
   for update;
   if not found then return; end if;
-  if not private.can_manage_space(target_space_id) then
-    raise exception 'space manager required';
+  -- can_manage_space가 아니라 can_curate_space다: 고정은 게시판을 정리하는 일이라 manager도 한다.
+  -- (남의 글 삭제·익명 정지는 여전히 can_manage_space -- 그건 사람을 다루는 일이다.)
+  if not private.can_curate_space(target_space_id) then
+    raise exception 'space curator required';
   end if;
 
   update public.posts
@@ -972,5 +1132,95 @@ create trigger trg_enforce_anonymous_allowed_comments
 before insert on public.comments
 for each row execute function private.enforce_anonymous_allowed();
 
+-- 소프트 삭제된 글·댓글의 하드 정리. 이 경로가 없어서 지금까지 tombstone이 영원히 쌓였고,
+-- 그중에는 익명 글의 author_id도 있다 -- 안 지우면 "지운 익명 글의 작성자"가 DB에 영구 보존된다.
+--
+-- blob은 여기서 안 지운다. storage-maintenance가 먼저 걷어간다(enqueue_due_storage_cleanup이
+-- 7일 지난 삭제 글의 첨부를 큐에 넣고, complete_storage_cleanup이 post_attachments 행을 지운다).
+-- 그래서 첨부 행이 아직 남아 있는 글은 **건너뛴다**. cleanup_conversation은 같은 상황에서 예외를
+-- 던지지만, 여기는 배치라 그러면 글 하나 때문에 배치 전체가 죽는다 -- 다음 실행에 다시 만난다.
+create function public.purge_deleted_content(
+  p_older_than interval default interval '30 days',
+  p_limit int4 default 100
+)
+returns table(purged_posts bigint, purged_comments bigint)
+language plpgsql security definer set search_path = '' as $$
+declare
+  cutoff timestamptz;
+  target_posts bigint[];
+  target_comments bigint[];
+  post_total bigint := 0;
+  comment_total bigint := 0;
+  removed bigint;
+begin
+  perform private.require_service_role();
+  if p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
+  if p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
+  cutoff := now() - p_older_than;
+
+  select array_agg(t.id) into target_posts
+  from (
+    select p.id from public.posts p
+    where p.deleted_at < cutoff
+      and not exists(select 1 from public.post_attachments a where a.post_id=p.id)
+    order by p.deleted_at
+    limit p_limit
+  ) t;
+
+  if target_posts is not null then
+    -- 글이 사라지면 그 댓글은 어차피 아무도 못 본다(can_access_post가 post.deleted_at을 본다).
+    -- 살아 있는 댓글도 같이 간다 -- comments.post_id가 restrict라 남겨두면 글을 못 지운다.
+    delete from public.comment_reactions cr using public.comments c
+    where cr.comment_id=c.id and c.post_id=any(target_posts);
+    delete from public.post_reactions where post_id=any(target_posts);
+
+    -- parent_id가 restrict라 잎부터 벗겨야 한다. 답글->루트 2단계로는 임의 깊이를 못 지운다
+    -- (cleanup_conversation이 messages에 같은 루프를 도는 것과 같은 이유).
+    loop
+      delete from public.comments c
+      where c.post_id=any(target_posts)
+        and not exists(select 1 from public.comments child where child.parent_id=c.id);
+      get diagnostics removed = row_count;
+      comment_total := comment_total + removed;
+      exit when removed = 0;
+    end loop;
+
+    -- notifications / post_mentions / comment_mentions는 cascade라 알아서 따라간다.
+    delete from public.posts where id=any(target_posts);
+    get diagnostics post_total = row_count;
+  end if;
+
+  -- 살아 있는 글에 달린, 삭제된 지 오래된 댓글. 자식이 하나라도 있으면(살아 있든 죽었든) restrict
+  -- 때문에 못 지운다 -- 그래서 잎만 걷는다. 자식이 전부 죽은 서브트리는 잎부터 차례로 걷혀 결국
+  -- 통째로 사라지고, 살아 있는 답글이 하나라도 달린 tombstone은 계속 남는다(답글 사슬이 끊기면
+  -- 안 되니 comments_select가 has_active_descendant로 그걸 계속 보여준다).
+  select array_agg(t.id) into target_comments
+  from (
+    select c.id from public.comments c
+    where c.deleted_at < cutoff
+    order by c.deleted_at
+    limit p_limit
+  ) t;
+
+  if target_comments is not null then
+    -- soft_delete_comment가 이미 지웠지만, service_role이 직접 소프트 삭제한 행도 있을 수 있다.
+    delete from public.comment_reactions where comment_id=any(target_comments);
+    loop
+      delete from public.comments c
+      where c.id=any(target_comments)
+        and not exists(select 1 from public.comments child where child.parent_id=c.id);
+      get diagnostics removed = row_count;
+      comment_total := comment_total + removed;
+      exit when removed = 0;
+    end loop;
+  end if;
+
+  return query select post_total, comment_total;
+end;
+$$;
+
 revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
 grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
+
+revoke execute on function public.purge_deleted_content(interval,int4) from public, anon, authenticated, service_role;
+grant execute on function public.purge_deleted_content(interval,int4) to service_role;
