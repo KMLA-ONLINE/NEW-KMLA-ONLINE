@@ -8,7 +8,7 @@ export function MobileTabBar() {
 
   return (
     <nav
-      aria-label="Primary navigation"
+      aria-label="주요 메뉴"
       className="bg-background/95 fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
@@ -21,10 +21,12 @@ export function MobileTabBar() {
               {/* Prefetch on touch-down, which buys the tap-to-click delay. Worth
                   it before any of these routes has a loader, because it also warms
                   the route's code-split chunk. */}
+              {/* 탭바는 아이콘만 그려서 링크에 읽을 텍스트가 없다 -- 라벨을 접근성 이름으로 붙인다. */}
               <NavLink
                 to={item.to}
                 end={item.end}
                 prefetch="intent"
+                aria-label={item.label}
                 className={cn(
                   "text-muted-foreground flex h-full w-full items-center justify-center px-1",
                   isActive && "text-primary"
