@@ -74,8 +74,15 @@ export default function GroupPostDetailPage() {
                 <header className="flex items-center gap-3">
                   <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
                   <div className="min-w-0 flex-1">
+                    {/* 카테고리 뱃지는 카드(GroupPostCard)와 같은 자리 -- 이름 옆이다. 제목 위에
+                        따로 두면 같은 글이 목록과 상세에서 다르게 보인다. */}
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{authorName}</span>
+                      {post.category ? (
+                        <Badge variant="secondary" className="shrink-0">
+                          {post.category.name}
+                        </Badge>
+                      ) : null}
                     </div>
                     <RelativeTime
                       value={post.createdAt}
@@ -92,11 +99,6 @@ export default function GroupPostDetailPage() {
                 </header>
 
                 <div>
-                  {post.category ? (
-                    <Badge variant="secondary" className="mb-1.5">
-                      {post.category.name}
-                    </Badge>
-                  ) : null}
                   <h2 className="font-semibold">{post.title}</h2>
                   <p className="mt-1 text-sm leading-6 whitespace-pre-line">{post.content}</p>
                 </div>

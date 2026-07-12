@@ -32,7 +32,7 @@ export function GroupAuthorAvatar({
     <Avatar size={size === "default" ? undefined : size}>
       {/* 솔리드 primary는 피드에 익명 글이 여럿이면 너무 튄다. 살짝 낮춰 톤을 죽이되, 여전히
           "채워진 상태"로 읽히게 둔다(연한 틴트로 가면 다시 빈 아바타처럼 보인다). */}
-      <AvatarFallback className={anonymous ? "bg-primary/80 text-" : undefined}>
+      <AvatarFallback className={anonymous ? "bg-primary/80 text-primary-foreground" : undefined}>
         {anonymous ? (
           <VenetianMaskIcon className={ICON_SIZE[size]} aria-hidden="true" />
         ) : (
