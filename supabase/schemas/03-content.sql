@@ -36,12 +36,17 @@ create table public.comments (
   post_id bigint not null references public.posts (id) on delete restrict,
   author_id bigint not null references public.profiles (id) on delete restrict,
   parent_id bigint null references public.comments (id) on delete restrict,
-  content text not null,
+  -- 답글이 달린 댓글은 소프트 삭제돼도 tombstone으로 남아 계속 select된다(comments_select의
+  -- has_active_descendant). content가 not null이면 그 tombstone이 원문을 그대로 실어 나르므로
+  -- nullable이어야 하고, soft_delete_comment가 비운다. 살아있는 댓글은 아래 check로 본문을 강제한다
+  -- (insert grant에 deleted_at이 없어 클라이언트가 빈 댓글을 만들 수는 없다).
+  content text null,
   is_anonymous boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz null,
   deleted_at timestamptz null,
-  deleted_by bigint null references public.profiles (id) on delete set null
+  deleted_by bigint null references public.profiles (id) on delete set null,
+  constraint comments_content_present check (content is not null or deleted_at is not null)
 );
 
 create index idx_posts_author_created_at on public.posts (author_id, created_at);
@@ -194,3 +199,96 @@ grant update (content) on public.comments to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
 grant select, insert, update, delete on public.posts, public.post_attachments, public.comments to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
+
+-- 고정·삭제는 컬럼 grant로 표현할 수 없어서 RPC로 둔다. posts_update/comments_update 정책이
+-- author_id=current_profile_id()라 "관리자가 남의 글을 고정하거나 지운다"가 정책에 안 들어가고,
+-- pinned_by/deleted_by는 클라이언트가 아니라 서버가 찍어야 한다. security definer로 정책을 우회하되
+-- 함수 안에서 권한을 직접 확인한다.
+
+-- 고정은 순수 모더레이션이다 -- 작성자여도 자기 글을 고정할 수는 없다(can_manage_space만).
+create function public.set_post_pinned(p_id bigint, p_pinned boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_space_id bigint;
+begin
+  select space_id into target_space_id
+  from public.posts where id=p_id and deleted_at is null
+  for update;
+  if not found then return; end if;
+  if not private.can_manage_space(target_space_id) then
+    raise exception 'space manager required';
+  end if;
+
+  update public.posts
+  set pinned_at = case when p_pinned then now() else null end,
+      pinned_by = case when p_pinned then caller_id else null end
+  where id=p_id;
+end;
+$$;
+
+-- 삭제는 작성자 본인 또는 그 space의 관리자. 메시지(soft_delete_message)는 보낸 본인만 지울 수
+-- 있지만 게시물엔 모더레이션이 필요하다.
+create function public.soft_delete_post(p_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_author_id bigint;
+  target_space_id bigint;
+begin
+  select author_id, space_id into target_author_id, target_space_id
+  from public.posts where id=p_id and deleted_at is null
+  for update;
+  if not found then return; end if;
+  if target_author_id<>caller_id and not private.can_manage_space(target_space_id) then
+    raise exception 'post author or space manager required';
+  end if;
+
+  insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by)
+  select a.storage_bucket,a.storage_path,caller_id
+  from public.post_attachments a
+  where a.post_id=p_id
+  on conflict(storage_bucket,storage_path) do update
+  set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),
+      processed_at=null,
+      last_error=null;
+
+  delete from public.post_attachments where post_id=p_id;
+  delete from public.post_reactions where post_id=p_id;
+
+  -- 댓글은 손대지 않는다. can_access_post가 post.deleted_at을 보므로 comments_select가 알아서 막는다.
+  update public.posts
+  set deleted_at=now(), deleted_by=caller_id
+  where id=p_id;
+end;
+$$;
+
+create function public.soft_delete_comment(p_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  target_author_id bigint;
+  target_space_id bigint;
+begin
+  select c.author_id, p.space_id into target_author_id, target_space_id
+  from public.comments c
+  join public.posts p on p.id=c.post_id
+  where c.id=p_id and c.deleted_at is null
+  for update of c;
+  if not found then return; end if;
+  if target_author_id<>caller_id and not private.can_manage_space(target_space_id) then
+    raise exception 'comment author or space manager required';
+  end if;
+
+  delete from public.comment_reactions where comment_id=p_id;
+
+  -- 행을 지우지 않고 본문만 비운다. 답글이 달려 있으면 tombstone으로 남아야 트리가 끊기지 않는데
+  -- (comments_select의 has_active_descendant), 그때 원문이 딸려 나가면 안 된다.
+  update public.comments
+  set content=null, deleted_at=now(), deleted_by=caller_id
+  where id=p_id;
+end;
+$$;
+
+revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint) to authenticated;
