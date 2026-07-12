@@ -36,6 +36,25 @@ create table public.profiles (
   deleted_at timestamptz null
 );
 
+-- 이 사용자의 암호학적 신원. profiles가 사회적 신원이라면 이건 그 옆에 걸린 열쇠고리다.
+-- 1:1 대화는 종단간 암호화되어 있고(docs/e2ee.md), 그 키가 전부 여기서 시작한다.
+--
+-- 서버는 이 테이블의 무엇으로도 DM을 읽을 수 없다. wrapped_user_key는 비밀번호에서
+-- 유도된 encKey로 봉인돼 있고 encKey는 브라우저를 떠나지 않는다 -- Supabase Auth가 받는
+-- 값은 같은 masterKey에서 HKDF로 갈라져 나온, 이것과 아무 관계 없는 authHash다.
+create table public.user_keys (
+  user_id bigint primary key references public.profiles (id) on delete cascade,
+  -- X25519 공개키. 오프라인인 상대에게도 메시지 키를 봉인할 수 있어야 하므로
+  -- accepted 사용자 모두가 읽는다. 아래 컬럼 grant에서 유일하게 열려 있는 값이다.
+  identity_public_key bytea not null,
+  wrapped_user_key bytea not null,
+  wrapped_identity_secret_key bytea not null,
+  -- 복구 코드로 봉인한 userKey 두 번째 사본. 이게 없으면 비밀번호 분실이 곧 DM 영구 소실이다.
+  recovery_wrapped_user_key bytea not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz null
+);
+
 create table public.permissions (
   key text primary key,
   name text not null,
@@ -82,6 +101,15 @@ alter table public.profiles
   add constraint profiles_description_check check (
     description is null or char_length(description) <= 2000
   );
+
+-- 봉인된 blob은 nonce(12) + 32바이트 키 + GCM 태그(16) = 60바이트다. 범위로 두는 이유는
+-- AEAD를 바꾸면(예: 24바이트 nonce) 길이가 달라지기 때문 -- 그래도 "봉인된 32바이트 키"
+-- 말고는 아무것도 이 안에 들어맞지 않는다.
+alter table public.user_keys
+  add constraint user_keys_identity_public_key_check check (octet_length(identity_public_key) = 32),
+  add constraint user_keys_wrapped_user_key_check check (octet_length(wrapped_user_key) between 48 and 128),
+  add constraint user_keys_wrapped_identity_secret_key_check check (octet_length(wrapped_identity_secret_key) between 48 and 128),
+  add constraint user_keys_recovery_wrapped_user_key_check check (octet_length(recovery_wrapped_user_key) between 48 and 128);
 
 create function private.handle_auth_user_created()
 returns trigger
@@ -163,6 +191,12 @@ grant execute on function private.is_app_admin(), private.has_permission(text) t
 create function private.anonymize_profile(p_profile_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
+  -- 탈퇴하면 열쇠고리도 같이 태운다. 남겨둬 봐야 아무도 열 수 없는 blob일 뿐이고
+  -- (userKey를 푸는 비밀번호는 애초에 서버에 없다), 상대방 쪽 히스토리는 상대의
+  -- 키로 그대로 읽힌다. 재가입하면 새 신원키를 받고, 예전 DM은 영영 안 열린다 --
+  -- 종단간 암호화가 뜻하는 바가 그거다.
+  delete from public.user_keys where user_id = p_profile_id;
+
   update public.profiles
   set name = '탈퇴한 사용자',
       role = 'user',
@@ -269,6 +303,7 @@ revoke execute on function private.require_app_admin() from public, anon, authen
 
 alter table public.profile_departments enable row level security;
 alter table public.profiles enable row level security;
+alter table public.user_keys enable row level security;
 alter table public.permissions enable row level security;
 alter table public.user_permissions enable row level security;
 
@@ -304,6 +339,29 @@ with check (
   and (select private.is_accepted_user())
 );
 
+-- 행은 accepted 사용자 모두에게 보이지만, 아래 컬럼 grant가 identity_public_key 하나만
+-- 남기고 봉인된 blob을 전부 회수한다. 행 단위로는 이 구분을 표현할 수 없어서다.
+--
+-- 굳이 회수하는 이유: wrapped_user_key는 *비밀번호에서 유도된* 키로 봉인돼 있다. 테이블
+-- 전체 select를 주면 같은 학교 아무나 반 친구들 것을 통째로 긁어다 약한 비밀번호를 오프라인
+-- 에서 때릴 수 있다. 지금은 그게 DB 유출 시나리오지 로그인한 학생 시나리오가 아니다.
+-- (recovery_wrapped_user_key는 120비트 랜덤이라 무차별 대입이 애초에 불가능하지만,
+--  두 개를 다르게 취급할 이유가 없다.)
+create policy user_keys_select
+on public.user_keys
+for select
+to authenticated
+using (
+  user_id = (select private.current_profile_id())
+  or (
+    (select private.is_accepted_user())
+    and exists (
+      select 1 from public.profiles as p
+      where p.id = user_id and p.status = 'accepted' and p.deleted_at is null
+    )
+  )
+);
+
 create policy permissions_select
 on public.permissions
 for select
@@ -324,9 +382,13 @@ grant select on table public.profile_departments, public.profiles, public.permis
 grant update (name, gender, phone_number, birthday, description) on table public.profiles
 to authenticated;
 
+-- 공개키만. 봉인된 blob은 public.get_my_key_vault()로만 나가고, 그 함수는 호출자 행으로
+-- 스스로를 가둔다. 쓰기는 아예 없다 -- bytea를 base64로 넘겨받는 세 RPC가 유일한 문이다.
+grant select (user_id, identity_public_key, created_at, updated_at) on table public.user_keys to authenticated;
+
 grant usage on schema public, private to service_role;
 grant select, insert, update, delete
-on table public.profile_departments, public.profiles, public.permissions, public.user_permissions
+on table public.profile_departments, public.profiles, public.user_keys, public.permissions, public.user_permissions
 to service_role;
 grant usage, select on sequence public.profiles_id_seq to service_role;
 
@@ -385,6 +447,129 @@ revoke execute on function public.submit_onboarding(text,public.profile_type,cha
 grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status) to authenticated;
 grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
 revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
+
+-- 열쇠고리 RPC 네 개. bytea가 PostgREST를 지나면 hex 문자열(`\x00ff`)이 되어 2배로 부푸므로
+-- 경계에서는 base64로 주고받고 컬럼은 bytea로 남긴다. 클라이언트 쓰기 경로가 이 세 함수뿐인
+-- 이유도 같다 -- 테이블에 insert/update grant가 아예 없다.
+--
+-- accepted가 아니어도 호출할 수 있어야 한다(require_current_profile(false)): 열쇠고리는
+-- 가입 직후, 브라우저가 아직 비밀번호를 들고 있는 그 순간에 만들어야 한다. 승인까지 미루면
+-- 그때는 세션만 있고 비밀번호가 없어서 encKey를 만들 수가 없다.
+
+-- 내 금고. 봉인된 blob이 서버 밖으로 나가는 유일한 문이고, 스스로를 호출자 행에 가둔다.
+-- 아직 열쇠고리가 없으면 0행을 준다 -- 클라이언트는 그걸 보고 create_user_keys를 부른다.
+create function public.get_my_key_vault()
+returns table(
+  identity_public_key text,
+  wrapped_user_key text,
+  wrapped_identity_secret_key text,
+  recovery_wrapped_user_key text
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(false);
+begin
+  return query
+  select
+    encode(k.identity_public_key, 'base64'),
+    encode(k.wrapped_user_key, 'base64'),
+    encode(k.wrapped_identity_secret_key, 'base64'),
+    encode(k.recovery_wrapped_user_key, 'base64')
+  from public.user_keys k
+  where k.user_id = caller_id;
+end;
+$$;
+
+-- 상대의 신원 공개키. 메시지 키를 봉인하려면 이게 먼저 필요하다.
+--
+-- security invoker다: RLS(user_keys_select)와 컬럼 grant가 그대로 적용되어, 이 함수는
+-- 테이블이 이미 허용하는 것 이상을 줄 수 없다. 봉인된 blob은 애초에 grant가 없어서
+-- 여기서 실수로 새어 나갈 방법도 없다.
+--
+-- 배열을 받는 이유는 대화 목록 하나에 상대가 여럿이기 때문이고, 열쇠고리가 없는 사용자는
+-- 행이 안 나온다 -- 그게 "아직 로그인한 적 없어서 DM을 받을 수 없는 사람"의 표현이다.
+create function public.get_identity_public_keys(p_user_ids bigint[])
+returns table(user_id bigint, identity_public_key text)
+language sql stable security invoker set search_path = '' as $$
+  select k.user_id, encode(k.identity_public_key, 'base64')
+  from public.user_keys k
+  where k.user_id = any(p_user_ids)
+$$;
+
+-- 가입 시 1회. 이미 있으면 실패한다 -- 덮어쓰면 그 사람의 DM 히스토리가 통째로 죽는다.
+-- 비밀번호가 틀려서 금고가 안 열리는 클라이언트가 "그럼 새로 만들지" 하는 것을 막는 것도
+-- 이 실패다. 정말 갈아엎으려면 rotate_user_keys를 명시적으로 불러야 한다.
+create function public.create_user_keys(
+  p_identity_public_key text,
+  p_wrapped_user_key text,
+  p_wrapped_identity_secret_key text,
+  p_recovery_wrapped_user_key text
+)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(false);
+begin
+  insert into public.user_keys (
+    user_id, identity_public_key, wrapped_user_key, wrapped_identity_secret_key, recovery_wrapped_user_key
+  )
+  values (
+    caller_id,
+    decode(p_identity_public_key, 'base64'),
+    decode(p_wrapped_user_key, 'base64'),
+    decode(p_wrapped_identity_secret_key, 'base64'),
+    decode(p_recovery_wrapped_user_key, 'base64')
+  );
+exception when unique_violation then
+  raise exception 'key vault already exists';
+end;
+$$;
+
+-- 비밀번호 변경·재설정(옛 비밀번호나 복구 코드로 금고를 이미 연 상태). userKey는 그대로고
+-- 봉인만 새 encKey로 다시 한다. 신원키를 건드릴 수 없다는 것이 이 함수의 요점이다 --
+-- 그래서 메시지가 한 통도 재암호화되지 않고, 히스토리가 그대로 살아남는다.
+create function public.reseal_user_keys(
+  p_wrapped_user_key text,
+  p_recovery_wrapped_user_key text
+)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(false);
+begin
+  update public.user_keys
+  set wrapped_user_key = decode(p_wrapped_user_key, 'base64'),
+      recovery_wrapped_user_key = decode(p_recovery_wrapped_user_key, 'base64'),
+      updated_at = now()
+  where user_id = caller_id;
+  if not found then raise exception 'key vault not found'; end if;
+end;
+$$;
+
+-- 최후의 수단: 비밀번호도 복구 코드도 없다. 옛 userKey를 풀 수 있는 것이 세상에 없으므로
+-- 신원키까지 전부 새로 발급한다.
+--
+-- message_keys는 손대지 않는다. 내 옛 공개키 앞으로 봉인된 행들은 나에게는 죽었지만
+-- 상대방에게는 멀쩡하다(행이 봉인 당시의 두 공개키를 다 들고 있어서, 상대는 여전히
+-- DH를 계산할 수 있다). 즉 내 히스토리만 사라지고 상대의 히스토리는 남는다. 정확히
+-- 종단간 암호화가 뜻하는 바이며, 우회로를 만들 수 있다면 그건 서버가 읽을 수 있다는 뜻이다.
+create function public.rotate_user_keys(
+  p_identity_public_key text,
+  p_wrapped_user_key text,
+  p_wrapped_identity_secret_key text,
+  p_recovery_wrapped_user_key text
+)
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(false);
+begin
+  update public.user_keys
+  set identity_public_key = decode(p_identity_public_key, 'base64'),
+      wrapped_user_key = decode(p_wrapped_user_key, 'base64'),
+      wrapped_identity_secret_key = decode(p_wrapped_identity_secret_key, 'base64'),
+      recovery_wrapped_user_key = decode(p_recovery_wrapped_user_key, 'base64'),
+      updated_at = now()
+  where user_id = caller_id;
+  if not found then raise exception 'key vault not found'; end if;
+end;
+$$;
+
+revoke execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text,text), public.reseal_user_keys(text,text), public.rotate_user_keys(text,text,text,text) from public, anon, authenticated, service_role;
+grant execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text,text), public.reseal_user_keys(text,text), public.rotate_user_keys(text,text,text,text) to authenticated;
 
 create function public.bootstrap_first_app_admin(p_profile_id bigint)
 returns void language plpgsql security definer set search_path='' as $$

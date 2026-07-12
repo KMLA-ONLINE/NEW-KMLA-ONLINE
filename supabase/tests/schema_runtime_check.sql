@@ -10,8 +10,17 @@ declare
   profile3 bigint;
   room1 bigint;
   room2 bigint;
+  group1 bigint;
   message1 bigint;
+  secret1 bigint;
   queue1 bigint;
+  -- 진짜 X25519 점이 아니어도 된다. 스키마가 보는 것은 길이뿐이고, 실제 암복호 왕복은
+  -- app/lib/crypto의 단위 테스트와 e2ee 통합 테스트가 증명한다.
+  pubkey1 bytea := decode(repeat('a1', 32), 'hex');
+  pubkey2 bytea := decode(repeat('b2', 32), 'hex');
+  pubkey_new bytea := decode(repeat('c3', 32), 'hex');
+  sealed bytea := decode(repeat('dd', 60), 'hex');
+  envelope jsonb;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
   values
@@ -46,13 +55,23 @@ begin
   then
     raise exception 'direct conversation uniqueness contract failed';
   end if;
+
+  -- 평문 계약은 이제 그룹 대화의 것이다. 1:1은 종단간 암호화되어 있어 content를 아예
+  -- 받지 않는다 -- 그건 아래 E2EE 절에서 따로 확인한다.
+  insert into public.conversations (type, name, created_by)
+  values ('group', '런타임 체크', profile1)
+  returning id into group1;
+  insert into public.conversation_members (conversation_id, user_id)
+  values (group1, profile2)
+  on conflict do nothing;
+
   insert into public.messages (conversation_id, sender_id, content)
-  values (room1, profile1, '검색 테스트 메시지')
+  values (group1, profile1, '검색 테스트 메시지')
   returning id into message1;
-  if not exists (select 1 from public.chat_read_states where conversation_id = room1 and user_id = profile1 and last_read_message_id = message1) then
+  if not exists (select 1 from public.chat_read_states where conversation_id = group1 and user_id = profile1 and last_read_message_id = message1) then
     raise exception 'sender read state trigger failed';
   end if;
-  if not exists (select 1 from public.search_messages('검색테스트', room1) where message_id = message1) then
+  if not exists (select 1 from public.search_messages('검색테스트', group1) where message_id = message1) then
     raise exception 'space-insensitive message search failed';
   end if;
 
@@ -86,6 +105,150 @@ begin
   end;
 
   perform set_config('request.jwt.claim.sub', user1::text, true);
+
+  -- 삭제는 편집이 아니다. mark_message_edited()가 둘을 구분하지 못하면, 본문을 비우는
+  -- soft delete가 15분 편집 창에 걸려 "오래된 자기 메시지를 지울 수 없는" 상태가 된다.
+  update public.messages set created_at = now() - interval '16 minutes' where id = message1;
+  perform public.soft_delete_message(message1);
+  if not exists (select 1 from public.messages where id = message1 and deleted_at is not null and content is null) then
+    raise exception 'soft delete outside the edit window failed';
+  end if;
+
+  -- ---------------------------------------------------------------------
+  -- 종단간 암호화 (docs/e2ee.md)
+  -- ---------------------------------------------------------------------
+
+  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+
+  -- 열쇠고리를 덮어쓰면 그 사람의 DM 히스토리가 통째로 죽는다. 비밀번호가 틀려 금고가
+  -- 안 열리는 클라이언트가 "그럼 새로 만들지" 하는 것을 막는 것이 이 실패다.
+  begin
+    perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+    raise exception 'a second key vault should have been rejected';
+  exception when others then
+    if sqlerrm <> 'key vault already exists' then raise; end if;
+  end;
+
+  -- 봉인된 blob은 select grant에서 회수돼 있다. 열려 있으면 같은 학교 아무나 반 친구들의
+  -- wrapped_user_key를 긁어다 -- 그건 *비밀번호에서 유도된* 키로 봉인돼 있다 -- 약한
+  -- 비밀번호를 오프라인에서 때릴 수 있다. 공개키만 나간다.
+  if not has_column_privilege('authenticated', 'public.user_keys', 'identity_public_key', 'SELECT')
+    or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_user_key', 'SELECT')
+    or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_identity_secret_key', 'SELECT')
+    or has_column_privilege('authenticated', 'public.user_keys', 'recovery_wrapped_user_key', 'SELECT')
+  then
+    raise exception 'user_keys must expose only the identity public key';
+  end if;
+
+  -- 봉인된 blob이 나가는 유일한 문. 나머지 셋은 쓰기 문이고, 테이블에는 클라이언트 쓰기
+  -- grant가 아예 없다.
+  if not has_function_privilege('authenticated', 'public.get_my_key_vault()', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.edit_encrypted_message(bigint,text)', 'EXECUTE')
+    -- security invoker인 search_messages가 호출자 권한으로 부른다. 없으면 그룹 검색까지 죽는다.
+    or not has_function_privilege('authenticated', 'private.is_direct_conversation(bigint)', 'EXECUTE')
+    or has_column_privilege('authenticated', 'public.messages', 'content_ciphertext', 'INSERT')
+    or has_column_privilege('authenticated', 'public.messages', 'content_ciphertext', 'UPDATE')
+  then
+    raise exception 'e2ee write path must be RPC-only';
+  end if;
+
+  -- 1:1은 평문을 받지 않고, 그룹은 암호문을 받지 않는다.
+  begin
+    insert into public.messages (conversation_id, sender_id, content) values (room1, profile1, '평문');
+    raise exception 'plaintext into a direct conversation should have been rejected';
+  exception when others then
+    if sqlerrm not like 'direct conversations are end-to-end encrypted%' then raise; end if;
+  end;
+  begin
+    insert into public.messages (conversation_id, sender_id, content_ciphertext) values (group1, profile1, sealed);
+    raise exception 'ciphertext into a group conversation should have been rejected';
+  exception when others then
+    if sqlerrm not like 'group conversations are not encrypted%' then raise; end if;
+  end;
+
+  -- 봉투가 "나 아닌 참여자 전원"을 정확히 덮어야 한다. 덜 덮으면 상대가 못 읽는 메시지가
+  -- 조용히 생기고, 더 덮으면 대화 밖 사람 앞으로 봉인한 셈이 된다.
+  envelope := jsonb_build_array(jsonb_build_object(
+    'user_id', profile2,
+    'wrapped_key', encode(sealed,'base64'),
+    'sender_public_key', encode(pubkey1,'base64'),
+    'recipient_public_key', encode(pubkey2,'base64')
+  ));
+  begin
+    perform public.send_encrypted_message(room1, encode(sealed,'base64'), '[]'::jsonb);
+    raise exception 'a message sealed to nobody should have been rejected';
+  exception when others then
+    if sqlerrm not like 'message keys must cover exactly%' then raise; end if;
+  end;
+  begin
+    perform public.send_encrypted_message(room1, encode(sealed,'base64'), jsonb_set(envelope, '{0,user_id}', to_jsonb(profile3)));
+    raise exception 'a message sealed to a non-member should have been rejected';
+  exception when others then
+    if sqlerrm not like 'message keys must cover exactly%' then raise; end if;
+  end;
+
+  secret1 := public.send_encrypted_message(room1, encode(sealed,'base64'), envelope);
+  if not exists (
+    select 1 from public.messages
+    where id = secret1 and content is null and content_ciphertext = sealed
+  ) then
+    raise exception 'encrypted send failed';
+  end if;
+
+  -- 봉투는 수신자 앞으로 한 행뿐이다. 발신자 사본은 없다 -- DH가 대칭이라 발신자는 그 행을
+  -- 그대로 연다. get_chat_messages가 발신자에게도 그 행을 내줘야 자기가 보낸 메시지를
+  -- 다시 읽을 수 있다.
+  if (select count(*) from public.message_keys where message_id = secret1) <> 1 then
+    raise exception 'a direct message must carry exactly one envelope';
+  end if;
+  if not exists (
+    select 1 from public.get_chat_messages(room1)
+    where message_id = secret1
+      and content is null
+      and content_ciphertext = encode(sealed,'base64')
+      and message_key ->> 'recipient_public_key' = encode(pubkey2,'base64')
+  ) then
+    raise exception 'the sender must be handed the envelope of their own message';
+  end if;
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  if not exists (
+    select 1 from public.get_chat_messages(room1)
+    where message_id = secret1 and message_key ->> 'wrapped_key' = encode(sealed,'base64')
+  ) then
+    raise exception 'the recipient must be handed their envelope';
+  end if;
+
+  -- 상대가 키를 갈아엎은 뒤 옛 공개키로 봉인해 보내면, 아무도 못 여는 메시지가 영구히
+  -- 남는다. 서버가 그걸 알아채고 거절해야 클라이언트가 키를 다시 읽고 재시도한다.
+  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+  begin
+    perform public.send_encrypted_message(room1, encode(sealed,'base64'), envelope);
+    raise exception 'a message sealed to a retired identity key should have been rejected';
+  exception when others then
+    if sqlerrm not like 'message keys are stale%' then raise; end if;
+  end;
+
+  -- 서버는 암호문을 열 수 없으니 1:1을 검색할 방법이 없다. 조용히 0건을 주면 "검색이
+  -- 안 되네"가 아니라 "그런 메시지 없네"로 읽히므로, 명시적으로 거절한다.
+  begin
+    perform public.search_messages('무엇이든', room1);
+    raise exception 'server-side search of a direct conversation should have been rejected';
+  exception when others then
+    if sqlerrm not like 'direct conversations are end-to-end encrypted%' then raise; end if;
+  end;
+
+  -- 본문이 사라진 메시지의 봉투는 아무것도 열지 않는다.
+  perform public.soft_delete_message(secret1);
+  if exists (select 1 from public.message_keys where message_id = secret1)
+    or exists (select 1 from public.messages where id = secret1 and content_ciphertext is not null)
+  then
+    raise exception 'soft delete must burn the envelope with the ciphertext';
+  end if;
 
   perform public.bootstrap_first_app_admin(profile1);
 
@@ -266,6 +429,32 @@ begin
     where b.id = 'message-files'
   ) is distinct from (select max(max_bytes) from public.message_attachment_mime_types) then
     raise exception 'message-files bucket file_size_limit has drifted from message_attachment_mime_types';
+  end if;
+
+  -- 암호화된 첨부는 storage 입장에서 전부 octet-stream이다. message-files에 그걸 허용하면
+  -- 위의 화이트리스트 계약이 -- image/svg+xml 차단을 포함해 -- 통째로 무의미해진다. 그래서
+  -- 버킷을 갈랐고, 두 버킷의 allowlist가 서로 섞이지 않는 것이 그 분리의 전부다.
+  if (
+    select b.allowed_mime_types
+    from storage.buckets b
+    where b.id = 'message-files-encrypted'
+  ) is distinct from array['application/octet-stream']::text[] then
+    raise exception 'the encrypted attachment bucket must accept opaque bytes and nothing else';
+  end if;
+  if exists (
+    select 1 from storage.buckets
+    where id = 'message-files' and 'application/octet-stream' = any (allowed_mime_types)
+  ) then
+    raise exception 'message-files must not accept opaque bytes: that is what the encrypted bucket is for';
+  end if;
+  -- 암호문은 평문보다 nonce(12) + GCM 태그(16)만큼 크다. 상한이 그걸 감당하지 못하면
+  -- 최대 크기 파일이 storage에서 거부된다.
+  if (
+    select b.file_size_limit
+    from storage.buckets b
+    where b.id = 'message-files-encrypted'
+  ) < (select max(max_bytes) + 28 from public.message_attachment_mime_types) then
+    raise exception 'the encrypted bucket must have room for the AEAD overhead';
   end if;
 
   -- Messages accept media, and SVG stays rejected. `kind` is universal and lives

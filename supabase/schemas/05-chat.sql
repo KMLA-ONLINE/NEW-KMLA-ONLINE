@@ -23,18 +23,45 @@ create table public.conversation_members (
   primary key (conversation_id, user_id)
 );
 
+-- 본문이 두 컬럼인 이유: 1:1 대화만 종단간 암호화되어 있고 그룹 대화는 평문 + RLS다
+-- (docs/e2ee.md). 어느 쪽인지는 대화 타입이 정하며, CHECK로는 다른 테이블을 볼 수 없어
+-- private.enforce_message_encryption_shape() 트리거가 강제한다.
+--
+-- content_ciphertext는 nonce(12) || AES-256-GCM이다. 서버는 이걸 열 수 없고, 그래서
+-- 이 컬럼 위에서는 검색도, 미리보기 생성도, 길이 말고는 어떤 검증도 할 수 없다.
 create table public.messages (
   id bigserial primary key,
   conversation_id bigint not null references public.conversations (id) on delete restrict,
   sender_id bigint not null references public.profiles (id) on delete restrict,
   parent_id bigint null references public.messages (id) on delete restrict,
   content text null,
+  content_ciphertext bytea null,
   edited_at timestamptz null,
   deleted_at timestamptz null,
   deleted_by bigint null references public.profiles (id) on delete set null,
   pinned_at timestamptz null,
   pinned_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now()
+);
+
+-- 메시지 키 봉투. 발신자가 수신자 한 명당 한 행씩 만든다.
+--
+-- 발신자 사본이 없는 이유: X25519 DH는 대칭이라(DH(a_비밀, b_공개) == DH(b_비밀, a_공개))
+-- 수신자 앞으로 봉인된 이 행을 발신자도 그대로 연다. 1:1 대화면 메시지당 정확히 한 행이다.
+--
+-- 봉인 당시의 두 공개키를 같이 적어두는 것이 키 회전을 공짜로 만든다. 누가 복구 코드 없이
+-- 비밀번호를 재설정하면 신원키가 갈리고, 옛 키 앞으로 봉인된 행은 열리지 않는다 -- 그리고
+-- 열리지 않는다고 스스로 말한다. 그 사람의 공개키가 행에 적힌 것과 다르기 때문이다.
+-- 새 메시지는 새 키로 봉인되어 그냥 동작한다. epoch도, 재키잉 핸드셰이크도, 두 클라이언트
+-- 사이의 어떤 조율도 없다.
+create table public.message_keys (
+  message_id bigint not null references public.messages (id) on delete restrict,
+  user_id bigint not null references public.profiles (id) on delete restrict,
+  wrapped_key bytea not null,
+  sender_public_key bytea not null,
+  recipient_public_key bytea not null,
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id)
 );
 
 -- Which MIME types a message accepts, and how large each may be. The kind of each
@@ -50,12 +77,20 @@ create table public.message_attachment_mime_types (
   created_at timestamptz not null default now()
 );
 
+-- file_name이 두 컬럼인 이유: 파일명은 사실상 내용이다. "성적표.pdf"를 평문으로 남겨두면
+-- 파일 본문만 암호화한 것이 반쪽이 된다. 암호화된 대화의 첨부는 이름도 메시지 키로 봉인해서
+-- 온다.
+--
+-- 나머지 메타데이터(content_type, size_bytes, width/height/duration)는 서버가 본다.
+-- content_type은 화이트리스트 FK와 클라이언트의 렌더러 선택에 필요해서 어쩔 수 없고,
+-- 크기·해상도는 유출되는 값이 작다. docs/e2ee.md에 "서버가 여전히 아는 것"으로 적어둔다.
 create table public.message_attachments (
   id bigserial primary key,
   message_id bigint not null references public.messages (id) on delete restrict,
   storage_bucket text not null,
   storage_path text not null,
-  file_name text not null,
+  file_name text null,
+  file_name_ciphertext bytea null,
   content_type text not null references public.message_attachment_mime_types (content_type) on update cascade on delete restrict,
   size_bytes int8 null,
   sort_order int4 not null default 0,
@@ -131,8 +166,23 @@ alter table public.direct_conversations
 alter table public.messages
   add constraint messages_parent_check check (parent_id is null or parent_id <> id),
   add constraint messages_content_check check (content is null or char_length(btrim(content)) between 1 and 10000),
+  -- 평문 상한 10000자를 UTF-8 최악(4바이트) + nonce + 태그로 잡은 천장. 서버는 암호문을
+  -- 열 수 없으니 길이 말고는 아무것도 검사할 수 없다 -- 그래서 이 CHECK 하나가 서버가
+  -- 이 컬럼에 대해 할 수 있는 검증의 전부다.
+  add constraint messages_content_ciphertext_check check (
+    content_ciphertext is null or octet_length(content_ciphertext) between 29 and 40060
+  ),
+  -- 평문과 암호문이 동시에 있는 메시지는 없다. 어느 쪽이어야 하는지는 대화 타입이 정하고
+  -- private.enforce_message_encryption_shape()가 강제한다. 여기서는 둘 다인 경우만 막는다.
+  add constraint messages_body_exclusive_check check (content is null or content_ciphertext is null),
   add constraint messages_deleted_state_check check (deleted_at is not null or deleted_by is null),
+  add constraint messages_deleted_body_check check (deleted_at is null or (content is null and content_ciphertext is null)),
   add constraint messages_pinned_state_check check (pinned_at is not null or pinned_by is null);
+
+alter table public.message_keys
+  add constraint message_keys_wrapped_key_check check (octet_length(wrapped_key) between 48 and 128),
+  add constraint message_keys_sender_public_key_check check (octet_length(sender_public_key) = 32),
+  add constraint message_keys_recipient_public_key_check check (octet_length(recipient_public_key) = 32);
 
 alter table public.message_attachment_mime_types
   add constraint message_attachment_mime_types_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
@@ -141,12 +191,24 @@ alter table public.message_attachment_mime_types
 alter table public.message_attachments
   add constraint message_attachments_message_sort_key unique (message_id, sort_order),
   add constraint message_attachments_storage_key unique (storage_bucket, storage_path),
-  add constraint message_attachments_bucket_check check (storage_bucket = 'message-files'),
+  add constraint message_attachments_bucket_check check (storage_bucket in ('message-files', 'message-files-encrypted')),
   add constraint message_attachments_storage_path_check check (
     char_length(storage_path) between 1 and 1024
     and storage_path !~ '(^|/)\.\.?(/|$)'
   ),
-  add constraint message_attachments_file_name_check check (char_length(btrim(file_name)) between 1 and 255),
+  add constraint message_attachments_file_name_check check (file_name is null or char_length(btrim(file_name)) between 1 and 255),
+  -- 이름은 평문이거나 암호문이거나 둘 중 하나이고, 어느 쪽인지는 버킷이 정한다. 버킷이
+  -- 대화 타입과 맞는지는 trg_enforce_message_attachment_shape가 본다 -- 그래서 이 두 개가
+  -- 맞물리면 "암호화된 대화의 첨부는 이름도 암호화되어 있다"가 스키마로 강제된다.
+  add constraint message_attachments_name_shape_check check (
+    case when storage_bucket = 'message-files-encrypted'
+      then file_name is null and file_name_ciphertext is not null
+      else file_name is not null and file_name_ciphertext is null
+    end
+  ),
+  add constraint message_attachments_file_name_ciphertext_check check (
+    file_name_ciphertext is null or octet_length(file_name_ciphertext) between 29 and 1052
+  ),
   add constraint message_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint message_attachments_size_check check (size_bytes is null or size_bytes >= 0),
   add constraint message_attachments_sort_order_check check (sort_order >= 0),
@@ -197,8 +259,14 @@ $$;
 -- many attachments one message may carry needs a home of its own.
 create function private.max_message_attachments()
 returns int4 language sql immutable set search_path = '' as $$ select 10 $$;
-revoke execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.max_message_attachments() from public, anon, service_role;
-grant execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint) to authenticated;
+-- 종단간 암호화의 경계. 1:1이면 암호문, 그룹이면 평문 -- RLS 정책과 트리거가 둘 다 이걸
+-- 물어본다. 정책 표현식은 호출자 권한으로 실행되므로 authenticated에게 execute가 필요하다.
+create function private.is_direct_conversation(p_conversation_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(select 1 from public.conversations c where c.id=p_conversation_id and c.type='direct')
+$$;
+revoke execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.max_message_attachments(), private.is_direct_conversation(bigint) from public, anon, service_role;
+grant execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.is_direct_conversation(bigint) to authenticated;
 
 create function private.validate_message_parent()
 returns trigger
@@ -218,15 +286,55 @@ create trigger trg_validate_message_parent
 before insert or update of conversation_id, parent_id on public.messages
 for each row execute function private.validate_message_parent();
 
-create function private.mark_message_edited()
+-- 대화 타입이 본문의 형태를 정한다. CHECK로는 다른 테이블을 볼 수 없어서 트리거로 온다.
+-- 정책이 아니라 테이블에 거는 이유는 enforce_message_attachment_shape와 같다:
+-- service_role의 쓰기는 RPC를 지나지 않는다.
+--
+-- 1:1에서 암호문이 null인 것은 허용한다 -- 첨부만 있는 메시지에는 본문이 없다. "본문이든
+-- 첨부든 하나는 있어야 한다"는 send RPC가 본다.
+create function private.enforce_message_encryption_shape()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
+  if private.is_direct_conversation(new.conversation_id) then
+    if new.content is not null then
+      raise exception 'direct conversations are end-to-end encrypted: send content_ciphertext, not content';
+    end if;
+  elsif new.content_ciphertext is not null then
+    raise exception 'group conversations are not encrypted: send content, not content_ciphertext';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_enforce_message_encryption_shape
+before insert or update of conversation_id, content, content_ciphertext on public.messages
+for each row execute function private.enforce_message_encryption_shape();
+
+create function private.mark_message_edited()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare body_changed boolean;
+begin
   if new.content is not null then
     new.content := nullif(btrim(new.content), '');
+  end if;
+
+  body_changed := new.content is distinct from old.content
+    or new.content_ciphertext is distinct from old.content_ciphertext;
+
+  -- 삭제는 편집이 아니다. soft_delete_message()도 본문을 비우는 UPDATE라서, 이 구분이
+  -- 없으면 아래 편집 시간창이 그걸 붙잡아 15분 지난 자기 메시지를 지울 수 없게 만든다.
+  -- (deleted_at에는 authenticated 컬럼 grant가 없다 -- security definer RPC와
+  --  service_role만 세울 수 있고, 그 RPC가 발신자 본인인지 이미 확인한다.)
+  if new.deleted_at is not null and old.deleted_at is null then
+    return new;
   end if;
 
   -- messages_pin_update lets any conversation member update an active
@@ -234,13 +342,13 @@ begin
   -- visibility for this UPDATE command as a whole. Column grants alone
   -- can't re-narrow that back down, so content edits are only actually
   -- authorized here: sender, within the edit window.
-  if new.content is distinct from old.content
+  if body_changed
     and (old.sender_id <> private.current_profile_id() or old.created_at < now() - interval '15 minutes')
   then
     raise exception 'not allowed to edit this message';
   end if;
 
-  if old.deleted_at is null and new.deleted_at is null and new.content is distinct from old.content then
+  if old.deleted_at is null and new.deleted_at is null and body_changed then
     new.edited_at := now();
   end if;
   return new;
@@ -248,7 +356,7 @@ end;
 $$;
 
 create trigger trg_mark_message_edited
-before update of content on public.messages
+before update of content, content_ciphertext on public.messages
 for each row execute function private.mark_message_edited();
 
 -- pinned_by is trigger-derived rather than client-writable, so pinning
@@ -418,6 +526,19 @@ begin
     raise exception 'a message carries at most % attachments, and only images may share one', private.max_message_attachments();
   end if;
 
+  -- 암호화된 대화의 첨부는 암호화 전용 버킷에만 산다. 버킷을 가른 이유는 09-storage에
+  -- 있다: 암호문은 전부 octet-stream이라 message-files의 MIME 화이트리스트를 무력화한다.
+  -- 여기서 막지 않으면 그룹 첨부를 암호화 버킷에 올려 그 화이트리스트를 우회할 수 있다.
+  if exists (
+    select 1
+    from new_rows a
+    join public.messages m on m.id = a.message_id
+    join public.conversations c on c.id = m.conversation_id
+    where a.storage_bucket <> case when c.type = 'direct' then 'message-files-encrypted' else 'message-files' end
+  ) then
+    raise exception 'attachment bucket does not match the conversation encryption';
+  end if;
+
   return null;
 end;
 $$;
@@ -428,6 +549,7 @@ referencing new table as new_rows
 for each statement execute function private.enforce_message_attachment_shape();
 
 revoke execute on function private.validate_message_parent() from public, anon, authenticated, service_role;
+revoke execute on function private.enforce_message_encryption_shape() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_message_edited() from public, anon, authenticated, service_role;
 revoke execute on function private.stamp_message_pinned_by() from public, anon, authenticated, service_role;
 revoke execute on function private.mark_message_reaction_updated() from public, anon, authenticated, service_role;
@@ -441,6 +563,7 @@ alter table public.conversations enable row level security;
 alter table public.direct_conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.messages enable row level security;
+alter table public.message_keys enable row level security;
 alter table public.message_attachment_mime_types enable row level security;
 alter table public.message_attachments enable row level security;
 alter table public.message_reactions enable row level security;
@@ -452,8 +575,15 @@ create policy direct_conversations_select on public.direct_conversations for sel
 create policy conversation_members_select on public.conversation_members for select to authenticated using (private.is_conversation_member(conversation_id));
 create policy conversation_members_insert on public.conversation_members for insert to authenticated with check (private.is_conversation_member(conversation_id) and exists(select 1 from public.conversations c where c.id=conversation_id and c.type='group') and exists(select 1 from public.profiles p where p.id=user_id and p.status='accepted' and p.deleted_at is null));
 create policy messages_select on public.messages for select to authenticated using ((deleted_at is null or private.has_active_message_reply(id)) and private.is_conversation_member(conversation_id));
+-- 이 두 정책은 그룹 대화 전용이다. 1:1은 여기로 들어올 수 없다: 둘 다 `content is not null`을
+-- 요구하는데 암호화된 대화의 content는 언제나 null이고, content_ciphertext에는 authenticated
+-- 컬럼 grant가 아예 없다. 암호화된 쓰기는 send_encrypted_message / edit_encrypted_message가
+-- 유일한 문이며, trg_enforce_message_encryption_shape가 그 사실을 말이 되는 에러로 알려준다.
 create policy messages_insert on public.messages for insert to authenticated with check (sender_id=private.current_profile_id() and content is not null and private.is_valid_message_parent(parent_id,conversation_id) and private.is_conversation_member(conversation_id));
 create policy messages_update on public.messages for update to authenticated using (deleted_at is null and sender_id=private.current_profile_id() and created_at>=now()-interval '15 minutes' and private.is_conversation_member(conversation_id)) with check (deleted_at is null and sender_id=private.current_profile_id() and content is not null and created_at>=now()-interval '15 minutes' and private.is_conversation_member(conversation_id));
+-- 봉투는 대화 참여자 모두에게 보인다. 개인키 없이는 아무 쓸모가 없는 blob이고, 발신자는
+-- DH 대칭성 덕에 수신자 앞으로 봉인된 행을 그대로 열어 자기가 보낸 메시지를 다시 읽는다.
+create policy message_keys_select on public.message_keys for select to authenticated using (private.can_access_message(message_id));
 -- Pinning is open to any conversation member (not just the sender), unlike
 -- content edits above. private.mark_message_edited() independently guards
 -- content against this broader row-level visibility.
@@ -475,7 +605,7 @@ create policy chat_notification_settings_select on public.chat_notification_sett
 create policy chat_notification_settings_insert on public.chat_notification_settings for insert to authenticated with check (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
 create policy chat_notification_settings_update on public.chat_notification_settings for update to authenticated using (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id)) with check (user_id=private.current_profile_id() and private.is_conversation_member(conversation_id));
 
-grant select on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to authenticated;
+grant select on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_keys, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to authenticated;
 grant insert (type,name,created_by) on public.conversations to authenticated;
 grant insert (conversation_id,user_id) on public.conversation_members to authenticated;
 grant insert (conversation_id,sender_id,parent_id,content) on public.messages to authenticated;
@@ -490,7 +620,7 @@ grant insert (conversation_id,user_id,muted_until,level) on public.chat_notifica
 grant update (muted_until,level) on public.chat_notification_settings to authenticated;
 grant usage, select on sequence public.conversations_id_seq, public.messages_id_seq to authenticated;
 
-grant select, insert, update, delete on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to service_role;
+grant select, insert, update, delete on public.conversations, public.direct_conversations, public.conversation_members, public.messages, public.message_keys, public.message_attachment_mime_types, public.message_attachments, public.message_reactions, public.chat_read_states, public.chat_notification_settings to service_role;
 grant usage, select on sequence public.conversations_id_seq, public.messages_id_seq, public.message_attachments_id_seq to service_role;
 
 create function public.create_direct_conversation(p_peer_id bigint)
@@ -526,6 +656,9 @@ returns table(
   avatar_url text,
   last_message_id bigint,
   last_message_content text,
+  -- 1:1 대화의 미리보기는 서버가 만들 수 없다. 암호문과 봉투를 내려보내고 클라이언트가 푼다.
+  last_message_content_ciphertext text,
+  last_message_key jsonb,
   last_message_has_attachment boolean,
   last_message_sender_id bigint,
   last_message_sender_name text,
@@ -557,6 +690,8 @@ begin
     case when c.type='direct' then peer.avatar_url else null end as avatar_url,
     last_message.id as last_message_id,
     last_message.content as last_message_content,
+    encode(last_message.content_ciphertext,'base64') as last_message_content_ciphertext,
+    last_message.envelope as last_message_key,
     coalesce(last_message.has_attachment,false) as last_message_has_attachment,
     last_message.sender_id as last_message_sender_id,
     last_sender.name as last_message_sender_name,
@@ -572,8 +707,15 @@ begin
   join public.conversations c on c.id=mc.conversation_id
   left join public.profiles peer on peer.id=mc.peer_id
   left join lateral (
-    select m.id,m.sender_id,m.content,m.created_at,
-      exists(select 1 from public.message_attachments a where a.message_id=m.id) as has_attachment
+    select m.id,m.sender_id,m.content,m.content_ciphertext,m.created_at,
+      exists(select 1 from public.message_attachments a where a.message_id=m.id) as has_attachment,
+      (
+        select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64'))
+        from public.message_keys mk
+        where mk.message_id=m.id and (mk.user_id=caller_id or m.sender_id=caller_id)
+        order by (mk.user_id=caller_id) desc, mk.user_id
+        limit 1
+      ) as envelope
     from public.messages m
     where m.conversation_id=c.id and m.deleted_at is null
     order by m.id desc
@@ -645,6 +787,13 @@ begin
 end;
 $$;
 
+-- 암호화된 대화에서는 content가 언제나 null이고 content_ciphertext + message_key가 대신 온다.
+-- message_key는 이 메시지의 봉투다: 호출자 앞으로 봉인된 행이 있으면 그것, 없고 호출자가
+-- 발신자면 아무 행이나(DH 대칭성 때문에 발신자는 자기가 만든 어떤 봉투든 연다).
+--
+-- 답장 미리보기(parent_message)도 봉투를 같이 들고 온다. 원본이 페이지 밖으로 스크롤돼
+-- 나가면 클라이언트 캐시에 없을 수 있는데, 그때 "메시지를 불러올 수 없음"으로 무너지면
+-- 안 되기 때문이다.
 create function public.get_chat_messages(p_conversation_id bigint,p_before_id bigint default null,p_limit int4 default 50)
 returns table(
   message_id bigint,
@@ -653,6 +802,8 @@ returns table(
   sender jsonb,
   parent_message jsonb,
   content text,
+  content_ciphertext text,
+  message_key jsonb,
   is_edited boolean,
   edited_at timestamptz,
   deleted_at timestamptz,
@@ -684,8 +835,10 @@ begin
     page.conversation_id,
     page.sender_id,
     jsonb_build_object('id',sender.id,'name',sender.name,'avatar_url',sender.avatar_url) as sender,
-    case when parent.id is null then null else jsonb_build_object('id',parent.id,'sender_id',parent.sender_id,'sender_name',parent_sender.name,'content',parent.content,'created_at',parent.created_at) end as parent_message,
+    case when parent.id is null then null else jsonb_build_object('id',parent.id,'sender_id',parent.sender_id,'sender_name',parent_sender.name,'content',parent.content,'content_ciphertext',encode(parent.content_ciphertext,'base64'),'message_key',parent_key.envelope,'created_at',parent.created_at) end as parent_message,
     page.content,
+    encode(page.content_ciphertext,'base64') as content_ciphertext,
+    message_key.envelope as message_key,
     (page.edited_at is not null) as is_edited,
     page.edited_at,
     page.deleted_at,
@@ -701,7 +854,21 @@ begin
   left join public.profiles parent_sender on parent_sender.id=parent.sender_id
   left join public.profiles pinner on pinner.id=page.pinned_by
   left join lateral (
-    select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'duration_ms',a.duration_ms,'created_at',a.created_at) order by a.sort_order,a.id) as items
+    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as envelope
+    from public.message_keys mk
+    where mk.message_id=page.id and (mk.user_id=caller_id or page.sender_id=caller_id)
+    order by (mk.user_id=caller_id) desc, mk.user_id
+    limit 1
+  ) message_key on true
+  left join lateral (
+    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as envelope
+    from public.message_keys mk
+    where mk.message_id=parent.id and (mk.user_id=caller_id or parent.sender_id=caller_id)
+    order by (mk.user_id=caller_id) desc, mk.user_id
+    limit 1
+  ) parent_key on true
+  left join lateral (
+    select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'file_name_ciphertext',encode(a.file_name_ciphertext,'base64'),'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'duration_ms',a.duration_ms,'created_at',a.created_at) order by a.sort_order,a.id) as items
     from public.message_attachments a
     join public.mime_types mime on mime.content_type=a.content_type
     where a.message_id=page.id
@@ -741,13 +908,19 @@ begin
 
   delete from public.message_attachments where message_id=p_id;
   delete from public.message_reactions where message_id=p_id;
+  -- 본문이 사라진 메시지의 봉투는 아무것도 열지 않는다. 남겨두면 삭제된 메시지에 대해
+  -- "누가 누구에게 봉인했는가"만 영원히 남는 셈이라, 지우는 쪽이 맞다.
+  delete from public.message_keys where message_id=p_id;
 
   update public.messages
-  set content=null,deleted_at=now(),deleted_by=caller_id
+  set content=null,content_ciphertext=null,deleted_at=now(),deleted_by=caller_id
   where id=p_id;
 end;
 $$;
 
+-- 그룹 대화 전용이다. 1:1은 서버가 암호문을 열 수 없으니 서버에서 검색할 방법이 없다 --
+-- 조용히 0건을 주면 "검색이 안 되네" 대신 "그런 메시지 없네"로 읽히므로, 명시적으로 거절한다.
+-- 클라이언트가 내려받아 복호화한 뒤 로컬에서 찾는다.
 create function public.search_messages(p_query text,p_conversation_id bigint)
 returns table(message_id bigint,content_snippet text,sender_name text,created_at timestamptz)
 language plpgsql security invoker set search_path = '' as $$
@@ -755,6 +928,9 @@ declare normalized_query text := regexp_replace(lower(btrim(p_query)), '\s+', ''
 begin
   if p_conversation_id is null then raise exception 'conversation target required'; end if;
   if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or normalized_query='' then raise exception 'query must contain 1 to 200 characters'; end if;
+  if private.is_direct_conversation(p_conversation_id) then
+    raise exception 'direct conversations are end-to-end encrypted: search them on the client';
+  end if;
   return query select m.id,left(m.content,300),p.name,m.created_at
   from public.messages m join public.profiles p on p.id=m.sender_id
   where m.conversation_id=p_conversation_id
@@ -764,6 +940,168 @@ begin
   order by m.created_at desc,m.id desc limit 50;
 end;
 $$;
+
+-- 메시지 키를 봉인해 줄 대상. 발신자는 뺀다 -- DH 대칭성 덕에 발신자는 수신자 앞으로 봉인된
+-- 행을 그대로 열 수 있어서, 자기 사본을 저장할 이유가 없다.
+create function private.conversation_recipients(p_conversation_id bigint,p_sender_id bigint)
+returns table(user_id bigint) language sql stable security definer set search_path='' as $$
+  select case when dc.user1_id=p_sender_id then dc.user2_id else dc.user1_id end
+  from public.direct_conversations dc
+  where dc.conversation_id=p_conversation_id and p_sender_id in (dc.user1_id,dc.user2_id)
+  union
+  select cm.user_id
+  from public.conversation_members cm
+  where cm.conversation_id=p_conversation_id and cm.user_id<>p_sender_id
+$$;
+revoke execute on function private.conversation_recipients(bigint,bigint) from public, anon, authenticated, service_role;
+
+-- 암호화된 대화의 유일한 전송 경로.
+--
+--   p_content_ciphertext  base64. 첨부만 있는 메시지면 null.
+--   p_keys                [{user_id, wrapped_key, sender_public_key, recipient_public_key}], 전부 base64.
+--   p_attachments         send_message_with_attachments와 같은 모양이되 file_name 대신
+--                         file_name_ciphertext(base64)를 받는다.
+--
+-- 첨부 blob은 암호문이라 storage의 mimetype은 언제나 application/octet-stream이다. 즉
+-- content_type은 발신자가 "원래 뭐였는지" 신고한 값이고, 화이트리스트와 대조는 하지만 파일
+-- 자체와 대조할 방법이 없다. 복호화한 blob을 신고된 MIME으로만 렌더하고 그 URL로 절대
+-- 네비게이트하지 말아야 하는 이유다 -- docs/e2ee.md.
+create function public.send_encrypted_message(
+  p_conversation_id bigint,
+  p_content_ciphertext text default null,
+  p_keys jsonb default '[]'::jsonb,
+  p_parent_id bigint default null,
+  p_attachments jsonb default '[]'::jsonb
+)
+returns bigint language plpgsql security definer set search_path='' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  message_id bigint;
+  expected_prefix text := p_conversation_id::text||'/'||(select auth.uid())::text||'/';
+  sender_key bytea;
+  ciphertext bytea := case when p_content_ciphertext is null then null else decode(p_content_ciphertext,'base64') end;
+  attachment_count int4;
+begin
+  if not private.is_conversation_member(p_conversation_id) then raise exception 'conversation membership required'; end if;
+  if not private.is_direct_conversation(p_conversation_id) then raise exception 'conversation is not end-to-end encrypted'; end if;
+  if not private.is_valid_message_parent(p_parent_id,p_conversation_id) then raise exception 'active parent message in chat required'; end if;
+
+  if p_attachments is null or jsonb_typeof(p_attachments)<>'array' then raise exception 'attachments must be a json array'; end if;
+  if p_keys is null or jsonb_typeof(p_keys)<>'array' then raise exception 'keys must be a json array'; end if;
+  attachment_count := jsonb_array_length(p_attachments);
+  if ciphertext is null and attachment_count=0 then raise exception 'message needs a body or an attachment'; end if;
+  if attachment_count>private.max_message_attachments() then
+    raise exception 'a message carries at most % attachments', private.max_message_attachments();
+  end if;
+
+  select k.identity_public_key into sender_key from public.user_keys k where k.user_id=caller_id;
+  if sender_key is null then raise exception 'sender has no key vault'; end if;
+
+  -- 봉투가 정확히 "이 대화의, 나 아닌 참여자 전원"을 덮어야 한다. 덜 덮으면 상대가 못 여는
+  -- 메시지가 조용히 생기고, 더 덮으면 대화 밖 사람 앞으로 봉인한 셈이 된다.
+  if exists(
+    select r.user_id from private.conversation_recipients(p_conversation_id,caller_id) r
+    except
+    select (item.value->>'user_id')::bigint from jsonb_array_elements(p_keys) as item(value)
+  ) or exists(
+    select (item.value->>'user_id')::bigint from jsonb_array_elements(p_keys) as item(value)
+    except
+    select r.user_id from private.conversation_recipients(p_conversation_id,caller_id) r
+  ) then
+    raise exception 'message keys must cover exactly the other members of the conversation';
+  end if;
+
+  -- 봉인에 쓰인 공개키가 지금의 공개키와 다르면 그 사이에 누가 키를 갈아엎은 것이다. 그대로
+  -- 넣으면 아무도 못 여는 메시지가 영구히 남는다. 클라이언트는 키를 다시 읽고 재시도한다.
+  if exists(
+    select 1
+    from jsonb_array_elements(p_keys) as item(value)
+    left join public.user_keys k on k.user_id=(item.value->>'user_id')::bigint
+    where k.identity_public_key is null
+      or k.identity_public_key is distinct from decode(item.value->>'recipient_public_key','base64')
+      or sender_key is distinct from decode(item.value->>'sender_public_key','base64')
+  ) then
+    raise exception 'message keys are stale: re-read the recipient identity keys and retry';
+  end if;
+
+  insert into public.messages(conversation_id,sender_id,parent_id,content_ciphertext)
+  values(p_conversation_id,caller_id,p_parent_id,ciphertext)
+  returning id into message_id;
+
+  insert into public.message_keys(message_id,user_id,wrapped_key,sender_public_key,recipient_public_key)
+  select
+    message_id,
+    (item.value->>'user_id')::bigint,
+    decode(item.value->>'wrapped_key','base64'),
+    decode(item.value->>'sender_public_key','base64'),
+    decode(item.value->>'recipient_public_key','base64')
+  from jsonb_array_elements(p_keys) as item(value);
+
+  if attachment_count>0 then
+    -- size_bytes는 storage에 실제로 앉아 있는 바이트 수(= 평문 + nonce 12 + 태그 16)라서
+    -- 평문 기준 상한인 max_bytes에 그 오버헤드를 더해 비교한다.
+    if exists(
+      select 1
+      from jsonb_array_elements(p_attachments) as item(value)
+      left join public.message_attachment_mime_types allowed on allowed.content_type=item.value->>'content_type'
+      where allowed.content_type is null
+        or item.value->>'storage_path' is null
+        or not private.has_uuid_object_suffix(item.value->>'storage_path',expected_prefix)
+        or item.value->>'file_name_ciphertext' is null
+        or (item.value->>'size_bytes')::int8 is null
+        or (item.value->>'size_bytes')::int8<0
+        or (item.value->>'size_bytes')::int8>allowed.max_bytes+28
+        or not exists(
+          select 1 from storage.objects o
+          where o.bucket_id='message-files-encrypted'
+            and o.name=item.value->>'storage_path'
+            and o.created_at>=now()-interval '24 hours'
+            and o.metadata->>'mimetype'='application/octet-stream'
+            and (o.metadata->>'size')::int8=(item.value->>'size_bytes')::int8
+        )
+    ) then raise exception 'invalid message attachment'; end if;
+
+    if attachment_count>1 and exists(
+      select 1
+      from jsonb_array_elements(p_attachments) as item(value)
+      join public.mime_types mime on mime.content_type=item.value->>'content_type'
+      where mime.kind<>'image'
+    ) then raise exception 'only image attachments may share one message'; end if;
+
+    insert into public.message_attachments(message_id,storage_bucket,storage_path,file_name_ciphertext,content_type,size_bytes,sort_order,width,height,duration_ms)
+    select
+      message_id,'message-files-encrypted',
+      item.value->>'storage_path',
+      decode(item.value->>'file_name_ciphertext','base64'),
+      item.value->>'content_type',
+      (item.value->>'size_bytes')::int8,
+      (item.position-1)::int4,
+      (item.value->>'width')::int4,
+      (item.value->>'height')::int4,
+      (item.value->>'duration_ms')::int4
+    from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
+  end if;
+
+  return message_id;
+end $$;
+
+-- 편집은 같은 메시지 키를 다시 쓴다(새 nonce로). 첨부가 그 키로 봉인돼 있어서, 키를 갈면
+-- 이미 storage에 올라간 blob들이 열리지 않게 된다. 그래서 봉투(message_keys)는 건드리지
+-- 않으며, 이 함수는 애초에 봉투를 받지도 않는다.
+create function public.edit_encrypted_message(p_id bigint,p_content_ciphertext text)
+returns void language plpgsql security definer set search_path='' as $$
+declare caller_id bigint := private.require_current_profile(true); target public.messages;
+begin
+  select * into target from public.messages where id=p_id and deleted_at is null for update;
+  if target.id is null then raise exception 'message not found'; end if;
+  if not private.is_direct_conversation(target.conversation_id) then raise exception 'conversation is not end-to-end encrypted'; end if;
+  if target.sender_id<>caller_id then raise exception 'message sender required'; end if;
+  if target.created_at<now()-interval '15 minutes' then raise exception 'not allowed to edit this message'; end if;
+  if p_content_ciphertext is null then raise exception 'message body required'; end if;
+
+  -- edited_at은 trg_mark_message_edited가 찍는다.
+  update public.messages set content_ciphertext=decode(p_content_ciphertext,'base64') where id=p_id;
+end $$;
 
 -- p_attachments is a json array, ordered as the sender arranged them; the array
 -- index becomes sort_order. Each element:
@@ -854,11 +1192,12 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
+revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
 grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
 grant execute on function public.search_messages(text,bigint) to authenticated;
 grant execute on function public.send_message_with_attachments(bigint,jsonb,bigint,text) to authenticated;
+grant execute on function public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text) to authenticated;
 grant execute on function public.remove_group_member(bigint,bigint) to authenticated;
 
 create function public.cleanup_conversation(p_conversation_id bigint)
@@ -869,6 +1208,7 @@ begin
     raise exception 'message attachments must be removed before purging conversation';
   end if;
   delete from public.message_reactions mr using public.messages m where mr.message_id=m.id and m.conversation_id=p_conversation_id;
+  delete from public.message_keys mk using public.messages m where mk.message_id=m.id and m.conversation_id=p_conversation_id;
   delete from public.chat_read_states where conversation_id=p_conversation_id;
   delete from public.chat_notification_settings where conversation_id=p_conversation_id;
 
