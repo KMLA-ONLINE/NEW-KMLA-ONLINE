@@ -19,14 +19,15 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "~/lib/supabase/database.types"
 import {
   WrongPasswordError,
-  createAccount,
+  createAccountFromKeys,
   resealAccount,
   rotateAccount,
   unlockWithEncKey,
-  unlockWithPassword,
+  unlockWithKeys,
   unlockWithRecoveryCode,
   type AccountKeys,
   type NewAccount,
+  type PasswordKeys,
   type StoredUserKeys,
 } from "./account"
 import { MessageCrypto } from "./message"
@@ -141,30 +142,44 @@ export async function installVault(db: Client, authUserId: string, account: NewA
 }
 
 /**
- * 가입. 열쇠고리를 만들고, 복구 코드를 딱 한 번 돌려준다 -- 서버에도 여기에도 그 코드를
- * 되살릴 방법은 없다.
+ * 열쇠고리를 만든다. 복구 코드를 딱 한 번 돌려주며, 서버에도 여기에도 그걸 되살릴 방법은 없다.
+ * **호출자는 이 값을 반드시 화면에 띄워야 한다** -- 버리면 그 사람은 비밀번호를 잊는 날 DM을
+ * 되살릴 길이 영영 없다.
  */
-export async function createVault(db: Client, authUserId: string, password: string, email: string) {
-  const account = await createAccount(password, email)
+export async function createVault(
+  db: Client,
+  authUserId: string,
+  keys: PasswordKeys,
+  email: string
+) {
+  const account = await createAccountFromKeys(keys, email)
   await installVault(db, authUserId, account)
   return { recoveryCode: account.recoveryCode }
 }
 
 /**
- * 로그인. `authHash`는 이미 Supabase Auth에 쓰였고, 여기서는 같은 비밀번호로 금고를 연다.
+ * 로그인. 호출자가 이미 유도해 둔 키를 받는다 -- 여기서 비밀번호로 다시 유도하면 Argon2id가
+ * 한 로그인에 두 번 돌아 화면이 두 배로 멈춘다.
  *
- * 열쇠고리가 없으면 만든다. 열쇠고리 없이 존재하는 계정은 두 경우다: 가입 도중 죽었거나,
- * E2EE 이전에 만들어졌거나. 어느 쪽이든 잃을 히스토리가 없다 -- 그리고 열쇠고리가 *있는데*
- * 안 열리는 경우에는 절대 새로 만들지 않는다(그건 그냥 비밀번호가 틀린 것이고, 덮어쓰면
- * 그 사람의 DM이 통째로 죽는다). create_user_keys가 서버에서도 같은 것을 막는다.
+ * 열쇠고리가 없으면 만들고, **그때는 복구 코드를 돌려준다(non-null).** 열쇠고리 없이 존재하는
+ * 계정은 가입 도중 create_user_keys가 실패한 경우다. 어느 쪽이든 잃을 히스토리가 없지만,
+ * 새로 발급된 복구 코드는 지금 이 화면이 보여주지 않으면 영영 사라진다.
+ *
+ * 열쇠고리가 *있는데* 안 열리는 경우에는 절대 새로 만들지 않는다 -- 그건 그냥 비밀번호가 틀린
+ * 것이고, 덮어쓰면 그 사람의 DM이 통째로 죽는다. create_user_keys가 서버에서도 같은 것을 막는다.
  */
-export async function openVault(db: Client, authUserId: string, password: string, email: string) {
+export async function openVault(
+  db: Client,
+  authUserId: string,
+  keys: PasswordKeys,
+  email: string
+): Promise<{ recoveryCode: string | null }> {
   const stored = await fetchStoredKeys(db)
-  if (!stored) return createVault(db, authUserId, password, email)
+  if (!stored) return createVault(db, authUserId, keys, email)
 
-  const { encKey, keys } = await unlockWithPassword(password, email, stored)
-  await rememberEncKey(authUserId, encKey)
-  hold(authUserId, keys)
+  const account = await unlockWithKeys(keys, stored)
+  await rememberEncKey(authUserId, keys.encKey)
+  hold(authUserId, account)
   return { recoveryCode: null }
 }
 

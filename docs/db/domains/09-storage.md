@@ -2,7 +2,9 @@
 
 Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage.sql)
 
-파일 업로드 모델과 blob 정리 파이프라인. private bucket 5개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`) + storage RLS + finalize RPC + cleanup queue 조합.
+파일 업로드 모델과 blob 정리 파이프라인. private bucket 6개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`, `message-files-encrypted`) + storage RLS + finalize RPC + cleanup queue 조합.
+
+메시지 첨부 bucket이 둘인 이유는 종단간 암호화다 — 아래 "주의" 참고.
 
 업로드는 2단계다: (1) Storage SDK로 provisional 경로에 직접 업로드 — bucket별 insert policy가 경로/소유권을 검증, (2) finalize류 RPC가 object 존재/MIME/크기/경로를 재검증하고 DB row를 만든다. bucket 정의 자체는 데이터라서 스키마가 아니라 baseline migration에 있다.
 

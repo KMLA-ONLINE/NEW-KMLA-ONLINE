@@ -112,7 +112,6 @@ begin
     delete from public.post_attachments where id=p_attachment_id and storage_path=path;
   else
     delete from public.message_attachments where id=p_attachment_id and storage_path=path;
-    delete from public.message_reactions where message_id=target_message_id;
 
     -- 마지막 첨부를 뗐는데 본문도 없으면(평문이든 암호문이든) 남는 게 없으니 메시지째 삭제된다.
     update public.messages m
@@ -123,8 +122,11 @@ begin
       and m.content_ciphertext is null
       and not exists(select 1 from public.message_attachments a where a.message_id=m.id);
 
-    -- 삭제됐다면 봉투도 같이 태운다. soft_delete_message()와 같은 이유다.
+    -- 반응과 봉투는 **메시지가 실제로 죽었을 때만** 지운다. 조건 없이 지우면 사진 세 장 중
+    -- 하나만 뗀 사람이 그 메시지에 달린 반응을 전부 날려 버린다 -- 메시지도 본문도 나머지
+    -- 첨부도 멀쩡히 살아 있는데.
     if found then
+      delete from public.message_reactions where message_id=target_message_id;
       delete from public.message_keys where message_id=target_message_id;
     end if;
   end if;

@@ -80,3 +80,19 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 ## Production 배포
 
 원격 DB는 2026-07-07 전환 이전 migration 이력을 갖고 있다. 최초 배포 시 `supabase db reset --linked`(pre-launch, 보존할 데이터 없음 전제) 또는 `supabase migration repair`로 baseline과 이력을 맞춘 뒤, 이후부터 일반 `supabase db push`를 사용한다.
+
+### 배포 순서: **DB 먼저, 프론트 나중에**
+
+`supabase db push`가 성공한 것을 확인한 **뒤에** 프론트를 배포한다. 순서가 뒤집히면 새 프론트가 아직 없는 RPC를 부르는데, 로그인은 이게 특히 나쁘다: Supabase Auth 세션은 정상 수립되어 **쿠키까지 심어진 뒤** `get_my_key_vault`가 "함수 없음"으로 죽는다. 사용자는 로그인된 것도 아니고 안 된 것도 아닌 상태에서 알 수 없는 오류만 본다.
+
+반대 순서(DB 먼저)는 안전하다 — 새 RPC를 아직 아무도 안 부를 뿐이다.
+
+### 배포 체크리스트 (코드로 관리되지 않는 것들)
+
+`supabase/config.toml`은 **로컬 전용**이다. 아래는 운영 Supabase 대시보드에서 손으로 맞춰야 하고, 안 맞으면 조용히 실패한다.
+
+| 항목                                               | 어디                     | 안 하면                                                                                                                                       |
+| -------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Redirect URL** — 운영 도메인의 `/reset-password` | Auth → URL Configuration | 재설정 메일 링크가 `site_url`로 되돌아가 **비밀번호 재설정이 통째로 죽는다**. 복구 코드 흐름 전체가 여기 걸려 있다                            |
+| **SMTP**                                           | Auth → SMTP Settings     | 재설정 메일이 아예 안 나간다                                                                                                                  |
+| **`password_requirements`를 건드리지 말 것**       | Auth → Policies          | `authHash`가 소문자 hex라 문자 클래스 제약을 걸면 **가입·비밀번호 변경이 전부 거부된다**. 근거는 `app/lib/crypto/account.ts`의 `PasswordKeys` |

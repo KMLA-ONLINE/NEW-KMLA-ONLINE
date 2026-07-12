@@ -118,6 +118,22 @@ export function RoomPane({
     const isSameRoom = previousRoomIdRef.current === room.id
     previousRoomIdRef.current = room.id
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: isSameRoom ? "smooth" : "auto" })
+
+    // 이 창이 숨겨져 있으면(상세/미디어/멤버 패널이 열려 RoomPane이 display:none인 동안) 위
+    // scrollTo는 그냥 무시된다 -- 숨은 요소의 scrollHeight는 0이다. 그리고 패널을 닫아 다시
+    // 보일 때는 room.id도 lastMessageId도 그대로라 이 effect가 재실행되지 않으므로, 그 사이
+    // 늘어난 메시지만큼 바닥에서 벗어난 채로 남는다(드래그&드롭 전송은 패널이 열려 있어도
+    // 동작한다). 다시 보이는 순간을 관측해 그때 바닥을 맞춘다.
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => {
+      // 0 -> 실제 높이로 살아난 순간에만 손댄다. 사용자가 스스로 위로 올려 읽는 중에
+      // 창 크기가 바뀌었다고 바닥으로 끌어내리면 안 된다.
+      if (viewport.scrollHeight > 0 && viewport.scrollTop === 0) {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" })
+      }
+    })
+    observer.observe(viewport)
+    return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMessageListReady, room.id, lastMessageId])
 

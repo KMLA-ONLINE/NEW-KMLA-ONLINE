@@ -32,7 +32,8 @@
 - `npm run typecheck` runs `react-router typegen && tsc`; it regenerates `.react-router/types`.
 - `npm test` runs vitest (test files live next to routes, e.g. `app/routes/_app.profile.test.tsx`).
 - DB checks live in `supabase/tests/`: run `npm run test:db` against the local DB after `supabase db reset`. One file per domain, each with its own `begin ... rollback` (safe to re-run, and runnable alone: `node supabase/tests/run.mjs 05-chat`). `00-privileges.sql` is not a domain — it holds the schema-wide privilege invariants that catch what `db diff` cannot see. `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
-- The only CI workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync); tests are not run in CI.
+- **Nothing runs these for you.** The only CI workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync), and the pre-commit hook only does lint + typecheck. So `npm test` and `npm run test:db` are the safety net _only if a human runs them_ — do so before opening a PR that touches `supabase/` or `app/lib/crypto/`.
+  - This is not theoretical. `00-privileges.sql` found a live vulnerability the moment it was written: six `private` helpers had an empty ACL (= implicit `EXECUTE TO PUBLIC`), because the declarative schema's `revoke`/`grant` lines had **never been carried into a migration** — `db diff` does not emit function grants. One of them was `private.anonymize_profile(bigint)`, a `SECURITY DEFINER` function that scrubs whatever profile id you hand it, and `authenticated` has `USAGE` on the `private` schema. Any logged-in student could delete any other user's account. Nothing else would have caught it.
 
 ## Scope / Generated Files
 

@@ -36,6 +36,18 @@ export type MessageKeyRow = {
   recipient_public_key: string
 }
 
+/**
+ * AAD 라벨. 한 메시지의 본문·첨부·파일명은 전부 같은 messageKey로 봉인되므로, 라벨이 없으면
+ * 셋이 서로에게 완벽히 유효한 봉인이 된다 -- DB에 쓸 수 있는 자가 본문 자리에 파일명 암호문을
+ * 끼워 넣어도 GCM이 통과시킨다. 라벨이 각 암호문을 자기 자리에 묶는다(./primitives.ts).
+ *
+ * 첨부는 sort_order까지 라벨에 넣어, 같은 메시지의 첨부끼리도 자리를 바꿀 수 없게 한다.
+ */
+const BODY = "kmla-body-v1"
+const ENVELOPE = "kmla-envelope-v1"
+const attachmentLabel = (index: number) => `kmla-file-v1:${index}`
+const fileNameLabel = (index: number) => `kmla-filename-v1:${index}`
+
 export type Recipient = { userId: number; publicKey: Uint8Array }
 
 export type EncryptedMessage = {
@@ -95,13 +107,15 @@ export class MessageCrypto {
 
     return {
       messageKey,
-      contentCiphertext: bytesToBase64(await seal(messageKey, utf8ToBytes(plaintext))),
+      contentCiphertext: bytesToBase64(await seal(messageKey, utf8ToBytes(plaintext), BODY)),
       keys: await Promise.all(
         recipients.map(async (recipient) => ({
           user_id: recipient.userId,
           sender_public_key: senderPublicKey,
           recipient_public_key: bytesToBase64(recipient.publicKey),
-          wrapped_key: bytesToBase64(await seal(this.wrapKeyFor(recipient.publicKey), messageKey)),
+          wrapped_key: bytesToBase64(
+            await seal(this.wrapKeyFor(recipient.publicKey), messageKey, ENVELOPE)
+          ),
         }))
       ),
     }
@@ -123,14 +137,22 @@ export class MessageCrypto {
     else throw new UndecryptableMessageError()
 
     try {
-      return await open(this.wrapKeyFor(peer), base64ToBytes(row.wrapped_key))
+      return await open(this.wrapKeyFor(peer), base64ToBytes(row.wrapped_key), ENVELOPE)
     } catch {
       throw new UndecryptableMessageError()
     }
   }
 
+  /**
+   * 실패하면 언제나 UndecryptableMessageError다. 손상된 행이나 label이 어긋난 blob 하나가
+   * 원시 예외로 새어 나가면, 그걸 부르는 쪽(검색, 목록 렌더)이 그 하나 때문에 통째로 죽는다.
+   */
   async decryptContent(contentCiphertext: string, messageKey: Uint8Array): Promise<string> {
-    return bytesToUtf8(await open(messageKey, base64ToBytes(contentCiphertext)))
+    try {
+      return bytesToUtf8(await open(messageKey, base64ToBytes(contentCiphertext), BODY))
+    } catch {
+      throw new UndecryptableMessageError()
+    }
   }
 
   /** Convenience for the common case of a body with no attachments. */
@@ -139,18 +161,49 @@ export class MessageCrypto {
   }
 
   /**
-   * Attachments ride the message key. The uploaded object is opaque bytes, so
-   * storage cannot police its MIME type and neither can the send RPC -- the
-   * declared `content_type` on message_attachments is the sender's word, checked
-   * against the allowlist but not against the file. A decrypted blob must
-   * therefore only ever be handed to a renderer chosen from that declared type,
-   * and never navigated to: see docs/e2ee.md.
+   * 첨부는 메시지 키를 같이 탄다. 올라간 객체는 불투명한 바이트라 storage도 send RPC도 그
+   * MIME을 검증할 수 없다 -- message_attachments.content_type은 발신자가 신고한 값이고,
+   * 화이트리스트와 대조는 되지만 파일 자체와 대조되지는 않는다. 복호화한 blob을 브라우저에
+   * 넘길 때 반드시 그 신고된 타입을 써야 하는 이유이고, 그 문은 ./attachment.ts 하나다.
+   *
+   * `index`(= message_attachments.sort_order)가 AAD에 들어가므로 **같은 메시지의 첨부끼리도
+   * 자리를 바꿔치기할 수 없다.**
    */
-  async encryptAttachment(bytes: Uint8Array, messageKey: Uint8Array): Promise<Uint8Array> {
-    return seal(messageKey, bytes)
+  async encryptAttachment(
+    bytes: Uint8Array,
+    messageKey: Uint8Array,
+    index: number
+  ): Promise<Uint8Array> {
+    return seal(messageKey, bytes, attachmentLabel(index))
   }
 
-  async decryptAttachment(bytes: Uint8Array, messageKey: Uint8Array): Promise<Uint8Array> {
-    return open(messageKey, bytes)
+  async decryptAttachment(
+    bytes: Uint8Array,
+    messageKey: Uint8Array,
+    index: number
+  ): Promise<Uint8Array> {
+    return open(messageKey, bytes, attachmentLabel(index))
+  }
+
+  /**
+   * 파일명도 내용이다 -- "성적표.pdf"를 평문으로 남기면 본문만 암호화한 것이 반쪽이 된다.
+   * message_attachments.file_name_ciphertext로 간다(base64).
+   */
+  async encryptFileName(name: string, messageKey: Uint8Array, index: number): Promise<string> {
+    return bytesToBase64(await seal(messageKey, utf8ToBytes(name), fileNameLabel(index)))
+  }
+
+  async decryptFileName(
+    ciphertextBase64: string,
+    messageKey: Uint8Array,
+    index: number
+  ): Promise<string> {
+    try {
+      return bytesToUtf8(
+        await open(messageKey, base64ToBytes(ciphertextBase64), fileNameLabel(index))
+      )
+    } catch {
+      throw new UndecryptableMessageError()
+    }
   }
 }

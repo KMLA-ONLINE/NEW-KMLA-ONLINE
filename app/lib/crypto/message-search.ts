@@ -12,7 +12,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { Database } from "~/lib/supabase/database.types"
-import { MessageCrypto, UndecryptableMessageError, type MessageKeyRow } from "./message"
+import { MessageCrypto, type MessageKeyRow } from "./message"
 
 /** 서버의 `regexp_replace(lower(x), '\s+', '', 'g')`와 같은 정규화. */
 export function normalizeSearchText(text: string): string {
@@ -94,11 +94,15 @@ export async function searchDirectMessages(
       let content: string
       try {
         content = await crypto.decrypt(row.content_ciphertext, row.message_key)
-      } catch (caught) {
-        // 키를 갈아엎기 전의 옛 메시지는 이 계정으로 영영 안 열린다. 검색에서는 그냥
-        // 존재하지 않는 것으로 다룬다 -- 던지면 그 하나 때문에 검색 전체가 죽는다.
-        if (caught instanceof UndecryptableMessageError) continue
-        throw caught
+      } catch {
+        // 열리지 않는 메시지는 검색에서 그냥 존재하지 않는 것으로 다룬다. 던지면 그 **하나**
+        // 때문에 검색 전체가 죽는다.
+        //
+        // 여기서 예외 타입을 가리지 않는 이유: 열리지 않는 이유는 여러 가지다 -- 키를 갈아엎기
+        // 전의 옛 메시지(UndecryptableMessageError), base64가 깨진 행, 잘린 blob, AAD 라벨이
+        // 어긋난 blob. 타입으로 좁혀 잡으면 그중 하나만 새어 나와도 검색이 통째로 무너지는데,
+        // 그건 정확히 이 catch가 막으려던 실패다.
+        continue
       }
 
       if (normalizeSearchText(content).includes(needle)) {

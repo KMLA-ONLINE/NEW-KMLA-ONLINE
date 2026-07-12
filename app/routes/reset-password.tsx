@@ -4,7 +4,7 @@ import { AlertTriangle, Loader2 } from "lucide-react"
 
 import { RecoveryCodeNotice } from "~/components/auth/recovery-code-notice"
 import { WrongRecoveryCodeError } from "~/lib/crypto/account"
-import { isValidRecoveryCode } from "~/lib/crypto/recovery"
+import { formatRecoveryCode, isValidRecoveryCode } from "~/lib/crypto/recovery"
 import { resetVaultWithRecoveryCode, rotateVault } from "~/lib/crypto/vault"
 import { createClient } from "~/lib/supabase/client"
 import { Button } from "~/components/ui/button"
@@ -160,6 +160,12 @@ export default function ResetPassword() {
               autoComplete="off"
               spellCheck={false}
               required
+              // 붙여넣거나 소문자로 치거나 대시를 빼먹어도 화면에서 바로 제자리를 찾게 한다.
+              // 손으로 옮겨 적은 코드를 한 글자씩 대조하는 사람에게 이게 필요하다.
+              onBlur={(event) => {
+                const formatted = formatRecoveryCode(event.currentTarget.value)
+                if (formatted) event.currentTarget.value = formatted
+              }}
               className="h-10 font-mono tracking-wider"
             />
             <p className="text-muted-foreground text-xs leading-relaxed">

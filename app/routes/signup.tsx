@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
-import { toast } from "sonner"
 
 import { RecoveryCodeNotice } from "~/components/auth/recovery-code-notice"
 import { createAccount } from "~/lib/crypto/account"
@@ -39,8 +38,11 @@ export default function Signup() {
     const password = String(form.get("password") ?? "")
     const confirmPassword = String(form.get("confirmPassword") ?? "")
 
+    // 다른 검증 실패와 같은 문(role=alert 배너)으로 보낸다. 이것만 토스트로 띄우면 몇 초 뒤
+    // 사라져서, 스크린리더 사용자나 토스트를 놓친 사람에게는 왜 제출이 안 됐는지 알 단서가
+    // 아무것도 남지 않는다.
     if (password !== confirmPassword) {
-      toast.error("비밀번호가 일치하지 않습니다.")
+      setError("비밀번호가 일치하지 않습니다.")
       return
     }
     if (password.length < 6) {

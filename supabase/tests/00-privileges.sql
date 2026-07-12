@@ -143,6 +143,28 @@ begin
   ) then
     raise exception 'private tables must not be readable by clients';
   end if;
+
+  -- **private 함수는 PUBLIC에게 열려서는 안 된다.**
+  --
+  -- ACL이 비어 있는 함수(proacl is null)는 암묵적으로 EXECUTE TO PUBLIC이고, 기본 권한 회수는
+  -- 그걸 막지 못한다. 그런데 authenticated는 private 스키마에 USAGE를 갖고 있다 -- 즉 새 private
+  -- 헬퍼를 만들면서 revoke를 잊으면, 아무 로그인 사용자나 그 security definer 함수를 **직접**
+  -- 부를 수 있다. 인자를 자기 마음대로 넣어서. RLS를 지나쳐서.
+  --
+  -- 위의 "anon은 public 함수를 실행할 수 없다" 단언은 이걸 못 잡는다: 스키마가 다르고, anon은
+  -- 애초에 private에 USAGE가 없어 그 검사에 걸리지 않는다. 위험한 롤은 authenticated다.
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'
+      and (
+        p.proacl is null
+        or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+      )
+  ) then
+    raise exception 'a private function is executable by PUBLIC: revoke it explicitly';
+  end if;
 end
 $$;
 

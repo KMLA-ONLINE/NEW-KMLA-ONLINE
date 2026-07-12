@@ -40,13 +40,16 @@ Source: [`supabase/schemas/05-chat.sql`](../../../supabase/schemas/05-chat.sql)
 
 ## Private helper
 
-| 함수                                                          | 용도                                                                      |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `private.is_conversation_member(conversation_id)`             | accepted + 해당 대화 참여자인지 (direct 쌍 또는 그룹 멤버)                |
-| `private.can_access_message(message_id)`                      | 활성 메시지 + 대화 멤버 여부                                              |
-| `private.is_valid_message_parent(parent_id, conversation_id)` | 답글 부모 유효성 — 같은 대화의 활성 메시지면 된다. 깊이는 제한하지 않는다 |
-| `private.has_active_message_reply(message_id)`                | 활성 답글 존재 여부 (삭제 메시지 placeholder 노출 판단)                   |
-| `private.max_message_attachments()`                           | 한 메시지가 가질 수 있는 첨부 수 상한 (RPC·trigger 공용)                  |
+| 함수                                                          | 용도                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `private.is_conversation_member(conversation_id)`             | accepted + 해당 대화 참여자인지 (direct 쌍 또는 그룹 멤버)                                                                                                                                                                               |
+| `private.can_access_message(message_id)`                      | 활성 메시지 + 대화 멤버 여부                                                                                                                                                                                                             |
+| `private.is_valid_message_parent(parent_id, conversation_id)` | 답글 부모 유효성 — 같은 대화의 활성 메시지면 된다. 깊이는 제한하지 않는다                                                                                                                                                                |
+| `private.has_active_message_reply(message_id)`                | 활성 답글 존재 여부 (삭제 메시지 placeholder 노출 판단)                                                                                                                                                                                  |
+| `private.max_message_attachments()`                           | 한 메시지가 가질 수 있는 첨부 수 상한 (RPC·trigger 공용)                                                                                                                                                                                 |
+| `private.is_direct_conversation(conversation_id)`             | 이 대화가 1:1(= 암호화)인가. 암호화 경계 판정이라 RLS·트리거·RPC가 전부 참조한다. **security invoker인 `search_messages`도 부르므로 `authenticated`에게 execute grant가 필요하다** — 잃으면 그룹 채팅 검색까지 죽는다                    |
+| `private.conversation_recipients(conversation_id, sender_id)` | 메시지 키를 봉인해 줄 대상(발신자 제외). `send_encrypted_message`가 봉투 커버리지를 검증하는 기준이다                                                                                                                                    |
+| `private.message_envelope(message_id, sender_id, caller_id)`  | 이 메시지의 봉투를 호출자 관점에서 하나 고른다(호출자 앞 행 우선, 없고 호출자가 발신자면 아무 행). `list_conversations`·`get_chat_messages`(본문/답장 원본)·`get_encrypted_message_bodies`가 공유 — 복붙하면 규칙 변경 시 한 곳을 놓친다 |
 
 ## Trigger
 

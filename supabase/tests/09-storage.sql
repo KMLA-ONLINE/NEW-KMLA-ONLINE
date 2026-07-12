@@ -8,6 +8,11 @@ begin;
 do $$
 declare
   queue1 bigint;
+  user1 uuid := '11111111-1111-4111-8111-111111111111';
+  profile1 bigint;
+  group1 bigint;
+  message1 bigint;
+  attachment1 bigint;
 begin
   insert into private.attachment_cleanup_queue (storage_bucket, storage_path)
   values ('avatars', '11111111-1111-4111-8111-111111111111/55555555-5555-4555-8555-555555555555')
@@ -38,6 +43,47 @@ begin
     or not has_table_privilege('service_role', 'private.attachment_cleanup_queue', 'SELECT')
   then
     raise exception 'service role grant contract failed';
+  end if;
+
+  -- -------------------------------------------------------------------------
+  -- 첨부 하나를 떼는 것이 메시지를 죽이는 것은 아니다
+  -- -------------------------------------------------------------------------
+
+  insert into auth.users (id, email) values (user1, 'storage-check-1@example.com');
+  select id into profile1 from public.profiles where auth_user_id = user1;
+  update public.profiles set type = 'teacher', status = 'accepted' where id = profile1;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+
+  insert into public.conversations (type, name, created_by)
+  values ('group', '첨부 체크', profile1)
+  returning id into group1;
+
+  insert into public.messages (conversation_id, sender_id, content)
+  values (group1, profile1, '사진 두 장')
+  returning id into message1;
+
+  insert into public.message_attachments (message_id, storage_bucket, storage_path, file_name, content_type, size_bytes, sort_order)
+  values
+    (message1, 'message-files', group1 || '/' || user1 || '/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '1.jpg', 'image/jpeg', 100, 0),
+    (message1, 'message-files', group1 || '/' || user1 || '/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '2.jpg', 'image/jpeg', 100, 1);
+
+  select id into attachment1 from public.message_attachments where message_id = message1 and sort_order = 0;
+
+  insert into public.message_reactions (message_id, user_id, reaction_type_id)
+  values (message1, profile1, (select id from public.reaction_types order by id limit 1));
+
+  -- 사진 두 장 중 하나만 뗀다. 본문도 나머지 첨부도 멀쩡히 살아 있으므로 메시지는 죽지 않고,
+  -- **그 메시지에 달린 반응도 죽으면 안 된다.** (조건 없이 지우던 것이 이 파일이 잡는 회귀다.)
+  perform public.request_attachment_removal('message', attachment1);
+
+  if not exists (select 1 from public.messages where id = message1 and deleted_at is null and content is not null) then
+    raise exception 'removing one of several attachments must not delete the message';
+  end if;
+  if not exists (select 1 from public.message_reactions where message_id = message1) then
+    raise exception 'removing one attachment must not wipe the message reactions';
+  end if;
+  if (select count(*) from public.message_attachments where message_id = message1) <> 1 then
+    raise exception 'exactly one attachment should have been removed';
   end if;
 
   -- -------------------------------------------------------------------------

@@ -53,35 +53,52 @@ export type StoredUserKeys = {
   recovery_wrapped_user_key: string
 }
 
+/**
+ * 원인을 `cause`로 물고 간다. 이걸 안 하면 DB 손상이나 base64 버그가 전부 "비밀번호가
+ * 틀렸습니다"로 위장되어, 운영 중에 진짜 원인을 추적할 방법이 사라진다.
+ */
 export class WrongPasswordError extends Error {
-  constructor() {
-    super("비밀번호가 올바르지 않습니다.")
+  constructor(options?: { cause?: unknown }) {
+    super("비밀번호가 올바르지 않습니다.", options)
     this.name = "WrongPasswordError"
   }
 }
 
 export class WrongRecoveryCodeError extends Error {
-  constructor() {
-    super("복구 코드가 올바르지 않습니다.")
+  constructor(options?: { cause?: unknown }) {
+    super("복구 코드가 올바르지 않습니다.", options)
     this.name = "WrongRecoveryCodeError"
   }
 }
 
-function splitMasterKey(password: string, email: string) {
+/**
+ * 비밀번호에서 나오는 두 키. **Argon2id가 도는 유일한 곳이다.**
+ *
+ * 따로 export하는 이유: 로그인은 authHash(Supabase Auth로)와 encKey(금고 열기)를 둘 다
+ * 필요로 한다. 두 번 유도하면 Argon2id가 두 번 돌아 로그인이 1초가 아니라 2초 멈춘다
+ * (폰에서는 4초). 한 번 돌려서 둘 다 들고 다닌다.
+ */
+export type PasswordKeys = {
+  /**
+   * Hex 64자. 두 가지 제약을 동시에 만족해야 한다:
+   *   - bcrypt의 72바이트 절단 한계 **아래**(64 < 72).
+   *   - Supabase Auth의 비밀번호 정책을 **통과**. 지금 config.toml의 `password_requirements`가
+   *     비어 있어서 통과하는데, 여기에 문자 클래스 제약(`lower_upper_letters_digits_symbols`
+   *     같은 것)을 추가하면 소문자 hex는 대문자도 기호도 없으므로 **가입과 비밀번호 변경이
+   *     전부 조용히 거부되기 시작한다.** 크립토와 무관해 보이는 config 한 줄이 원인이라 추적이
+   *     지옥이다. 그 값을 건드리지 말 것.
+   */
+  authHash: string
+  /** 서버로 절대 가지 않는다. */
+  encKey: Uint8Array
+}
+
+export function derivePasswordKeys(password: string, email: string): PasswordKeys {
   const masterKey = deriveKeyFromPassword(password, accountSalt(email, "kmla-v1"))
   return {
-    /** Hex, 64 chars. Stays under bcrypt's 72-byte truncation limit. */
     authHash: bytesToHex(deriveSubkey(masterKey, "kmla-auth-v1")),
     encKey: deriveSubkey(masterKey, "kmla-enc-v1"),
   }
-}
-
-/**
- * What Supabase Auth is given in place of the password. Login and signup call
- * this; nothing else in the app ever holds the raw password.
- */
-export function deriveAuthHash(password: string, email: string): string {
-  return splitMasterKey(password, email).authHash
 }
 
 /** userKey is never an AEAD key itself, so later uses of it get their own subkey. */
@@ -89,6 +106,10 @@ function identityWrapKey(userKey: Uint8Array): Uint8Array {
   return deriveSubkey(userKey, "kmla-identity-v1")
 }
 
+/**
+ * 세 blob이 전부 **다른 키**로 봉인된다(encKey / identityWrapKey / recoveryKey). 그래서 서로
+ * 자리를 바꿔치기해도 그냥 안 열린다 -- 메시지 쪽과 달리 여기엔 AAD 라벨이 필요 없다.
+ */
 async function sealAccount(
   keys: AccountKeys,
   encKey: Uint8Array,
@@ -117,9 +138,11 @@ export type NewAccount = {
   recoveryCode: string
 }
 
-/** Signup. */
-export async function createAccount(password: string, email: string): Promise<NewAccount> {
-  const { authHash, encKey } = splitMasterKey(password, email)
+/** 이미 유도해 둔 키로 계정을 만든다. Argon2id를 다시 돌리지 않는다. */
+export async function createAccountFromKeys(
+  { authHash, encKey }: PasswordKeys,
+  email: string
+): Promise<NewAccount> {
   const recoveryCode = generateRecoveryCode()
   const keys: AccountKeys = {
     userKey: randomBytes(KEY_BYTES),
@@ -134,6 +157,11 @@ export async function createAccount(password: string, email: string): Promise<Ne
   }
 }
 
+/** Signup. */
+export async function createAccount(password: string, email: string): Promise<NewAccount> {
+  return createAccountFromKeys(derivePasswordKeys(password, email), email)
+}
+
 async function unwrapIdentity(userKey: Uint8Array, stored: StoredUserKeys): Promise<AccountKeys> {
   const secretKey = await open(
     identityWrapKey(userKey),
@@ -142,25 +170,33 @@ async function unwrapIdentity(userKey: Uint8Array, stored: StoredUserKeys): Prom
   return { userKey, identity: { secretKey, publicKey: identityPublicKey(secretKey) } }
 }
 
-/**
- * Login. `authHash` is returned alongside because the caller needs it for
- * Supabase Auth and re-deriving it would mean paying for Argon2id twice.
- */
+/** 이미 유도해 둔 키로 금고를 연다. Argon2id를 다시 돌리지 않는다. */
+export async function unlockWithKeys(
+  { encKey }: PasswordKeys,
+  stored: StoredUserKeys
+): Promise<AccountKeys> {
+  let userKey: Uint8Array
+  try {
+    userKey = await open(encKey, base64ToBytes(stored.wrapped_user_key))
+  } catch (cause) {
+    // AES-GCM이 인증하므로 비밀번호가 틀리면 그럴듯한 엉뚱한 키가 나오는 대신 여기서 실패한다.
+    // 다만 base64 손상이나 DB 손상도 같은 자리에서 터지므로, 원인을 물고 가지 않으면 그것들이
+    // 전부 "비밀번호가 틀렸습니다"로 위장된다.
+    throw new WrongPasswordError({ cause })
+  }
+  return unwrapIdentity(userKey, stored)
+}
+
 export async function unlockWithPassword(
   password: string,
   email: string,
   stored: StoredUserKeys
 ): Promise<{ authHash: string; encKey: Uint8Array; keys: AccountKeys }> {
-  const { authHash, encKey } = splitMasterKey(password, email)
-  let userKey: Uint8Array
-  try {
-    userKey = await open(encKey, base64ToBytes(stored.wrapped_user_key))
-  } catch {
-    // AES-GCM authenticates, so a wrong password fails here rather than yielding
-    // a plausible-looking wrong key.
-    throw new WrongPasswordError()
+  const passwordKeys = derivePasswordKeys(password, email)
+  return {
+    ...passwordKeys,
+    keys: await unlockWithKeys(passwordKeys, stored),
   }
-  return { authHash, encKey, keys: await unwrapIdentity(userKey, stored) }
 }
 
 /**
@@ -175,10 +211,10 @@ export async function unlockWithEncKey(
   let userKey: Uint8Array
   try {
     userKey = await open(encKey, base64ToBytes(stored.wrapped_user_key))
-  } catch {
+  } catch (cause) {
     // The stored key no longer opens the vault: the password was changed
     // somewhere else. Ask for the password again rather than guessing.
-    throw new WrongPasswordError()
+    throw new WrongPasswordError({ cause })
   }
   return unwrapIdentity(userKey, stored)
 }
@@ -195,8 +231,8 @@ export async function unlockWithRecoveryCode(
       deriveRecoveryKey(recoveryCode, email),
       base64ToBytes(stored.recovery_wrapped_user_key)
     )
-  } catch {
-    throw new WrongRecoveryCodeError()
+  } catch (cause) {
+    throw new WrongRecoveryCodeError({ cause })
   }
   return unwrapIdentity(userKey, stored)
 }
@@ -217,7 +253,7 @@ export async function resealAccount(
   stored: StoredUserKeys
   recoveryCode: string
 }> {
-  const { authHash, encKey } = splitMasterKey(newPassword, email)
+  const { authHash, encKey } = derivePasswordKeys(newPassword, email)
   const recoveryCode = generateRecoveryCode()
   return {
     authHash,

@@ -33,12 +33,14 @@ X25519 신원 공개키 ──────────────────�
 
 ```
 messageKey = 랜덤 32B
-content_ciphertext          = seal(messageKey, 평문)
-첨부 blob                    = seal(messageKey, 파일 바이트)     -- 같은 키, 다른 nonce
-file_name_ciphertext        = seal(messageKey, 파일명)
+content_ciphertext          = seal(messageKey, 평문,        "body")
+첨부 blob                    = seal(messageKey, 파일 바이트,  "file:{sort_order}")
+file_name_ciphertext        = seal(messageKey, 파일명,       "filename:{sort_order}")
 wrapKey = HKDF(DH(발신자_비밀, 수신자_공개))
-message_keys.wrapped_key    = seal(wrapKey, messageKey)          -- 수신자당 한 행
+message_keys.wrapped_key    = seal(wrapKey, messageKey,     "envelope")   -- 수신자당 한 행
 ```
+
+마지막 인자는 AES-GCM의 **AAD 라벨**이다. 암호문에 실려 가지 않지만 인증 태그에 섞이므로, 다른 라벨로 봉인된 blob은 열리지 않는다. 이게 필요한 이유는 위 넷이 **같은 messageKey**를 쓰기 때문이다(nonce만 다르다) — 라벨이 없으면 셋은 서로에게 완벽히 유효한 봉인이라, DB에 쓸 수 있는 자가 본문 자리에 그 메시지의 파일명 암호문을 끼워 넣어도 GCM이 통과시키고 수신자는 **에러 없이** 엉뚱한 문자열을 본다. 라벨이 각 암호문을 자기 자리에 묶는다. 첨부는 `sort_order`까지 라벨에 들어가 같은 메시지의 첨부끼리도 자리를 못 바꾼다.
 
 두 가지가 여기서 나온다.
 
@@ -67,8 +69,15 @@ IndexedDB 저장은 best-effort다(iOS Safari 프라이빗 모드처럼 아예 �
 ## 이게 막지 **못하는** 것
 
 - **악성 JS.** 서버가 이 앱의 JavaScript를 배포하므로, 운영자가 비밀번호를 훔치는 코드를 밀어 넣으면 끝이다. 브라우저 E2EE의 원천적 한계이고, 네이티브 앱을 내지 않는 한 없앨 수 없다. 이 문서가 약속하는 것은 "**서버에 저장된 데이터**로는 읽을 수 없다"이지 "우리를 신뢰할 필요가 없다"가 아니다.
+- **서버에 대한 무결성.** 암호화가 주는 것은 **기밀성**이다. DB에 쓸 수 있는 자는 메시지를 지우고, 순서를 바꾸고, 통째로(암호문 + 봉투 함께) 다른 자리로 옮길 수 있다 — 그건 어차피 서버가 늘 할 수 있는 일이고 암호화로 막을 대상이 아니다. AAD 라벨이 막는 것은 그보다 좁고 고약한 것, 즉 **한 메시지 안에서 필드를 뒤섞어 수신자에게 그럴듯한 헛것을 보이는 것**이다.
 - **Forward secrecy.** 신원키가 장기 키라 그 키를 얻은 사람은 그 키로 감싼 모든 과거 메시지를 읽는다. 래칫은 상태를 가진 순서 있는 온라인 세션을 요구해서 채택하지 않았다.
 - **XSS.** `encKey`가 추출 불가능이라 복사해 나갈 수는 없지만 페이지 안에서 _쓸_ 수는 있다. 다만 XSS가 있으면 어차피 비밀번호를 키로깅할 수 있으므로 이 선택으로 잃는 것은 없다.
+
+## 밟으면 계정이 벽돌이 되는 것들
+
+- **이메일을 바꾸면 금고가 영영 안 열린다.** 이메일이 곧 KDF의 salt다(`accountSalt`). `auth.users.email`이 바뀌면 `encKey`도 복구키도 달라져서, **비밀번호를 알아도 복구 코드를 알아도** 옛 봉인을 풀 수 없다. 지금 앱에 이메일 변경 UI는 없지만 **운영자가 Supabase 대시보드에서 직접 바꿀 수 있다.** 이메일 변경 기능을 만들려면 반드시 같은 트랜잭션에서 옛 비밀번호로 금고를 열고 새 salt로 다시 봉인해야 한다.
+- **`ARGON2_PARAMS`나 HKDF info 문자열을 바꾸면 기존 계정 전원이 로그인 불가.** `crypto.test.ts`의 고정 벡터가 이걸 잡는다. 올려야 한다면 폴백 경로(새 파라미터 먼저, 실패하면 옛 것)를 **먼저** 만들고 벡터를 갱신하라.
+- **Supabase의 `password_requirements`에 문자 클래스 제약을 걸면 가입·비밀번호 변경이 전부 거부된다.** `authHash`가 소문자 hex라 대문자도 기호도 없다.
 
 ## 서버가 못 하게 된 일들, 그리고 각각을 어떻게 했는가
 

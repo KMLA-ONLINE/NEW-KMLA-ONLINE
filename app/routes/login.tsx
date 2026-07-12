@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 
+import { RecoveryCodeNotice } from "~/components/auth/recovery-code-notice"
 import { createClient } from "~/lib/supabase/client"
-import { deriveAuthHash } from "~/lib/crypto/account"
+import { derivePasswordKeys } from "~/lib/crypto/account"
 import { openVault } from "~/lib/crypto/vault"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -28,6 +29,7 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -47,10 +49,14 @@ export default function Login() {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     try {
+      // 딱 한 번만 유도한다. authHash는 Supabase Auth로, encKey는 금고로 간다 -- 둘을 따로
+      // 유도하면 Argon2id가 한 로그인에 두 번 돌아 화면이 두 배로 멈춘다.
+      const keys = derivePasswordKeys(password, email)
+
       const db = createClient()
       const { data, error: authError } = await db.auth.signInWithPassword({
         email,
-        password: deriveAuthHash(password, email),
+        password: keys.authHash,
       })
 
       if (authError || !data.user) {
@@ -58,13 +64,46 @@ export default function Login() {
         return
       }
 
-      await openVault(db, data.user.id, password, email)
+      const opened = await openVault(db, data.user.id, keys, email)
+
+      // 열쇠고리가 없어서 방금 만들어졌다(가입 도중 create_user_keys가 실패한 계정). 그때
+      // 발급된 복구 코드는 지금 보여주지 않으면 영영 사라진다 -- 서버에도 여기에도 그걸
+      // 되살릴 방법이 없다.
+      if (opened.recoveryCode) {
+        setRecoveryCode(opened.recoveryCode)
+        return
+      }
+
       navigate("/")
     } catch {
       setError("로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
     } finally {
       setLoading(false)
     }
+  }
+
+  if (recoveryCode) {
+    return (
+      <div className="flex min-h-svh w-full items-center justify-center p-4 md:p-10">
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col gap-8">
+            <div className="text-center">
+              <p className="text-foreground text-2xl font-bold tracking-tight">KMLA Online</p>
+              <p className="text-muted-foreground mt-1.5 text-sm">보안 설정을 마무리합니다</p>
+            </div>
+            <div className="bg-card text-card-foreground rounded-xl border shadow-xs">
+              <div className="p-6 md:p-8">
+                <RecoveryCodeNotice
+                  recoveryCode={recoveryCode}
+                  continueLabel="시작하기"
+                  onContinue={() => navigate("/")}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

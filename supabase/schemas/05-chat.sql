@@ -265,6 +265,28 @@ create function private.is_direct_conversation(p_conversation_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.conversations c where c.id=p_conversation_id and c.type='direct')
 $$;
+-- 이 메시지의 봉투를 호출자 관점에서 하나 고른다.
+--
+-- 규칙: 호출자 앞으로 봉인된 행이 있으면 그것. 없고 호출자가 발신자면 아무 행이나 -- DH가
+-- 대칭이라 발신자는 자기가 만든 어떤 봉투든 열 수 있고, 그래서 자기 사본을 저장하지 않는다.
+--
+-- 함수로 뽑은 이유: 이 규칙이 list_conversations / get_chat_messages(본문 + 답장 원본) /
+-- get_encrypted_message_bodies 네 곳에서 필요한데, 복붙해 두면 규칙을 바꿀 때 한 곳을 놓쳐도
+-- 아무도 모른다 -- 예컨대 대화 목록의 미리보기만 옛 규칙으로 남아 조용히 안 열린다.
+create function private.message_envelope(p_message_id bigint, p_sender_id bigint, p_caller_id bigint)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'wrapped_key', encode(mk.wrapped_key,'base64'),
+    'sender_public_key', encode(mk.sender_public_key,'base64'),
+    'recipient_public_key', encode(mk.recipient_public_key,'base64')
+  )
+  from public.message_keys mk
+  where mk.message_id=p_message_id
+    and (mk.user_id=p_caller_id or p_sender_id=p_caller_id)
+  order by (mk.user_id=p_caller_id) desc, mk.user_id
+  limit 1
+$$;
+revoke execute on function private.message_envelope(bigint,bigint,bigint) from public, anon, authenticated, service_role;
 revoke execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.max_message_attachments(), private.is_direct_conversation(bigint) from public, anon, service_role;
 grant execute on function private.is_conversation_member(bigint), private.can_access_message(bigint), private.is_valid_message_parent(bigint,bigint), private.has_active_message_reply(bigint), private.is_direct_conversation(bigint) to authenticated;
 
@@ -361,6 +383,11 @@ for each row execute function private.mark_message_edited();
 
 -- pinned_by is trigger-derived rather than client-writable, so pinning
 -- can't be spoofed as someone else and unpinning always clears it.
+--
+-- 값이 실제로 바뀔 때만 손댄다. `update of pinned_at` 트리거는 SET 목록에 컬럼이 있기만 하면
+-- 새 값과 옛 값이 같아도 발화하므로, 이 가드가 없으면 `set pinned_at = pinned_at` 한 줄로
+-- 아무 대화 멤버나 남이 고정한 메시지의 pinned_by를 조용히 자기 이름으로 바꿔칠 수 있다
+-- (messages_pin_update 정책이 멤버 전원에게 행을 열어 준다).
 create function private.stamp_message_pinned_by()
 returns trigger
 language plpgsql
@@ -368,7 +395,9 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.pinned_at is null then
+  if new.pinned_at is not distinct from old.pinned_at then
+    new.pinned_by := old.pinned_by;
+  elsif new.pinned_at is null then
     new.pinned_by := null;
   else
     new.pinned_by := private.current_profile_id();
@@ -709,13 +738,7 @@ begin
   left join lateral (
     select m.id,m.sender_id,m.content,m.content_ciphertext,m.created_at,
       exists(select 1 from public.message_attachments a where a.message_id=m.id) as has_attachment,
-      (
-        select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64'))
-        from public.message_keys mk
-        where mk.message_id=m.id and (mk.user_id=caller_id or m.sender_id=caller_id)
-        order by (mk.user_id=caller_id) desc, mk.user_id
-        limit 1
-      ) as envelope
+      private.message_envelope(m.id,m.sender_id,caller_id) as envelope
     from public.messages m
     where m.conversation_id=c.id and m.deleted_at is null
     order by m.id desc
@@ -835,10 +858,10 @@ begin
     page.conversation_id,
     page.sender_id,
     jsonb_build_object('id',sender.id,'name',sender.name,'avatar_url',sender.avatar_url) as sender,
-    case when parent.id is null then null else jsonb_build_object('id',parent.id,'sender_id',parent.sender_id,'sender_name',parent_sender.name,'content',parent.content,'content_ciphertext',encode(parent.content_ciphertext,'base64'),'message_key',parent_key.envelope,'created_at',parent.created_at) end as parent_message,
+    case when parent.id is null then null else jsonb_build_object('id',parent.id,'sender_id',parent.sender_id,'sender_name',parent_sender.name,'content',parent.content,'content_ciphertext',encode(parent.content_ciphertext,'base64'),'message_key',private.message_envelope(parent.id,parent.sender_id,caller_id),'created_at',parent.created_at) end as parent_message,
     page.content,
     encode(page.content_ciphertext,'base64') as content_ciphertext,
-    message_key.envelope as message_key,
+    private.message_envelope(page.id,page.sender_id,caller_id) as message_key,
     (page.edited_at is not null) as is_edited,
     page.edited_at,
     page.deleted_at,
@@ -853,20 +876,6 @@ begin
   left join public.messages parent on parent.id=page.parent_id
   left join public.profiles parent_sender on parent_sender.id=parent.sender_id
   left join public.profiles pinner on pinner.id=page.pinned_by
-  left join lateral (
-    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as envelope
-    from public.message_keys mk
-    where mk.message_id=page.id and (mk.user_id=caller_id or page.sender_id=caller_id)
-    order by (mk.user_id=caller_id) desc, mk.user_id
-    limit 1
-  ) message_key on true
-  left join lateral (
-    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as envelope
-    from public.message_keys mk
-    where mk.message_id=parent.id and (mk.user_id=caller_id or parent.sender_id=caller_id)
-    order by (mk.user_id=caller_id) desc, mk.user_id
-    limit 1
-  ) parent_key on true
   left join lateral (
     select jsonb_agg(jsonb_build_object('id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,'file_name_ciphertext',encode(a.file_name_ciphertext,'base64'),'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,'width',a.width,'height',a.height,'duration_ms',a.duration_ms,'created_at',a.created_at) order by a.sort_order,a.id) as items
     from public.message_attachments a
@@ -928,6 +937,11 @@ declare normalized_query text := regexp_replace(lower(btrim(p_query)), '\s+', ''
 begin
   if p_conversation_id is null then raise exception 'conversation target required'; end if;
   if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or normalized_query='' then raise exception 'query must contain 1 to 200 characters'; end if;
+  -- 멤버십을 **먼저** 본다. is_direct_conversation은 security definer라 RLS를 지나쳐 대화 타입을
+  -- 답해 주므로, 이 순서가 뒤집히면 비멤버가 "예외가 뜨는가 / 빈 결과가 오는가"로 임의의
+  -- conversation_id(bigserial이라 순차 추측된다)가 1:1인지를 스캔할 수 있다. 내용은 안 새지만
+  -- 어떤 id가 DM인지가 샌다.
+  if not private.is_conversation_member(p_conversation_id) then raise exception 'conversation membership required'; end if;
   if private.is_direct_conversation(p_conversation_id) then
     raise exception 'direct conversations are end-to-end encrypted: search them on the client';
   end if;
@@ -981,15 +995,8 @@ begin
     m.sender_id,
     m.created_at,
     encode(m.content_ciphertext,'base64'),
-    envelope.value
+    private.message_envelope(m.id,m.sender_id,caller_id)
   from public.messages m
-  left join lateral (
-    select jsonb_build_object('wrapped_key',encode(mk.wrapped_key,'base64'),'sender_public_key',encode(mk.sender_public_key,'base64'),'recipient_public_key',encode(mk.recipient_public_key,'base64')) as value
-    from public.message_keys mk
-    where mk.message_id=m.id and (mk.user_id=caller_id or m.sender_id=caller_id)
-    order by (mk.user_id=caller_id) desc, mk.user_id
-    limit 1
-  ) envelope on true
   where m.conversation_id=p_conversation_id
     and m.deleted_at is null
     and m.content_ciphertext is not null

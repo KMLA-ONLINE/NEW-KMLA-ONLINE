@@ -24,6 +24,7 @@ declare
   pubkey2 bytea := decode(repeat('b2', 32), 'hex');
   pubkey_new bytea := decode(repeat('c3', 32), 'hex');
   sealed bytea := decode(repeat('dd', 60), 'hex');
+  resealed bytea := decode(repeat('ee', 60), 'hex');
   envelope jsonb;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
@@ -80,6 +81,17 @@ begin
   ) then
     raise exception 'message pin contract failed';
   end if;
+
+  -- pinned_at을 자기 값으로 재대입하는 no-op UPDATE로 pinned_by를 가로챌 수 없다.
+  -- `update of pinned_at` 트리거는 값이 같아도 컬럼이 SET 목록에 있기만 하면 발화하므로,
+  -- 가드가 없으면 아무 멤버나 남이 고정한 메시지의 "고정한 사람"을 자기 이름으로 바꿔친다.
+  perform set_config('request.jwt.claim.sub', user3::text, true);
+  insert into public.conversation_members (conversation_id, user_id) values (group1, profile3) on conflict do nothing;
+  update public.messages set pinned_at = pinned_at where id = message1;
+  if not exists (select 1 from public.messages where id = message1 and pinned_by = profile2) then
+    raise exception 'a no-op pin update must not reassign pinned_by';
+  end if;
+  perform set_config('request.jwt.claim.sub', user2::text, true);
 
   update public.messages set pinned_at = null where id = message1;
   if exists (
@@ -202,6 +214,42 @@ begin
     raise exception 'the conversation list preview must ship ciphertext, not a summary';
   end if;
 
+  -- 편집. 같은 메시지 키를 다시 쓰므로 봉투를 받지 않으며(첨부가 그 키로 봉인돼 있다),
+  -- edited_at은 트리거가 찍는다.
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+  perform public.edit_encrypted_message(secret1, encode(resealed,'base64'));
+  if not exists (
+    select 1 from public.messages
+    where id = secret1 and content_ciphertext = resealed and edited_at is not null
+  ) then
+    raise exception 'encrypted edit must replace the ciphertext and stamp edited_at';
+  end if;
+  if (select count(*) from public.message_keys where message_id = secret1) <> 1
+    or not exists (select 1 from public.message_keys where message_id = secret1 and wrapped_key = sealed)
+  then
+    raise exception 'encrypted edit must not touch the envelope';
+  end if;
+
+  -- 발신자가 아니면 편집할 수 없다.
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  begin
+    perform public.edit_encrypted_message(secret1, encode(sealed,'base64'));
+    raise exception 'a non-sender edit should have been rejected';
+  exception when others then
+    if sqlerrm <> 'message sender required' then raise; end if;
+  end;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+
+  -- 15분이 지나면 발신자도 편집할 수 없다.
+  update public.messages set created_at = now() - interval '16 minutes' where id = secret1;
+  begin
+    perform public.edit_encrypted_message(secret1, encode(sealed,'base64'));
+    raise exception 'an edit outside the window should have been rejected';
+  exception when others then
+    if sqlerrm <> 'not allowed to edit this message' then raise; end if;
+  end;
+  update public.messages set created_at = now() where id = secret1;
+
   -- 상대가 키를 갈아엎은 뒤 옛 공개키로 봉인해 보내면 아무도 못 여는 메시지가 영구히 남는다.
   -- 서버가 알아채고 거절해야 클라이언트가 키를 다시 읽고 재시도한다.
   perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
@@ -223,22 +271,33 @@ begin
   end;
 
   -- 대신 클라이언트가 통째로 받아 스스로 푼다. 그 대량 읽기가 이것이고, 복호화에 필요한
-  -- 최소한(암호문 + 봉투)만 준다. 두 함수는 서로의 반대편이라, 한쪽이 받는 대화를 다른
-  -- 쪽은 거절해야 한다.
+  -- 최소한(암호문 + 봉투)만 준다. 본문은 위에서 편집돼 resealed다.
   if not exists (
     select 1 from public.get_encrypted_message_bodies(room1)
     where message_id = secret1
-      and content_ciphertext = encode(sealed,'base64')
+      and content_ciphertext = encode(resealed,'base64')
       and message_key ->> 'wrapped_key' = encode(sealed,'base64')
   ) then
     raise exception 'the bulk read for client-side search must hand over the ciphertext and its envelope';
   end if;
+  -- 두 검색 경로는 서로의 반대편이다: 한쪽이 받는 대화를 다른 쪽은 거절해야 한다.
   begin
     perform public.get_encrypted_message_bodies(group1);
     raise exception 'the encrypted bulk read should have rejected a group conversation';
   exception when others then
     if sqlerrm not like 'conversation is not end-to-end encrypted%' then raise; end if;
   end;
+
+  -- 비멤버는 그룹이든 1:1이든 **같은** 예외를 받아야 한다. 멤버십 검사가 종류 판정보다
+  -- 뒤에 오면, 비멤버가 예외/빈결과의 차이로 임의의 id가 DM인지를 스캔할 수 있다.
+  perform set_config('request.jwt.claim.sub', user3::text, true);
+  begin
+    perform public.search_messages('무엇이든', room1);
+    raise exception 'a non-member must not learn that a conversation is a DM';
+  exception when others then
+    if sqlerrm <> 'conversation membership required' then raise; end if;
+  end;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
 
   -- 본문이 사라진 메시지의 봉투는 아무것도 열지 않는다. 남겨두면 삭제된 메시지에 대해
   -- "누가 누구에게 봉인했는가"만 영원히 남는다.
