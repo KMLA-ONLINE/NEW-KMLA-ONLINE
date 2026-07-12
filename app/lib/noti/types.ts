@@ -13,8 +13,8 @@ import type { GroupMemberRole } from "~/lib/group/types"
  * 이게 없으면 종류를 구분할 수 없다: "내 글에 댓글"/"내 댓글에 답글"/"댓글에서 멘션"은
  * 대상 FK 모양이 (space, post, comment)로 **완전히 같다**. 아이콘도 문구도 목적지도 다른데.
  *
- * message_mention은 enum에 값만 있고 아직 만드는 트리거가 없다(message_mentions 테이블이 없다).
- * 그래도 여기 두는 이유는 union이 DB enum과 어긋나지 않게 하려는 것이다.
+ * 채팅은 여기 없다. 알림함과 채팅은 별개 체계다 -- 안 읽음은 chat_read_states의 커서에서
+ * 파생되고 뱃지는 get_unread_message_count()가 맡는다. 근거는 06-notifications.sql 상단.
  */
 export type NotificationType =
   // 콘텐츠. space_members.notification_setting이 게이트한다.
@@ -22,8 +22,6 @@ export type NotificationType =
   | "comment_reply"
   | "post_mention"
   | "comment_mention"
-  // 채팅.
-  | "message_mention"
   // 운영. 끌 수 없다.
   | "space_join_request"
   | "space_join_approved"
@@ -64,13 +62,6 @@ export type NotificationComment = {
   isDeleted: boolean
 }
 
-export type NotificationConversation = {
-  /** conversations.id. /messenger/:roomId에 실린다. */
-  id: string
-  /** 1:1 대화면 null(이름이 없다) -- 그때 표시명은 상대방, 즉 actor다. */
-  name: string | null
-}
-
 /**
  * notifications.payload (jsonb). FK로 표현되지 않는 소량의 사실만 담는다.
  * 키가 snake_case인 건 서버가 jsonb_build_object로 넣은 그대로 통과하기 때문이다
@@ -95,14 +86,13 @@ export type AppNotification = {
    */
   actorIsAnonymous: boolean
   /**
-   * 아래 넷은 종류에 따라 채워진다(notifications_target_shape_check가 강제).
+   * 아래 셋은 종류에 따라 채워진다(notifications_target_shape_check가 강제).
    * 콘텐츠·운영 알림은 space가 항상 있고, 글/댓글 알림은 post가 항상 있다. 타입이 nullable인 건
    * 컬럼이 nullable이기 때문일 뿐이다.
    */
   space: NotificationSpace | null
   post: NotificationPost | null
   comment: NotificationComment | null
-  conversation: NotificationConversation | null
   payload: NotificationPayload | null
   /** null이면 안 읽음. */
   readAt: string | null

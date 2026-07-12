@@ -812,7 +812,6 @@ export type Database = {
           comment_id: number | null
           created_at: string
           id: number
-          message_id: number | null
           payload: Json | null
           post_id: number | null
           read_at: string | null
@@ -826,7 +825,6 @@ export type Database = {
           comment_id?: number | null
           created_at?: string
           id?: number
-          message_id?: number | null
           payload?: Json | null
           post_id?: number | null
           read_at?: string | null
@@ -840,7 +838,6 @@ export type Database = {
           comment_id?: number | null
           created_at?: string
           id?: number
-          message_id?: number | null
           payload?: Json | null
           post_id?: number | null
           read_at?: string | null
@@ -861,13 +858,6 @@ export type Database = {
             columns: ["comment_id"]
             isOneToOne: false
             referencedRelation: "comments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notifications_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
           {
@@ -1909,7 +1899,6 @@ export type Database = {
           actor: Json
           actor_is_anonymous: boolean
           comment: Json
-          conversation: Json
           created_at: string
           id: number
           payload: Json
@@ -2103,7 +2092,6 @@ export type Database = {
         | "comment_reply"
         | "post_mention"
         | "comment_mention"
-        | "message_mention"
         | "space_join_request"
         | "space_join_approved"
         | "space_join_rejected"
@@ -2262,7 +2250,6 @@ export const Constants = {
         "comment_reply",
         "post_mention",
         "comment_mention",
-        "message_mention",
         "space_join_request",
         "space_join_approved",
         "space_join_rejected",

@@ -27,7 +27,6 @@ const ACTOR_TYPES: ReadonlySet<NotificationType> = new Set([
   "comment_reply",
   "post_mention",
   "comment_mention",
-  "message_mention",
   "space_join_request",
   "space_invited",
 ])
@@ -63,7 +62,7 @@ function Em({ children }: { children: ReactNode }) {
  * 링크를 걸지 않는다.
  */
 function describe(notification: AppNotification): Descriptor {
-  const { actor, actorIsAnonymous, space, post, comment, conversation, payload } = notification
+  const { actor, actorIsAnonymous, space, post, comment, payload } = notification
 
   const spaceName = space?.name ?? "그룹"
   const spaceHref = space ? `/groups/${space.pubId}` : null
@@ -119,13 +118,6 @@ function describe(notification: AppNotification): Descriptor {
         href: postHref,
         message: <>{subject} 댓글에서 나를 언급했습니다</>,
         snippet,
-      }
-    case "message_mention":
-      return {
-        icon: AtSignIcon,
-        tone: TONE.neutral,
-        href: conversation ? `/messenger/${conversation.id}` : null,
-        message: <>{subject} 대화에서 나를 언급했습니다</>,
       }
     case "space_join_request":
       // 그룹의 가입요청 탭이 로컬 상태라 URL로 못 짚는다. 일단 그룹까지만 보낸다.

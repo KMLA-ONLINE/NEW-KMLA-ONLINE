@@ -3,8 +3,8 @@ import type { AppNotification } from "~/lib/noti/types"
 // list_notifications()가 붙을 때까지의 대역. 종류를 한 번씩 다 덮어 화면이 모든 분기를 그린다.
 // 값은 스키마가 실제로 담는 것만 쓴다 -- 서버가 안 주는 필드는 여기에도 없다.
 //
-// message_mention은 없다: enum엔 값이 있지만 그걸 만드는 트리거가 아직 없어서(message_mentions
-// 테이블이 없다) 실제로는 도착할 수 없는 알림이다. 없는 걸 mock이 지어내면 안 된다.
+// 채팅 알림은 없다. 알림함과 채팅은 별개 체계이고, 그건 빠뜨린 게 아니라 결정이다 --
+// 근거는 supabase/schemas/06-notifications.sql 상단.
 
 // 고정 기준 시각. Date.now()로 잡으면 SSR과 브라우저가 다른 시계를 읽어 hydration이 어긋난다.
 const BASE = Date.parse("2026-07-12T09:00:00Z")
@@ -20,7 +20,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "student-council", name: "행정위원회", type: "group" },
     post: { pubId: "c0ffee00-0000-4000-8000-000000000001", title: "기말고사 일정 안내" },
     comment: { id: 401, content: "혹시 시험 범위도 같이 올라오나요?", isDeleted: false },
-    conversation: null,
     payload: null,
     readAt: null,
     createdAt: minutesAgo(3),
@@ -33,7 +32,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "market", name: "민사고 먹9 사9 팔9", type: "community" },
     post: { pubId: "c0ffee00-0000-4000-8000-000000000002", title: "교재 나눔합니다" },
     comment: { id: 402, content: "이거 아직 남아 있나요? 저 필요해요!", isDeleted: false },
-    conversation: null,
     payload: null,
     readAt: null,
     createdAt: minutesAgo(28),
@@ -46,7 +44,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "student-council", name: "행정위원회", type: "group" },
     post: null,
     comment: null,
-    conversation: null,
     payload: null,
     readAt: null,
     createdAt: minutesAgo(95),
@@ -63,7 +60,6 @@ export const mockNotifications: AppNotification[] = [
       content: "저도 그 방법 써봤는데 확실히 효율이 좋더라고요.",
       isDeleted: false,
     },
-    conversation: null,
     payload: null,
     readAt: minutesAgo(180),
     createdAt: minutesAgo(240),
@@ -78,7 +74,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "market", name: "민사고 먹9 사9 팔9", type: "community" },
     post: null,
     comment: null,
-    conversation: null,
     payload: { suspended_until: new Date(BASE + 2 * 24 * 60 * 60_000).toISOString() },
     readAt: null,
     createdAt: minutesAgo(300),
@@ -91,7 +86,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "clubs", name: "동아리", type: "group" },
     post: { pubId: "c0ffee00-0000-4000-8000-000000000004", title: "밴드부 신입 모집" },
     comment: null,
-    conversation: null,
     payload: null,
     readAt: minutesAgo(400),
     createdAt: minutesAgo(420),
@@ -104,7 +98,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "class-30", name: "30기 민사 재학생", type: "community" },
     post: null,
     comment: null,
-    conversation: null,
     payload: null,
     readAt: minutesAgo(1400),
     createdAt: minutesAgo(1500),
@@ -117,7 +110,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "lost-and-found", name: "민사고 떨99 줍9", type: "community" },
     post: null,
     comment: null,
-    conversation: null,
     payload: null,
     readAt: minutesAgo(1600),
     createdAt: minutesAgo(1700),
@@ -131,7 +123,6 @@ export const mockNotifications: AppNotification[] = [
     // 글은 소프트 삭제됐다. 제목은 내가 쓴 것이라 보여줘도 되지만 링크는 걸 수 없다.
     post: { pubId: "c0ffee00-0000-4000-8000-000000000005", title: "노트북 팝니다" },
     comment: null,
-    conversation: null,
     payload: null,
     readAt: minutesAgo(2800),
     createdAt: minutesAgo(2880),
@@ -144,7 +135,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "clubs", name: "동아리", type: "group" },
     post: null,
     comment: null,
-    conversation: null,
     payload: { from: "member", to: "admin" },
     readAt: minutesAgo(4200),
     createdAt: minutesAgo(4320),
@@ -158,7 +148,6 @@ export const mockNotifications: AppNotification[] = [
     post: { pubId: "c0ffee00-0000-4000-8000-000000000006", title: "야자 시간 조정 건의" },
     // 삭제된 댓글은 content가 비어서 온다(soft_delete_comment가 지운다).
     comment: { id: 404, content: null, isDeleted: true },
-    conversation: null,
     payload: null,
     readAt: minutesAgo(5700),
     createdAt: minutesAgo(5760),
@@ -171,7 +160,6 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "dormitory", name: "기숙사", type: "group" },
     post: null,
     comment: null,
-    conversation: null,
     payload: null,
     readAt: minutesAgo(10000),
     createdAt: minutesAgo(10080),
