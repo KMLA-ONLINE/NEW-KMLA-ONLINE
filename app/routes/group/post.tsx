@@ -4,6 +4,7 @@ import { useOutletContext, useParams } from "react-router"
 
 import type { GroupOutletContext } from "~/routes/group/group"
 
+import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupCommentList } from "~/components/group/group-comment-list"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
@@ -11,7 +12,6 @@ import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import {
@@ -72,9 +72,7 @@ export default function GroupPostDetailPage() {
                   </div>
                 ) : null}
                 <header className="flex items-center gap-3">
-                  <Avatar size="lg">
-                    <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
-                  </Avatar>
+                  <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{authorName}</span>

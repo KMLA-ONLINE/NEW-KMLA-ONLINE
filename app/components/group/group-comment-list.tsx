@@ -1,10 +1,10 @@
 import { MoreHorizontalIcon, SmilePlusIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
+import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
   DropdownMenu,
@@ -168,9 +168,7 @@ function GroupCommentItem({
   return (
     <li>
       <div className="flex gap-2">
-        <Avatar>
-          <AvatarFallback>{name.charAt(0)}</AvatarFallback>
-        </Avatar>
+        <GroupAuthorAvatar name={name} anonymous={comment.author === null} />
         <div className="flex min-w-0 flex-1 items-start gap-1">
           <div className="min-w-0">
             <div

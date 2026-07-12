@@ -3,13 +3,13 @@ import { useState } from "react"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
+import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -85,9 +85,7 @@ export default function GroupNewPostPage() {
                 size="lg"
               />
             ) : (
-              <Avatar size="lg">
-                <AvatarFallback>나</AvatarFallback>
-              </Avatar>
+              <GroupAuthorAvatar name="나" anonymous={false} size="lg" />
             )}
             <div className="text-sm leading-tight">
               <p className="font-semibold">{anonymous ? "익명" : "나"}</p>

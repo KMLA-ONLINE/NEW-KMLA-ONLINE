@@ -2,12 +2,12 @@ import { PinIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
+import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import type { GroupPost } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
@@ -55,9 +55,7 @@ export function GroupPostCard({
         </div>
       ) : null}
       <header className={cn("flex items-start gap-3 px-4 pb-3", post.isPinned ? "pt-2" : "pt-4")}>
-        <Avatar size="lg">
-          <AvatarFallback>{authorName.charAt(0)}</AvatarFallback>
-        </Avatar>
+        <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{authorName}</span>
