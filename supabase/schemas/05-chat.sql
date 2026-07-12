@@ -595,6 +595,56 @@ begin
 end;
 $$;
 
+-- 내비 뱃지용 전역 안 읽은 메시지 수. list_conversations()의 unread_count 합과 같은 값이지만,
+-- 그 함수는 마지막 메시지·멤버 수·알림 설정까지 lateral join하는 무거운 놈이라 모든 페이지에
+-- 붙는 뱃지 숫자 하나를 위해 부를 수는 없다.
+--
+-- 대화마다 100에서 세기를 멈춘다. 뱃지는 99+ 위를 구분하지 않으니 정확도 손실이 없고, 안 읽은 게
+-- 수천 개 쌓인 대화가 있어도 비용에 상한이 생긴다. 그래서 안 읽은 수를 컬럼으로 비정규화할 이유가
+-- 없다 -- chat_read_states의 커서가 그대로 진실이고, 카운터와 달리 커서는 드리프트하지 않는다.
+--
+-- 캡을 전역 limit 하나로 두면 안 된다. 조인 위에 얹힌 limit은 스캔을 멈추지 못한다 -- 플래너가
+-- 해시 조인을 고르면 활성 메시지 전체로 해시를 다 만든 뒤에야 첫 행이 나오기 때문이다. lateral로
+-- 대화별로 걸어야 nested loop가 강제되고, 그때 limit이 각 인덱스 스캔을 실제로 끊는다.
+-- (idx_messages_active_conversation_id = (conversation_id, id desc) where deleted_at is null)
+create function public.get_unread_message_count()
+returns bigint
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  result bigint;
+begin
+  with my_cursors as (
+    select mc.conversation_id, rs.last_read_message_id
+    from (
+      select dc.conversation_id
+      from public.direct_conversations dc
+      where caller_id in (dc.user1_id, dc.user2_id)
+      union all
+      select cm.conversation_id
+      from public.conversation_members cm
+      where cm.user_id=caller_id
+    ) mc
+    -- 커서 행이 아예 없으면(한 번도 열지 않은 대화) last_read_message_id가 null -- 전부 안 읽음이다.
+    left join public.chat_read_states rs on rs.conversation_id=mc.conversation_id and rs.user_id=caller_id
+  )
+  select coalesce(sum(capped.unread_count),0)::bigint into result
+  from my_cursors c
+  cross join lateral (
+    select count(*)::bigint as unread_count
+    from (
+      select 1
+      from public.messages m
+      where m.conversation_id=c.conversation_id and m.deleted_at is null and m.sender_id<>caller_id
+        and (c.last_read_message_id is null or m.id>c.last_read_message_id)
+      limit 100
+    ) rows_capped
+  ) capped;
+
+  return result;
+end;
+$$;
+
 create function public.get_chat_messages(p_conversation_id bigint,p_before_id bigint default null,p_limit int4 default 50)
 returns table(
   message_id bigint,
@@ -804,8 +854,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
+revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
 grant execute on function public.search_messages(text,bigint) to authenticated;
 grant execute on function public.send_message_with_attachments(bigint,jsonb,bigint,text) to authenticated;

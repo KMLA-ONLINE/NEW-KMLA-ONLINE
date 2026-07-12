@@ -27,6 +27,7 @@ Source: [`supabase/schemas/05-chat.sql`](../../../supabase/schemas/05-chat.sql)
 | `soft_delete_message(id)`                                       | 보낸 본인                          | O    | 메시지 soft delete + 첨부/반응 제거 + blob 삭제 큐 등록                          |
 | `send_message_with_attachments(conversation_id, attachments jsonb, parent_id?, content?)` | 대화 멤버 | O | 업로드된 object들을 검증 후 메시지+첨부 N개를 한 트랜잭션으로 생성. 배열 순서가 `sort_order`. 2개 이상이면 전부 image여야 함 |
 | `list_conversations()`                                          | accepted                           | X    | direct/group 통합 목록 (표시명, 마지막 메시지, unread 수, 멤버 수, `muted_until`/`notification_level`) |
+| `get_unread_message_count()`                                    | accepted                           | X    | 내비 뱃지용 전역 안 읽은 메시지 수. `list_conversations()`의 unread 합과 같은 값이지만 그 함수는 뱃지 하나 띄우기엔 너무 무겁다. 대화당 100에서 세기를 멈춘다(뱃지는 99+ 위를 구분하지 않음) |
 | `get_chat_messages(conversation_id, before_id?, limit)`         | 대화 멤버                          | X    | 메시지 keyset 페이지네이션 (sender/parent/첨부/반응/읽음/고정 상태 포함)         |
 | `search_messages(query, conversation_id)`                       | RLS 기반 (SECURITY INVOKER)        | X    | 대화 내 공백 무시 메시지 검색                                                    |
 | `cleanup_conversation(conversation_id)`                         | service_role                       | O    | 대화 하드 정리 (첨부가 남아 있으면 거부)                                         |
