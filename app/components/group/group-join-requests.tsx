@@ -28,7 +28,16 @@ export function GroupJoinRequests({
               <AvatarFallback>{request.name.charAt(0)}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{request.name}</p>
+              {/* 기수를 같이 보여준다. 목록은 잘못 읽어도 다시 보면 되지만, 동명이인 중 엉뚱한
+                  사람을 승인하면 그 사람이 이미 그룹 안에 들어와 있다. */}
+              <p className="truncate text-sm font-medium">
+                {request.name}
+                {request.cohort !== null ? (
+                  <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                    {request.cohort}기
+                  </span>
+                ) : null}
+              </p>
               <RelativeTime value={request.createdAt} className="text-muted-foreground text-xs" />
             </div>
             <Button size="sm" onClick={() => onApprove(request)}>

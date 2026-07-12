@@ -68,6 +68,13 @@ function MemberRow({
       </Avatar>
       <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {member.name}
+        {/* 기수. 동명이인이 흔하고 profiles.name엔 유니크 제약이 없어서, 이름만으로는 목록에서
+            사람을 가를 수가 없다. 교사 등 학생이 아닌 프로필은 기수가 없다(null). */}
+        {member.cohort !== null ? (
+          <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+            {member.cohort}기
+          </span>
+        ) : null}
         {member.isMe ? <span className="text-muted-foreground font-normal"> (나)</span> : null}
       </span>
 
@@ -128,8 +135,12 @@ export function GroupMemberList({
 }) {
   const [query, setQuery] = useState("")
   const needle = normalizeSearch(useDebouncedValue(query.trim(), 300))
-  const matches = (member: GroupMember) =>
-    needle === "" || normalizeSearch(member.name).includes(needle)
+  // 이름 + 기수를 한 건초더미로 합쳐 검색한다. 덕분에 "김도윤"으로 동명이인 둘을 다 찾고,
+  // "32기"로 기수를 훑고, "김도윤32"로 그중 한 명을 바로 집을 수 있다.
+  // normalizeSearch가 공백을 지우므로 "김도윤 32기"도 같은 것이 된다.
+  const haystack = (member: GroupMember) =>
+    normalizeSearch(member.cohort === null ? member.name : `${member.name}${member.cohort}기`)
+  const matches = (member: GroupMember) => needle === "" || haystack(member).includes(needle)
 
   const staff = members
     .filter((member) => member.role !== "member" && matches(member))

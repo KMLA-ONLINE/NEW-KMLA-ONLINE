@@ -129,6 +129,7 @@ export default function GroupPage() {
       ...list.map((request) => ({
         id: request.id,
         name: request.name,
+        cohort: request.cohort,
         avatarUrl: request.avatarUrl,
         role: "member" as const,
         // TODO(backend): joined_at은 서버 default now()가 채운다. 승인은 approve_join_request RPC로

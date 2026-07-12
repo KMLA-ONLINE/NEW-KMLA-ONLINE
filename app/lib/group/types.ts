@@ -66,6 +66,11 @@ export type GroupJoinRequest = {
   id: number
   /** profiles.name */
   name: string
+  /**
+   * profiles.cohort (기수). 멤버 목록보다 여기가 더 중요하다 -- 목록은 잘못 읽어도 다시 보면
+   * 되지만, 동명이인 중 엉뚱한 사람을 승인하면 그 사람이 그룹에 들어와 있다.
+   */
+  cohort: number | null
   /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
   /** space_join_requests.created_at (ISO 8601). */
@@ -78,6 +83,13 @@ export type GroupMember = {
   id: number
   /** profiles.name */
   name: string
+  /**
+   * profiles.cohort (기수). 이름만으로는 사람을 못 가른다 -- 동명이인이 흔하고 profiles.name엔
+   * 유니크 제약이 없다(그래서 @멘션도 handle 파싱이 아니라 id를 저장한다).
+   * 교사 등 학생이 아닌 프로필은 기수가 없어서 null이다(profiles_student_identity_check는
+   * type='student'일 때만 cohort를 요구한다).
+   */
+  cohort: number | null
   /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
   role: GroupMemberRole
