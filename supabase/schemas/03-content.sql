@@ -238,7 +238,11 @@ grant select (id,pub_id,space_id,title,content,is_anonymous,category_id,pinned_a
 grant select (id,post_id,parent_id,content,is_anonymous,created_at,updated_at,deleted_at) on public.comments to authenticated;
 grant select on public.post_attachments, public.post_attachment_mime_types to authenticated;
 grant insert (space_id,author_id,title,content,is_anonymous,category_id) on public.posts to authenticated;
-grant update (title,content,is_anonymous,category_id) on public.posts to authenticated;
+-- is_anonymous는 update에서 뺀다. 작성 시점에만 정해지고 그 뒤로는 불변이다 -- 익명으로 쓴 글을
+-- 나중에 실명으로 까거나(작성자가 후회해도 이미 익명을 믿고 반응한 사람들이 있다) 실명 글을
+-- 익명으로 숨기는(이미 본 사람은 아는데 새로 보는 사람만 못 보는, 반쪽짜리 익명) 전환을 둘 다 막는다.
+-- 댓글은 update grant가 content 하나뿐이라 이미 불변이다.
+grant update (title,content,category_id) on public.posts to authenticated;
 grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
 grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
@@ -430,7 +434,12 @@ $$;
 
 -- 평면으로 내린다. 트리는 parent_id로 클라이언트가 만든다(임의 깊이라 서버에서 접기 애매하고,
 -- 화면도 어차피 전부 펼친다).
-create function public.get_post_comments(p_post_id bigint)
+--
+-- 페이지네이션은 **루트 댓글 단위**다. 평면 목록을 그냥 limit으로 자르면 부모가 잘려 나간 답글이
+-- 고아가 되어 트리가 끊긴다. 루트로 자르고 그 루트의 자손을 전부 딸려 보내면 스레드가 온전하다.
+-- 대신 한 스레드가 아무리 길어도 통째로 내려온다 -- 답글을 자르면 트리가 깨지므로 그게 유일한 방법이고,
+-- 실제로 긴 건 스레드 수지 한 스레드의 깊이가 아니다. 커서는 마지막 루트의 id다.
+create function public.get_post_comments(p_post_id bigint, p_after_id bigint default null, p_limit int4 default 20)
 returns table(
   comment_id bigint,
   parent_id bigint,
@@ -445,11 +454,38 @@ returns table(
   my_reaction_id bigint
 )
 language plpgsql stable security definer set search_path = '' as $$
-declare caller_id bigint := private.require_current_profile(true);
+declare
+  caller_id bigint := private.require_current_profile(true);
+  after_created_at timestamptz;
 begin
   if not private.can_access_post(p_post_id) then raise exception 'post access required'; end if;
+  if p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+
+  if p_after_id is not null then
+    select c.created_at into after_created_at from public.comments c where c.id=p_after_id;
+  end if;
 
   return query
+  with recursive roots as (
+    select c.id, c.created_at
+    from public.comments c
+    where c.post_id=p_post_id and c.parent_id is null
+      -- deleted_at is null이 먼저라 살아있는 댓글에는 재귀 검사가 돌지 않는다(OR 단축 평가).
+      and (c.deleted_at is null or private.has_active_descendant(c.id))
+      and (p_after_id is null or (c.created_at, c.id) > (after_created_at, p_after_id))
+    order by c.created_at, c.id
+    limit p_limit
+  ),
+  thread as (
+    select c.id, 0 as depth
+    from public.comments c
+    join roots r on r.id=c.id
+    union all
+    select child.id, t.depth+1
+    from public.comments child
+    join thread t on child.parent_id=t.id
+    where t.depth < 50
+  )
   select
     c.id,
     c.parent_id,
@@ -470,9 +506,9 @@ begin
         group by rt.icon order by count(*) desc limit 3
       ) t),'[]'::jsonb),
     (select r.reaction_type_id from public.comment_reactions r where r.comment_id=c.id and r.user_id=caller_id)
-  from public.comments c
-  where c.post_id=p_post_id
-    and (c.deleted_at is null or private.has_active_descendant(c.id))
+  from thread th
+  join public.comments c on c.id=th.id
+  where c.deleted_at is null or private.has_active_descendant(c.id)
   order by c.created_at, c.id;
 end;
 $$;
@@ -655,8 +691,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
-grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) to authenticated;
+revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) to authenticated;
 
 -- 고정·삭제는 컬럼 grant로 표현할 수 없어서 RPC로 둔다. posts_update/comments_update 정책이
 -- author_id=current_profile_id()라 "관리자가 남의 글을 고정하거나 지운다"가 정책에 안 들어가고,

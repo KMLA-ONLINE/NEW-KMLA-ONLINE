@@ -1604,7 +1604,7 @@ export type Database = {
         }[]
       }
       get_post_comments: {
-        Args: { p_post_id: number }
+        Args: { p_after_id?: number; p_limit?: number; p_post_id: number }
         Returns: {
           author: Json
           comment_id: number

@@ -2,13 +2,13 @@ import { XIcon } from "lucide-react"
 import { useState } from "react"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
+import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -29,6 +29,8 @@ export default function GroupNewPostPage() {
   const { attachments, add, remove } = useFileAttachments()
   const { isDragging, dropHandlers } = useFileDrop(add)
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  // posts.is_anonymous. 작성 시점에만 정해지고 그 뒤로는 불변이다(update 컬럼 grant에서 빠져 있다).
+  const [anonymous, setAnonymous] = useState(false)
 
   const previewImages = attachments.flatMap((item) =>
     item.url ? [{ key: String(item.id), src: item.url, onRemove: () => remove(item.id) }] : []
@@ -67,12 +69,16 @@ export default function GroupNewPostPage() {
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+          {/* 아바타를 눌러 익명 ↔ 실명 전환. 작성할 때만 정할 수 있고 올린 뒤엔 못 바꾼다
+              (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다. */}
           <div className="flex items-center gap-2">
-            <Avatar>
-              <AvatarFallback>나</AvatarFallback>
-            </Avatar>
+            <GroupAnonymousToggle
+              anonymous={anonymous}
+              onToggle={() => setAnonymous((value) => !value)}
+              size="lg"
+            />
             <div className="text-sm leading-tight">
-              <p className="font-semibold">나</p>
+              <p className="font-semibold">{anonymous ? "익명" : "나"}</p>
               <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { SendIcon } from "lucide-react"
 import { useRef, useState, type RefObject } from "react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
 
@@ -29,28 +29,35 @@ export function GroupCommentComposer({
 }: {
   placeholder?: string
   autoFocus?: boolean
-  onSubmit?: (text: string) => void
+  /** 익명 여부까지 넘긴다 -- comments.is_anonymous는 insert에만 있고 나중에 못 바꾼다. */
+  onSubmit?: (text: string, anonymous: boolean) => void
   className?: string
   /** 바깥에서 포커스를 주려면 넘긴다(상세의 댓글 아이콘). 안 넘기면 내부 ref를 쓴다. */
   inputRef?: RefObject<HTMLTextAreaElement | null>
 }) {
   const [draft, setDraft] = useState("")
+  // comments.is_anonymous. 글과 마찬가지로 작성 시점에만 정해진다(update grant는 content 하나뿐).
+  const [anonymous, setAnonymous] = useState(false)
   const fallbackRef = useRef<HTMLTextAreaElement>(null)
   const textareaRef = inputRef ?? fallbackRef
   const canSend = draft.trim().length > 0
 
   const send = () => {
     if (!canSend) return
-    onSubmit?.(draft)
+    onSubmit?.(draft, anonymous)
     setDraft("")
+    setAnonymous(false)
     if (textareaRef.current) resize(textareaRef.current)
   }
 
   return (
     <div className={cn("flex items-end gap-2", className)}>
-      <Avatar>
-        <AvatarFallback>나</AvatarFallback>
-      </Avatar>
+      {/* 아바타를 눌러 익명 ↔ 실명. 보낸 뒤엔 못 바꾼다. */}
+      <GroupAnonymousToggle
+        anonymous={anonymous}
+        onToggle={() => setAnonymous((value) => !value)}
+        className="mb-0.5"
+      />
       <textarea
         ref={textareaRef}
         value={draft}

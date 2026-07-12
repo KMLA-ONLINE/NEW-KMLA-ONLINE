@@ -1,4 +1,4 @@
-import { XIcon } from "lucide-react"
+import { VenetianMaskIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { useParams } from "react-router"
 
@@ -29,6 +29,8 @@ export default function GroupEditPostPage() {
   // 형제 라우트라 route-relative ".."로는 상세에 못 간다).
   const close = useModalClose(`/groups/${pubId}/posts/${postId}`)
   const post = mockGroupPosts.find((item) => item.pubId === postId)
+  // 익명 글은 서버가 author를 지워서 내려준다(is_anonymous면 null). 내 글인 건 is_mine으로 따로 안다.
+  const isAnonymous = post !== undefined && post.author === null
 
   // 기존 첨부는 삭제 가능하도록 로컬 상태로, 새로 고른 파일은 훅이 관리한다.
   const [images, setImages] = useState(post?.images ?? [])
@@ -91,12 +93,22 @@ export default function GroupEditPostPage() {
         {post ? (
           <>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+              {/* 여기엔 익명 토글이 없다. is_anonymous는 작성 시점에만 정해지고 update 컬럼
+                  grant에서 빠져 있어 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에
+                  실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
+                  글이 익명이면(author가 null) 그 사실만 보여준다. */}
               <div className="flex items-center gap-2">
                 <Avatar>
-                  <AvatarFallback>나</AvatarFallback>
+                  <AvatarFallback>
+                    {isAnonymous ? (
+                      <VenetianMaskIcon className="size-4" aria-hidden="true" />
+                    ) : (
+                      "나"
+                    )}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="text-sm leading-tight">
-                  <p className="font-semibold">나</p>
+                  <p className="font-semibold">{isAnonymous ? "익명" : "나"}</p>
                   <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 import { MoreHorizontalIcon, SmilePlusIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { QuickReactionList } from "~/components/quick-reaction-list"
@@ -30,9 +30,27 @@ export function GroupCommentList({
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // TODO(scale): 댓글은 전부 렌더 + parentId 조회가 O(n²)이고 @부모 스크롤이 렌더를 전제한다.
-  // 실제로는 상세 로더가 댓글을 페이지네이션(스레드 단위)해 내려줄 자리 -- 그때 창 밖 부모 처리도.
-  const roots = comments.filter((comment) => comment.parentId === null)
+
+  // 부모 -> 자식 인덱스를 한 번만 만든다. 댓글마다 전체 배열을 filter하면 O(n²)이 된다.
+  // 서버(get_post_comments)는 루트 스레드 단위로 페이지를 잘라 내려주므로 n은 한 페이지 크기다.
+  // TODO(backend): 로더가 붙으면 "더 보기"로 다음 루트 페이지를 이어 붙인다(커서 = 마지막 루트 id).
+  const { roots, childrenOf } = useMemo(() => {
+    const byParent = new Map<number, GroupComment[]>()
+    const topLevel: GroupComment[] = []
+    for (const comment of comments) {
+      if (comment.parentId === null) {
+        topLevel.push(comment)
+        continue
+      }
+      const siblings = byParent.get(comment.parentId)
+      if (siblings) siblings.push(comment)
+      else byParent.set(comment.parentId, [comment])
+    }
+    return { roots: topLevel, childrenOf: byParent }
+  }, [comments])
+
+  // @부모이름 칩과 스크롤이 부모 댓글을 id로 찾는다. 같은 이유로 맵으로 한 번만.
+  const byId = useMemo(() => new Map(comments.map((comment) => [comment.id, comment])), [comments])
 
   // @이름 클릭 시 부모 댓글로 스크롤하고 잠깐 강조한다. 타이머는 언마운트/재호출 시 정리.
   const navigateToComment = (id: number) => {
@@ -60,7 +78,8 @@ export function GroupCommentList({
         <GroupCommentItem
           key={comment.id}
           comment={comment}
-          all={comments}
+          childrenOf={childrenOf}
+          byId={byId}
           reactionTypes={reactionTypes}
           highlightedId={highlightedId}
           onNavigate={navigateToComment}
@@ -73,7 +92,8 @@ export function GroupCommentList({
 
 function GroupCommentItem({
   comment,
-  all,
+  childrenOf,
+  byId,
   reactionTypes,
   highlightedId,
   onNavigate,
@@ -81,7 +101,10 @@ function GroupCommentItem({
   depth = 0,
 }: {
   comment: GroupComment
-  all: GroupComment[]
+  /** 부모 id -> 자식들. 목록에서 한 번만 만들어 내려온다(댓글마다 filter하면 O(n^2)). */
+  childrenOf: Map<number, GroupComment[]>
+  /** id -> 댓글. @부모이름 칩이 부모를 찾는 데 쓴다. */
+  byId: Map<number, GroupComment>
   reactionTypes: ReactionType[]
   highlightedId: number | null
   onNavigate: (id: number) => void
@@ -89,10 +112,10 @@ function GroupCommentItem({
   depth?: number
 }) {
   const name = comment.author?.name ?? "익명"
-  const replies = all.filter((item) => item.parentId === comment.id)
+  const replies = childrenOf.get(comment.id) ?? []
   // 답글이면 부모 댓글 작성자를 본문 앞 @이름 칩으로 붙인다(평탄화돼도 누구 답글인지 보이게).
   // 부모가 삭제된 tombstone이면 붙일 이름이 없다 -- 서버가 작성자를 지워서 내려주기 때문이다.
-  const parent = comment.parentId !== null ? all.find((item) => item.id === comment.parentId) : null
+  const parent = comment.parentId !== null ? byId.get(comment.parentId) : null
   const parentName = parent && !parent.isDeleted ? (parent.author?.name ?? "익명") : null
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -121,7 +144,8 @@ function GroupCommentItem({
               <GroupCommentItem
                 key={reply.id}
                 comment={reply}
-                all={all}
+                childrenOf={childrenOf}
+                byId={byId}
                 reactionTypes={reactionTypes}
                 highlightedId={highlightedId}
                 onNavigate={onNavigate}
@@ -243,7 +267,8 @@ function GroupCommentItem({
             <GroupCommentItem
               key={reply.id}
               comment={reply}
-              all={all}
+              childrenOf={childrenOf}
+              byId={byId}
               reactionTypes={reactionTypes}
               highlightedId={highlightedId}
               onNavigate={onNavigate}

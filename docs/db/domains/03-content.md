@@ -23,7 +23,7 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 | --- | --- | --- | --- |
 | `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버 | X | 피드. 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다. 커서는 `id` 하나지만 정렬은 `(created_at, id)`라 행 비교로 `idx_posts_active_space_created_at`을 탄다. `author`(익명이면 null), `is_mine`, `category`, 댓글/반응 수, `top_reactions`, `my_reaction_id`, `attachments` 포함 |
 | `get_post(pub_id)` | post 접근 권한 | X | 상세 1건. 위와 같은 shape |
-| `get_post_comments(post_id)` | post 접근 권한 | X | 댓글 평면 목록(트리는 `parent_id`로 클라이언트가 조립). tombstone은 `is_deleted=true`에 `content`·`author` 모두 null |
+| `get_post_comments(post_id, after_id?, limit?)` | post 접근 권한 | X | 댓글 평면 목록(트리는 `parent_id`로 클라이언트가 조립). **페이지네이션은 루트 댓글 단위**이고 그 루트의 자손은 전부 딸려 온다 — 평면 목록을 limit으로 자르면 부모 잘린 답글이 고아가 되어 트리가 끊긴다. 커서는 마지막 루트의 id. tombstone은 `is_deleted=true`에 `content`·`author` 모두 null |
 | `search_posts(query, space_id)` | space 멤버 | X | 공백 무시 제목·본문 검색. `search_messages`와 달리 SECURITY DEFINER다 — invoker로는 `author_id`를 못 읽고 익명 지우기도 못 한다 |
 | `create_post_with_attachments(space_id, title, content, attachments?, category_id?, is_anonymous?)` | space 멤버 | O | 글+첨부를 **한 트랜잭션**으로 만들고 `pub_id`를 돌려준다. 실패하면 아무것도 남지 않는다 |
 | `set_post_attachments(post_id, attachments jsonb)` | 작성자 본인 | O | 수정용. 첨부 목록을 통째로 교체. 빠진 blob만 삭제 큐로, `sort_order`는 배열 순서. 이미 붙어 있던 첨부는 스토리지 재확인을 건너뛴다(수정 시 blob이 24시간보다 오래됐을 수 있어서) |
@@ -65,6 +65,7 @@ space 안의 게시글 계층: `posts → comments`, post별 첨부 metadata. �
 
 ## 주의
 
+- **`is_anonymous`는 작성 시점에만 정해지고 그 뒤로는 불변이다.** posts의 update 컬럼 grant는 `title,content,category_id`뿐이고(comments는 `content`뿐) `is_anonymous`가 빠져 있다. 익명으로 쓴 글을 나중에 실명으로 까는 것(익명을 믿고 반응한 사람들이 이미 있다)과, 실명 글을 뒤늦게 익명으로 숨기는 것(이미 본 사람은 아는데 새로 보는 사람만 못 보는 반쪽짜리 익명)을 둘 다 막는다.
 - **익명이 익명이려면 `author_id`를 클라이언트가 못 읽어야 한다.** `is_anonymous`는 표시 플래그일 뿐이고 RLS는 `author_id`를 가려주지 않으므로, 테이블 전체 select를 주면 `select author_id from posts where is_anonymous`로 익명 글 작성자 명단이 그대로 나온다. 그래서 posts/comments의 select는 **컬럼 단위**이고 `author_id`·`deleted_by`(모더레이터 신원)·`pinned_by`는 빠져 있다. 작성자는 읽기 RPC가 익명이면 null로 지워 내려준다. `is_mine`은 익명이어도 true다 — 자기 글엔 수정/삭제가 떠야 하고, 그 사실은 남에게 새지 않는다(남에겐 false).
 - 글 읽기/쓰기 권한은 `can_participate_space` = 해당 space의 멤버인지로 판단한다(모든 공간이 멤버십을 요구). comments/reactions/attachments도 `can_access_post`를 통해 동일하게 적용된다.
 - author 자동 스탬핑은 없다. RLS policy가 `author_id = current_profile_id()`를 검사하므로 클라이언트가 insert 시 author_id를 명시해야 한다(insert grant엔 남아 있고, select에서만 회수했다).
