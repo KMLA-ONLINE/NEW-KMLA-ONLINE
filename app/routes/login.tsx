@@ -5,6 +5,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { createClient } from "~/lib/supabase/client"
 import { derivePasswordKeys } from "~/lib/crypto/account"
 import { openVault } from "~/lib/crypto/vault"
+import { useHydrated } from "~/lib/use-hydrated"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -28,6 +29,8 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // 하이드레이션 전에는 제출 버튼을 꺼 둔다 -- 그 전 네이티브 제출은 비밀번호를 서버로 GET한다.
+  const hydrated = useHydrated()
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -151,7 +154,7 @@ export default function Login() {
                   </div>
                 </div>
 
-                <Button type="submit" className="h-10 w-full" disabled={loading}>
+                <Button type="submit" className="h-10 w-full" disabled={loading || !hydrated}>
                   {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
                   {loading ? "로그인 중..." : "로그인"}
                 </Button>

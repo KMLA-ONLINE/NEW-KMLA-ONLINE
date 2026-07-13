@@ -136,11 +136,12 @@ begin
     raise exception 'message-files must not accept opaque bytes: that is what the encrypted bucket is for';
   end if;
 
-  -- 암호문은 평문보다 nonce(12) + GCM 태그(16)만큼 크다. 상한이 그걸 감당하지 못하면
-  -- 최대 크기 파일이 storage에서 거부된다.
+  -- 암호문은 평문보다 version(1) + nonce(12) + GCM 태그(16) = 29만큼 크다. 상한이 그걸 감당하지
+  -- 못하면 최대 크기 파일이 storage에서 거부된다. 버전 바이트가 붙기 전에는 28이었고, +28로
+  -- 되돌아가는 regression을 이 검사가 잡으려면 상수도 29여야 한다.
   if (
     select b.file_size_limit from storage.buckets b where b.id = 'message-files-encrypted'
-  ) < (select max(max_bytes) + 28 from public.message_attachment_mime_types) then
+  ) < (select max(max_bytes) + 29 from public.message_attachment_mime_types) then
     raise exception 'the encrypted bucket must have room for the AEAD overhead';
   end if;
 
