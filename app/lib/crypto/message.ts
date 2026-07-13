@@ -19,8 +19,8 @@
  * one row per message.
  *
  * Both public keys are recorded on the row. That is what makes key rotation free.
- * If a user resets their password with no recovery code, their identity key is
- * replaced and every row sealed to the old one stops opening -- and says so,
+ * If a user resets their password, their identity key is replaced and every row
+ * sealed to the old one stops opening -- and says so,
  * because the public key on the row no longer matches theirs. New messages are
  * sealed to the new key and just work. No epochs, no rekeying handshake, no
  * coordination between the two clients at all.
@@ -61,7 +61,7 @@ export type EncryptedMessage = {
 
 /**
  * Thrown when the row was sealed to an identity key this account no longer holds
- * -- the other side of a password reset without a recovery code. It is a permanent
+ * -- the other side of a password reset that rotated the identity key. It is a permanent
  * state, not a transient failure, and the UI renders it as such rather than
  * retrying.
  */

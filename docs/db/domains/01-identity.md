@@ -8,7 +8,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 - `profile_departments` — profile에 연결할 부서 lookup (`name`). service_role이 관리하고 authenticated는 읽기만 가능
 - `profiles` — 이름/역할/상태/학생정보/부서/국내·국제 track/복학 여부/연락처/avatar/cover/soft delete. `status`가 `accepted`인지가 권한 모델의 핵심 전제
-- `user_keys` — 이 사용자의 **암호학적** 신원. `profiles`가 사회적 신원이라면 그 옆에 걸린 열쇠고리다. X25519 신원 공개키 + 봉인된 blob 셋(`wrapped_user_key`, `wrapped_identity_secret_key`, `recovery_wrapped_user_key`). 키 계층 전체는 [docs/e2ee.md](../../e2ee.md)
+- `user_keys` — 이 사용자의 **암호학적** 신원. `profiles`가 사회적 신원이라면 그 옆에 걸린 열쇠고리다. X25519 신원 공개키 + 봉인된 blob 둘(`wrapped_user_key`, `wrapped_identity_secret_key`). 키 계층 전체는 [docs/e2ee.md](../../e2ee.md)
 - `permissions` — 문자열 key 기반 권한 registry (seed: `gongang`, `karaoke` — baseline migration)
 - `user_permissions` — profile별 permission 부여
 
@@ -28,7 +28,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 | `get_identity_public_keys(user_ids[])`  | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
 | `create_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
 | `reseal_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 비밀번호 변경. **신원키를 건드릴 수 없다** — 그래서 히스토리가 살아남는다   |
-| `rotate_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 비밀번호도 복구 코드도 없을 때. 지난 DM은 영영 닫힌다                       |
+| `rotate_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 비밀번호를 잊었을 때. 신원키까지 새로 발급, 지난 DM은 영영 닫힌다                       |
 
 열쇠고리 RPC가 `accepted`를 요구하지 않는 이유: 열쇠고리는 **가입 직후, 브라우저가 아직 비밀번호를 들고 있는 그 순간**에 만들어야 한다. 승인까지 미루면 그때는 세션만 있고 비밀번호가 없어 `encKey`를 만들 방법이 없다.
 

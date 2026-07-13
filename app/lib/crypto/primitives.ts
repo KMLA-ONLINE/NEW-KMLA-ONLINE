@@ -67,9 +67,8 @@ export function deriveSubkey(key: Uint8Array, info: string, salt?: Uint8Array): 
  *
  * ⚠️ **이메일이 곧 salt다. 이메일이 바뀌면 금고가 영영 안 열린다.**
  *
- * auth.users.email이 바뀌면 masterKey도, encKey도, 복구키도 전부 달라진다. 그러면 옛
- * 이메일로 봉인된 wrapped_user_key와 recovery_wrapped_user_key를 **비밀번호를 알아도, 복구
- * 코드를 알아도** 열 수 없다. 그 사람의 DM은 그 자리에서 영구히 죽는다.
+ * auth.users.email이 바뀌면 masterKey도 encKey도 전부 달라진다. 그러면 옛 이메일로 봉인된
+ * wrapped_user_key를 **비밀번호를 알아도** 열 수 없다. 그 사람의 DM은 그 자리에서 영구히 죽는다.
  *
  * 지금 앱에는 이메일 변경 UI가 없지만 Supabase 대시보드에서 운영자가 직접 바꿀 수 있고,
  * Auth 설정도 이메일 변경을 허용한다. 이메일 변경 기능을 만들려면 **반드시** 그 트랜잭션 안에서
