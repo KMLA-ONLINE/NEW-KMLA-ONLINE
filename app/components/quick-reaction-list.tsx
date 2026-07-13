@@ -1,3 +1,4 @@
+import { Twemoji } from "~/components/ui/twemoji"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -20,7 +21,7 @@ export function QuickReactionList({
           aria-label={`${reactionType.name} 반응 남기기`}
           onClick={() => onSelect(reactionType)}
         >
-          <span aria-hidden="true">{getReactionGlyph(reactionType)}</span>
+          <Twemoji text={getReactionGlyph(reactionType)} aria-hidden="true" />
         </button>
       ))}
     </div>

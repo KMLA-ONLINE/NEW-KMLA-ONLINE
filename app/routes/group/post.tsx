@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
+import { Twemoji } from "~/components/ui/twemoji"
 import { useModalClose } from "~/hooks/use-modal-close"
 import { mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -103,8 +104,12 @@ export default function GroupPostDetailPage() {
                 </header>
 
                 <div>
-                  <h2 className="text-xl font-semibold">{post.title}</h2>
-                  <p className="mt-1 text-sm leading-6 whitespace-pre-line">{post.content}</p>
+                  <h2 className="text-xl font-semibold">
+                    <Twemoji text={post.title} />
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 whitespace-pre-line">
+                    <Twemoji text={post.content} />
+                  </p>
                 </div>
 
                 {post.images.length > 0 ? (

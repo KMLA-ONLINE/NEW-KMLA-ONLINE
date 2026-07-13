@@ -254,6 +254,11 @@ otp_expiry = 3600
 [auth.email.template.recovery]
 subject = "KMLA Online 비밀번호 재설정"
 content_path = "./supabase/templates/recovery.html"
+# 온보딩 마지막 단계의 이메일 OTP. signInWithOtp가 magic_link 템플릿을 쓰고, 이 템플릿이
+# {{ .Token }}을 담아 매직 링크 대신 6자리 코드를 보낸다(otp_length/otp_expiry는 [auth.email]).
+[auth.email.template.magic_link]
+subject = "KMLA Online 이메일 인증 코드"
+content_path = "./supabase/templates/magic_link.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

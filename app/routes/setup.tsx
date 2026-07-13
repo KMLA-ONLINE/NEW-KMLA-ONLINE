@@ -1,5 +1,12 @@
 import { useEffect, useState, type ChangeEvent } from "react"
-import { useFetcher, useNavigate, type ActionFunctionArgs } from "react-router"
+import {
+  data,
+  useFetcher,
+  useLoaderData,
+  useNavigate,
+  type ActionFunctionArgs,
+  type LoaderFunctionArgs,
+} from "react-router"
 import { Camera, ChevronLeft, Loader2, Upload } from "lucide-react"
 
 import { createClient } from "~/lib/supabase/server"
@@ -28,8 +35,17 @@ type OnboardingArgs = Database["public"]["Functions"]["submit_onboarding"]["Args
  */
 type OnboardingInput = { [Key in keyof OnboardingArgs]: OnboardingArgs[Key] | null }
 
-export const action = async ({ request }: ActionFunctionArgs) => {
+export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { supabase } = createClient(request)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  // 온보딩 마지막 단계의 OTP를 이 이메일로 보낸다 -- 가입 때 쓴 것이고, 사용자가 다시 입력하지 않는다.
+  return { email: user?.email ?? null }
+}
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { supabase, headers } = createClient(request)
   const formData = await request.formData()
 
   const readText = (field: string) => {
@@ -41,6 +57,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const readNumber = (field: string) => {
     const text = readText(field)
     return text === null ? null : Number(text)
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user?.email) {
+    return { error: "세션이 만료되었습니다. 다시 로그인해 주세요." }
+  }
+
+  // 온보딩 제출은 두 단계다: 코드 발송(send-otp)과 코드 확인 후 제출(verify). 프로필은
+  // 이메일이 확인된 뒤에만 pending으로 넘어간다.
+  const intent = readText("intent")
+
+  if (intent === "send-otp") {
+    // enable_confirmations=false라 이미 로그인돼 있지만, signInWithOtp가 같은 이메일로 6자리
+    // 코드를 보낸다(magic_link 템플릿의 {{ .Token }}). shouldCreateUser=false: 새 계정은 안 만든다.
+    const { error } = await supabase.auth.signInWithOtp({
+      email: user.email,
+      options: { shouldCreateUser: false },
+    })
+    if (error) {
+      return { error: "인증 코드를 보내지 못했습니다. 잠시 후 다시 시도해 주세요." }
+    }
+    return data({ otpSent: true as const, email: user.email }, { headers })
+  }
+
+  // intent === "verify": 코드를 먼저 확인한다. 틀리면 프로필을 제출하지 않는다.
+  const token = readText("otp")
+  if (!token) {
+    return { error: "인증 코드를 입력해 주세요." }
+  }
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    email: user.email,
+    token,
+    type: "email",
+  })
+  if (verifyError) {
+    return { error: "인증 코드가 올바르지 않거나 만료되었습니다." }
   }
 
   const name = readText("name")
@@ -77,7 +131,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "프로필 저장에 실패했습니다. 입력한 정보를 확인해 주세요." }
   }
 
-  return { success: true as const, name }
+  return data({ success: true as const, name }, { headers })
 }
 
 type SetupFormData = {
@@ -209,10 +263,13 @@ function BirthdayFields({
 export default function Setup() {
   const navigate = useNavigate()
   const fetcher = useFetcher<typeof action>()
+  const { email } = useLoaderData<typeof loader>()
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<SetupFormData>(initialFormData)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState("")
+  const [otp, setOtp] = useState("")
+  const [otpSent, setOtpSent] = useState(false)
 
   const isStudent = formData.type === "student"
   const isAlumni = formData.type === "alumni"
@@ -285,11 +342,20 @@ export default function Setup() {
   const submitError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null
   const isSubmitting = fetcher.state !== "idle"
 
-  // Fields the chosen profile type never showed are sent empty, and the action
-  // turns those into the nulls the columns expect.
-  const submitOnboarding = () => {
+  // 코드 입력 폼으로 즉시 전환한다(낙관적). 발송이 실패하면 그 자리에 에러가 뜨고, 재전송으로
+  // 다시 시도한다 -- fetcher.data를 효과로 상태에 동기화하면 렌더 중 setState가 되어 피한다.
+  const sendOtp = () => {
+    setOtpSent(true)
+    fetcher.submit({ intent: "send-otp" }, { method: "post" })
+  }
+
+  // 코드 확인과 프로필 제출을 한 번에 보낸다 -- 서버가 코드를 먼저 확인하고, 통과할 때만 제출한다.
+  // 타입이 안 쓰는 필드는 빈 값으로 보내고, action이 그걸 컬럼이 기대하는 null로 바꾼다.
+  const submitVerify = () => {
     fetcher.submit(
       {
+        intent: "verify",
+        otp,
         name: formData.name.trim(),
         type: formData.type,
         gender: formData.gender,
@@ -317,8 +383,8 @@ export default function Setup() {
 
         <section className="bg-card text-card-foreground rounded-xl border shadow-xs">
           <div className="p-6 md:p-8">
-            <div className="mb-7 flex gap-1.5" aria-label={`3단계 중 ${step}단계`}>
-              {[1, 2, 3].map((progressStep) => (
+            <div className="mb-7 flex gap-1.5" aria-label={`4단계 중 ${step}단계`}>
+              {[1, 2, 3, 4].map((progressStep) => (
                 <div
                   key={progressStep}
                   className={`h-1.5 flex-1 rounded-full transition-colors ${
@@ -604,7 +670,7 @@ export default function Setup() {
                 className="flex flex-col gap-6"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  submitOnboarding()
+                  setStep(4)
                 }}
               >
                 <button
@@ -660,6 +726,37 @@ export default function Setup() {
                   ) : null}
                 </div>
 
+                <Button type="submit" className="w-full">
+                  다음
+                </Button>
+              </form>
+            )}
+
+            {step === 4 && (
+              <div className="flex flex-col gap-6">
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className="text-muted-foreground hover:text-foreground -ml-1 w-fit rounded-lg p-1 transition-colors"
+                  aria-label="이전 단계로"
+                >
+                  <ChevronLeft />
+                </button>
+
+                <div className="text-center">
+                  <h1 className="text-lg font-semibold">이메일 인증</h1>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {email ? (
+                      <>
+                        <span className="text-foreground font-medium">{email}</span> 로 6자리 인증
+                        코드를 보냅니다.
+                      </>
+                    ) : (
+                      "가입한 이메일로 6자리 인증 코드를 보냅니다."
+                    )}
+                  </p>
+                </div>
+
                 {submitError && (
                   <p
                     role="alert"
@@ -670,11 +767,62 @@ export default function Setup() {
                   </p>
                 )}
 
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
-                  {isSubmitting ? "제출 중..." : "승인 요청하기"}
-                </Button>
-              </form>
+                {otpSent ? (
+                  <form
+                    className="flex flex-col gap-4"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      submitVerify()
+                    }}
+                  >
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="otp">인증 코드</Label>
+                      <Input
+                        id="otp"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="6자리 코드"
+                        value={otp}
+                        onChange={(event) =>
+                          setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))
+                        }
+                        autoFocus
+                        required
+                      />
+                      <p className="text-muted-foreground text-xs">
+                        이메일에서 받은 코드를 입력하세요.{" "}
+                        <button
+                          type="button"
+                          onClick={sendOtp}
+                          disabled={isSubmitting}
+                          className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                        >
+                          코드 재전송
+                        </button>
+                      </p>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={isSubmitting || otp.length < 6}
+                    >
+                      {isSubmitting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+                      {isSubmitting ? "확인 중..." : "인증하고 완료하기"}
+                    </Button>
+                  </form>
+                ) : (
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={sendOtp}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+                    {isSubmitting ? "보내는 중..." : "인증 코드 보내기"}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </section>

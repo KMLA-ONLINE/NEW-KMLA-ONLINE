@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
+import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupComment } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
@@ -192,7 +193,7 @@ function GroupCommentItem({
                     @{parentName}
                   </button>
                 ) : null}
-                {comment.content}
+                <Twemoji text={comment.content ?? ""} />
               </p>
             </div>
             <div className="text-muted-foreground mt-1 ml-3 flex items-center gap-3 text-xs">
@@ -224,7 +225,7 @@ function GroupCommentItem({
                   onClick={() => (reaction ? setReaction(null) : setPickerOpen(true))}
                 >
                   {reaction ? (
-                    <span className="text-sm leading-none">{getReactionGlyph(reaction)}</span>
+                    <Twemoji text={getReactionGlyph(reaction)} className="text-sm leading-none" />
                   ) : (
                     <SmilePlusIcon className="size-4" aria-hidden="true" />
                   )}

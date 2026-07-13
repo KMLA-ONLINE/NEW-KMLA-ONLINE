@@ -3,6 +3,7 @@ import { Link, useHref } from "react-router"
 import { toast } from "sonner"
 
 import { GroupReactionButton } from "~/components/group/group-reaction-button"
+import { Twemoji } from "~/components/ui/twemoji"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -83,9 +84,7 @@ export function GroupPostActionBar({
       {topReactions.length > 0 ? (
         <div className="flex items-center gap-0.5 pr-2 text-sm">
           {topReactions.map((emoji) => (
-            <span key={emoji} className="leading-none">
-              {emoji}
-            </span>
+            <Twemoji key={emoji} text={emoji} className="leading-none" />
           ))}
         </div>
       ) : null}

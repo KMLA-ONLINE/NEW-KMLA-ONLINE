@@ -4,6 +4,7 @@ import { Link } from "react-router"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
+import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupPost } from "~/lib/group/types"
 
 // 레딧식 "목록" 렌즈: 본문 없이 제목을 훑고 눌러 게시물 상세로 들어가는 촘촘한 행.
@@ -28,7 +29,9 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
             {post.category.name}
           </Badge>
         ) : null}
-        <p className="line-clamp-1 text-sm font-medium sm:text-base">{post.title}</p>
+        <p className="line-clamp-1 text-sm font-medium sm:text-base">
+          <Twemoji text={post.title} />
+        </p>
       </div>
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         <span className="truncate">{authorName}</span>
