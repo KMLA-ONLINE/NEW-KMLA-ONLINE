@@ -48,7 +48,7 @@ export default function AppHomePage() {
         />
       </section>
 
-      <aside className="px-4 sm:px-0 lg:sticky lg:top-4 lg:self-start">
+      <aside className="hidden lg:sticky lg:top-4 lg:block lg:self-start">
         <MealPlanCard />
       </aside>
     </div>
