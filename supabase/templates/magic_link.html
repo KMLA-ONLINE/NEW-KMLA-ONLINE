@@ -1,11 +1,124 @@
 <!--
-  이메일 OTP 코드 템플릿. signInWithOtp가 이 magic_link 템플릿을 쓴다.
+  이메일 OTP 코드 템플릿. signInWithOtp가 이 magic_link 템플릿을 쓰고, {{ .Token }}이 6자리 코드다.
+  기본 템플릿은 매직 링크만 담아 "링크 클릭" UX가 되므로, 온보딩의 코드 입력 단계에 맞게 코드를 싣는다.
 
-  기본 템플릿은 {{ .ConfirmationURL }}(매직 링크)만 담아 "링크 클릭" UX가 된다. 온보딩 마지막
-  단계는 6자리 코드 입력이라, {{ .Token }}을 넣어 코드가 메일에 실리게 한다. otp_length·otp_expiry는
-  config.toml의 [auth.email]에 있다.
+  이메일 클라이언트는 CSS 지원이 제각각(Outlook은 flex/grid·다수 속성 미지원)이라 table 레이아웃 +
+  인라인 스타일만 쓴다. border-radius·box-shadow는 지원 안 하는 클라이언트에서 조용히 무시될 뿐이다.
 -->
-<h2>KMLA Online 이메일 인증</h2>
-<p>아래 6자리 코드를 입력해 이메일을 인증하세요. 코드는 1시간 동안 유효합니다.</p>
-<p style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 16px 0">{{ .Token }}</p>
-<p style="color: #666; font-size: 13px">본인이 요청하지 않았다면 이 메일을 무시하세요.</p>
+<!doctype html>
+<html lang="ko">
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f5;
+      -webkit-font-smoothing: antialiased;
+      font-family:
+        -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;,
+        Arial, sans-serif;
+    "
+  >
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="background-color: #f4f4f5"
+    >
+      <tr>
+        <td style="padding: 40px 16px; text-align: center">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              max-width: 440px;
+              margin: 0 auto;
+              background-color: #ffffff;
+              border: 1px solid #e4e4e7;
+              border-radius: 16px;
+              box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            "
+          >
+            <tr>
+              <td style="padding: 36px 40px 0; text-align: center">
+                <p
+                  style="
+                    margin: 0;
+                    font-size: 15px;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
+                    color: #18181b;
+                  "
+                >
+                  KMLA Online
+                </p>
+                <h1 style="margin: 22px 0 0; font-size: 20px; font-weight: 600; color: #18181b">
+                  이메일 인증
+                </h1>
+                <p style="margin: 8px 0 0; font-size: 14px; line-height: 1.6; color: #71717a">
+                  아래 6자리 코드를 입력해 이메일을 인증하세요.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 24px 40px 4px">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td
+                      style="
+                        background-color: #fafafa;
+                        border: 1px solid #e4e4e7;
+                        border-radius: 12px;
+                        padding: 22px 0;
+                        text-align: center;
+                      "
+                    >
+                      <span
+                        style="
+                          font-size: 34px;
+                          font-weight: 700;
+                          letter-spacing: 10px;
+                          padding-left: 10px;
+                          color: #18181b;
+                          font-family:
+                            &quot;SFMono-Regular&quot;, Consolas, &quot;Liberation Mono&quot;,
+                            Menlo, monospace;
+                        "
+                        >{{ .Token }}</span
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 40px 32px; text-align: center">
+                <p style="margin: 0; font-size: 13px; color: #a1a1aa">
+                  코드는 1시간 동안 유효합니다.
+                </p>
+                <p
+                  style="
+                    margin: 24px 0 0;
+                    padding-top: 20px;
+                    border-top: 1px solid #f4f4f5;
+                    font-size: 12px;
+                    line-height: 1.7;
+                    color: #a1a1aa;
+                  "
+                >
+                  본인이 요청하지 않았다면 이 메일을 무시하세요.<br />
+                  누군가 이 주소로 KMLA Online 가입을 시도했을 수 있습니다.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin: 20px 0 0; font-size: 11px; color: #d4d4d8; text-align: center">
+            © KMLA Online
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
