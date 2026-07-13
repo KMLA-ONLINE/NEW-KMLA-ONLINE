@@ -428,6 +428,15 @@ revoke execute on function private.post_author(bigint,boolean) from public, anon
 -- comment_reactions를 참조하므로 04-reactions.sql에 산다(그 테이블들이 이 파일보다 늦게 생긴다).
 -- list_space_posts·get_post·get_post_comments가 lateral join으로 호출한다.
 
+-- 그룹 피드. 로더를 붙일 때 밟기 쉬운 함정이 둘 있다.
+--
+-- 1) **고정 글은 첫 페이지에만** 얹혀 오고 시간순 스트림에는 없다(아래 union). 그래서 반환 행 수가
+--    p_limit보다 클 수 있고, `rows.length === p_limit`으로 "다음 페이지가 있나"를 판단하면 고정 글
+--    수만큼 부풀어 **틀린다**. 세야 하는 건 pinned_at is null인 스트림 쪽이고, 다음 커서도 그 스트림의
+--    마지막 글이다(정렬이 고정 먼저라 배열의 끝은 언제나 스트림의 가장 오래된 글이다).
+-- 2) **비멤버에게는 예외를 던진다**(can_participate_space). 공개 그룹은 가입 전에도 목록에 보이므로
+--    (spaces_select), 가입 전 화면에서 이걸 그냥 부르면 로더가 500으로 터진다 -- 멤버인지 먼저 갈라
+--    빈 목록을 주든 안내를 띄우든 해야 한다.
 create function public.list_space_posts(
   p_space_id bigint,
   p_category_id bigint default null,
@@ -458,7 +467,10 @@ declare
   before_created_at timestamptz;
 begin
   if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
-  if p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+  -- null을 빼먹으면 `limit null`이 되어 상한이 통째로 사라진다(null < 1은 참이 아니라 null이라
+  -- 이 가드를 그냥 지나간다). 그러면 클라이언트가 p_limit=null 한 번으로 접근 가능한 글/댓글을
+  -- 전부 빨아낼 수 있다 -- 05-chat의 읽기 RPC들이 처음부터 `p_limit is null`을 함께 본 이유다.
+  if p_limit is null or p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
 
   -- 커서는 id 하나지만 정렬은 (created_at, id)다. 그 글의 created_at을 찾아 행 비교로 쓰면
   -- idx_posts_active_space_created_at을 그대로 탄다.
@@ -522,6 +534,105 @@ begin
     where a.post_id=page.id
   ) files on true
   order by page.sort_group, page.pinned_at desc nulls last, page.created_at desc, page.id desc;
+end;
+$$;
+
+-- 홈 피드. 멤버인 모든 space의 글을 고정글 우선 없이 최신순 한 흐름으로 합친다. security definer
+-- 함수라 RLS가 아니라 아래 space_members 조인이 접근 경계다 -- 탈퇴/차단된 공간의 글은 여기서
+-- 빠진다. 작성자·반응·첨부의 반환 계약은 list_space_posts와 같고, 홈에서 출처를 표시할 space만
+-- 추가한다.
+--
+-- list_space_posts의 두 함정이 여기엔 **없다**. 고정 union이 없으므로 `행 수 == p_limit`이 그대로
+-- "다음 페이지 있음"이고, 멤버십은 조인이라 비멤버여도 예외가 아니라 빈 목록이 나온다.
+--
+-- 다만 pinned_at은 같이 내려오되 **이 피드에서는 정렬에 쓰지 않는다** -- 고정은 한 그룹 안에서의
+-- 개념이라 여러 그룹을 가로지르는 흐름에선 "무슨 기준으로 맨 위"인지 말할 수가 없다. 그래서 이 값을
+-- 그대로 "고정됨" 배지로 옮기면 맨 위에 있지도 않은 글에 고정 배지가 붙는 거짓말이 된다. 매퍼가
+-- 출처 space가 있는 행에서 고정을 떨어뜨리는 이유다(app/lib/feed/map-post.ts).
+create function public.list_feed_posts(
+  p_before_id bigint default null,
+  p_limit int4 default 20
+)
+returns table(
+  post_id bigint,
+  pub_id uuid,
+  title text,
+  content text,
+  is_anonymous boolean,
+  author jsonb,
+  is_mine boolean,
+  category jsonb,
+  space jsonb,
+  pinned_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz,
+  comment_count bigint,
+  reaction_count bigint,
+  top_reactions jsonb,
+  my_reaction_id bigint,
+  attachments jsonb
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  before_created_at timestamptz;
+begin
+  -- null을 빼먹으면 `limit null`이 되어 상한이 통째로 사라진다(null < 1은 참이 아니라 null이라
+  -- 이 가드를 그냥 지나간다). 그러면 클라이언트가 p_limit=null 한 번으로 접근 가능한 글/댓글을
+  -- 전부 빨아낼 수 있다 -- 05-chat의 읽기 RPC들이 처음부터 `p_limit is null`을 함께 본 이유다.
+  if p_limit is null or p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+
+  -- 커서는 id 하나지만 전체 피드는 (created_at, id) 내림차순이다. 시간도 함께 찾아 행 비교를
+  -- 쓰면 각 space의 idx_posts_active_space_created_at을 그대로 이용할 수 있다.
+  if p_before_id is not null then
+    select p.created_at into before_created_at from public.posts p where p.id=p_before_id;
+  end if;
+
+  return query
+  select
+    p.id,
+    p.pub_id,
+    p.title,
+    p.content,
+    p.is_anonymous,
+    private.post_author(p.author_id, p.is_anonymous),
+    p.author_id=caller_id,
+    case when cat.id is null then null else
+      jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
+    jsonb_build_object('name',s.name,'type',s.type,'pub_id',s.pub_id),
+    p.pinned_at,
+    p.created_at,
+    p.updated_at,
+    coalesce(counts.comment_count,0),
+    coalesce(counts.reaction_count,0),
+    coalesce(summary.top_reactions,'[]'::jsonb),
+    summary.my_reaction_id,
+    coalesce(files.items,'[]'::jsonb)
+  from public.posts p
+  join public.spaces s on s.id=p.space_id and s.deleted_at is null
+  join public.space_members sm
+    on sm.space_id=p.space_id and sm.user_id=caller_id and sm.banned_at is null
+  left join public.space_categories cat on cat.id=p.category_id
+  left join lateral (
+    select
+      (select count(*) from public.comments c where c.post_id=p.id and c.deleted_at is null) as comment_count,
+      (select count(*) from public.post_reactions r where r.post_id=p.id) as reaction_count
+  ) counts on true
+  left join lateral (select * from private.post_reaction_summary(p.id, caller_id)) summary on true
+  left join lateral (
+    select jsonb_agg(jsonb_build_object(
+      'id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,
+      'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,
+      'width',a.width,'height',a.height
+    ) order by a.sort_order, a.id) as items
+    from public.post_attachments a
+    join public.mime_types mime on mime.content_type=a.content_type
+    where a.post_id=p.id
+  ) files on true
+  where p.deleted_at is null
+    and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
+  order by p.created_at desc, p.id desc
+  limit p_limit;
 end;
 $$;
 
@@ -611,7 +722,10 @@ declare
   post_is_anonymous boolean;
 begin
   if not private.can_access_post(p_post_id) then raise exception 'post access required'; end if;
-  if p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+  -- null을 빼먹으면 `limit null`이 되어 상한이 통째로 사라진다(null < 1은 참이 아니라 null이라
+  -- 이 가드를 그냥 지나간다). 그러면 클라이언트가 p_limit=null 한 번으로 접근 가능한 글/댓글을
+  -- 전부 빨아낼 수 있다 -- 05-chat의 읽기 RPC들이 처음부터 `p_limit is null`을 함께 본 이유다.
+  if p_limit is null or p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
 
   select p.author_id, p.is_anonymous into post_author_id, post_is_anonymous
   from public.posts p where p.id=p_post_id;
@@ -882,8 +996,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
-grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) to authenticated;
+revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) to authenticated;
 
 -- 고정·삭제는 컬럼 grant로 표현할 수 없어서 RPC로 둔다. posts_update/comments_update 정책이
 -- author_id=current_profile_id()라 "관리자가 남의 글을 고정하거나 지운다"가 정책에 안 들어가고,

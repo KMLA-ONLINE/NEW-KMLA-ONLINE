@@ -47,6 +47,21 @@ export type GroupPostAuthor = {
   name: string
 }
 
+/**
+ * 이 글이 놓인 space의 최소 정보. 피드처럼 **여러 space의 글을 한 흐름에 모을 때만** 채운다 --
+ * 그때 각 글이 어느 그룹에서 왔는지 알아야 하기 때문이다. 그룹 안에서는(단일 space) null이다:
+ * 헤더가 이미 어느 그룹인지 말하고 있어 글마다 붙이면 잡음이다. 백엔드에선 피드 로더가
+ * spaces를 조인해 내려준다(author를 조인하듯). 목록 표시에 필요한 것만 담는다.
+ */
+export type GroupPostSpace = {
+  /** spaces.name */
+  name: string
+  /** spaces.space_type. group=공식, community=비공식. 출처 아이콘을 가른다. */
+  type: "group" | "community"
+  /** spaces.pub_id 슬러그. 출처를 누르면 /groups/:pubId 로 간다. */
+  pubId: string
+}
+
 /** space_categories 한 행. 그룹이 정의하는 게시판/말머리(정보·공식·잡담 등). */
 export type GroupCategory = {
   /** space_categories.id */
@@ -141,6 +156,11 @@ export type GroupPost = {
   updatedAt?: string | null
   /** posts.category_id가 가리키는 그룹 카테고리(로더가 조인해 내려줌, author처럼 비정규화). null=미분류. */
   category: GroupCategory | null
+  /**
+   * 이 글이 어느 space에서 왔는지. **피드처럼 여러 그룹의 글을 한데 모을 때만** 채운다. 그룹
+   * 내부 화면은 단일 space라 null로 두고 헤더가 그 역할을 한다. GroupPostSpace 참고.
+   */
+  space?: GroupPostSpace | null
   images: GroupPostImage[]
   /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
   files?: GroupPostFile[]

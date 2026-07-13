@@ -11,7 +11,11 @@ declare
   user1 uuid := '11111111-1111-4111-8111-aaaaaaaaaaaa';
   user2 uuid := '22222222-2222-4222-8222-bbbbbbbbbbbb';
   user3 uuid := '33333333-3333-4333-8333-cccccccccccc';
-  profile1 bigint; profile2 bigint; profile3 bigint;
+  user4 uuid := '44444444-4444-4222-8222-dddddddddddd';
+  profile1 bigint; profile2 bigint; profile3 bigint; profile4 bigint;
+  feed_space_a bigint; feed_space_b bigint; feed_nonmember_space bigint; feed_banned_space bigint;
+  feed_post_a bigint; feed_post_b bigint; feed_post_c bigint; feed_cursor bigint;
+  feed_ids bigint[]; feed_next_ids bigint[]; feed_space jsonb;
   space1 bigint; other_space bigint;
   cat1 bigint; other_cat bigint;
   anon_pub uuid; real_pub uuid;
@@ -23,12 +27,14 @@ begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
     (user2, 'post-check-2@example.com', '{"name":"Post Check 2"}'::jsonb),
-    (user3, 'post-check-3@example.com', '{"name":"Post Check 3"}'::jsonb);
+    (user3, 'post-check-3@example.com', '{"name":"Post Check 3"}'::jsonb),
+    (user4, 'post-check-4@example.com', '{"name":"Post Check 4"}'::jsonb);
   select id into profile1 from public.profiles where auth_user_id = user1;
   select id into profile2 from public.profiles where auth_user_id = user2;
   select id into profile3 from public.profiles where auth_user_id = user3;
+  select id into profile4 from public.profiles where auth_user_id = user4;
   update public.profiles set type='teacher', track='domestic', status='accepted'
-  where id in (profile1, profile2, profile3);
+  where id in (profile1, profile2, profile3, profile4);
 
   -- space1: user1 owner, user2 member. other_space: user3 owner (= space1 비멤버).
   insert into public.spaces (type, name) values ('group','테스트 공간') returning id into space1;
@@ -129,6 +135,80 @@ begin
   insert into public.post_reactions (post_id, user_id, reaction_type_id) values (real_id, profile1, like_id);
   select my_reaction_id into my_react from public.get_post((select pub_id from public.posts where id=real_id));
   if my_react is distinct from like_id then raise exception 'my_reaction_id must reflect the caller reaction'; end if;
+  -- -------------------------------------------------------------------------
+  -- 홈 피드: 멤버인 여러 space를 최신순으로 합치고, 비멤버·차단 멤버 space는 제외한다
+  -- -------------------------------------------------------------------------
+  insert into public.spaces (type,name) values ('group','피드 A') returning id into feed_space_a;
+  insert into public.spaces (type,name) values ('community','피드 B') returning id into feed_space_b;
+  insert into public.spaces (type,name) values ('group','피드 비멤버') returning id into feed_nonmember_space;
+  insert into public.spaces (type,name) values ('group','피드 차단') returning id into feed_banned_space;
+  -- space마다 owner가 정확히 1명이어야 한다(trg_validate_space_owner). 이 트리거는 deferred라
+  -- rollback으로 끝나는 테스트에선 owner를 빼먹어도 조용히 넘어가지만, 그러면 존재할 수 없는
+  -- 상태(주인 없는 space)를 두고 피드를 검증하는 셈이 된다.
+  insert into public.space_members (space_id,user_id,role,banned_at) values
+    (feed_space_a,profile4,'owner',null),
+    (feed_space_b,profile1,'owner',null),
+    (feed_space_b,profile4,'member',null),
+    (feed_nonmember_space,profile2,'owner',null),
+    (feed_banned_space,profile1,'owner',null),
+    (feed_banned_space,profile4,'member',now());
+  insert into public.posts (space_id,author_id,title,content,is_anonymous,created_at) values
+    (feed_space_a,profile4,'피드 첫 글','본문',true,'2026-01-03 10:00:00+00') returning id into feed_post_a;
+  insert into public.posts (space_id,author_id,title,content,is_anonymous,created_at) values
+    (feed_space_b,profile4,'피드 둘째 글','본문',false,'2026-01-02 10:00:00+00') returning id into feed_post_b;
+  insert into public.posts (space_id,author_id,title,content,is_anonymous,created_at) values
+    (feed_space_a,profile4,'피드 셋째 글','본문',false,'2026-01-01 10:00:00+00') returning id into feed_post_c;
+  insert into public.posts (space_id,author_id,title,content,is_anonymous,created_at) values
+    (feed_nonmember_space,profile2,'비멤버 글','본문',false,'2026-01-04 10:00:00+00'),
+    (feed_banned_space,profile4,'차단 글','본문',false,'2026-01-05 10:00:00+00');
+
+  perform set_config('request.jwt.claim.sub', user4::text, true);
+  select array_agg(post_id order by created_at desc, post_id desc)
+  into feed_ids from public.list_feed_posts(null,2);
+  if feed_ids is distinct from array[feed_post_a,feed_post_b] then
+    raise exception 'feed must merge member spaces in created_at desc order and exclude inaccessible spaces';
+  end if;
+  select author, is_mine, space into result_author, result_is_mine, feed_space
+  from public.list_feed_posts(null,2) where post_id=feed_post_a;
+  if result_author is not null or result_is_mine is not true then
+    raise exception 'own anonymous feed post must hide author but retain is_mine';
+  end if;
+  if feed_space->>'name' <> '피드 A' or feed_space->>'type' <> 'group' or feed_space->>'pub_id' is null then
+    raise exception 'feed space tag must contain name, type, and pub_id';
+  end if;
+  feed_cursor := feed_ids[2];
+  select array_agg(post_id order by created_at desc, post_id desc)
+  into feed_next_ids from public.list_feed_posts(feed_cursor,20);
+  if feed_next_ids is distinct from array[feed_post_c] then
+    raise exception 'feed keyset page must continue without overlap';
+  end if;
+
+  -- -------------------------------------------------------------------------
+  -- 상한은 null도 막아야 한다: `limit null`은 상한이 없다는 뜻이다
+  -- -------------------------------------------------------------------------
+  -- p_limit=null이면 `p_limit < 1`이 참이 아니라 null이라 가드를 지나가고, `limit null`은 전부를
+  -- 뜻한다. 즉 호출 한 번으로 접근 가능한 글/댓글을 통째로 가져갈 수 있다. 페이지네이션이 있는
+  -- 읽기 RPC는 전부 이걸 막아야 한다.
+  begin
+    perform public.list_feed_posts(null, null);
+    raise exception 'list_feed_posts must reject a null limit';
+  exception when others then
+    if sqlerrm not like '%limit must be 1 to 50%' then raise; end if;
+  end;
+
+  begin
+    perform public.list_space_posts(feed_space_a, null, null, null);
+    raise exception 'list_space_posts must reject a null limit';
+  exception when others then
+    if sqlerrm not like '%limit must be 1 to 50%' then raise; end if;
+  end;
+
+  begin
+    perform public.get_post_comments(feed_post_c, null, null);
+    raise exception 'get_post_comments must reject a null limit';
+  exception when others then
+    if sqlerrm not like '%limit must be 1 to 50%' then raise; end if;
+  end;
 end $$;
 
 rollback;

@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1890,6 +1890,28 @@ export type Database = {
           notification_level: Database["public"]["Enums"]["notification_level"]
           type: Database["public"]["Enums"]["conversation_type"]
           unread_count: number
+        }[]
+      }
+      list_feed_posts: {
+        Args: { p_before_id?: number; p_limit?: number }
+        Returns: {
+          attachments: Json
+          author: Json
+          category: Json
+          comment_count: number
+          content: string
+          created_at: string
+          is_anonymous: boolean
+          is_mine: boolean
+          my_reaction_id: number
+          pinned_at: string
+          post_id: number
+          pub_id: string
+          reaction_count: number
+          space: Json
+          title: string
+          top_reactions: Json
+          updated_at: string
         }[]
       }
       list_notifications: {

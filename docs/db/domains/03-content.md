@@ -21,6 +21,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | 함수                                                          | 인증                                  | 쓰기 | 목적                                                                                         |
 | ------------------------------------------------------------- | ------------------------------------- | ---- | -------------------------------------------------------------------------------------------- |
 | `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버                            | X | 피드. `created_at`·`updated_at`을 함께 내려 수정 표기를 지원하며, 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다 |
+| `list_feed_posts(before_id?, limit?)`                         | 멤버인 모든 space                     | X | 홈 피드. 고정 글 우선 없이 모든 멤버 space의 글을 `(created_at, id)` 내림차순으로 합치며, 출처 `space{name,type,pub_id}`를 함께 반환한다 |
 | `get_post(pub_id)`                                            | post 접근 권한                        | X | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                 |
 | `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한                        | X | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래) |
 | `search_posts(query, space_id)`                               | space 멤버                            | X | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다             |

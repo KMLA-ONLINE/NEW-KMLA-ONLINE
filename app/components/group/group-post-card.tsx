@@ -1,4 +1,4 @@
-import { PinIcon } from "lucide-react"
+import { LandmarkIcon, PinIcon, UsersIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
@@ -31,6 +31,11 @@ export function GroupPostCard({
   canCurate?: boolean
 }) {
   const authorName = post.author?.name ?? "익명"
+  // 피드(space 있음)에선 다른 그룹의 글이라 그룹을 명시한 절대 경로로 링크한다. 그룹 안
+  // (space 없음)에선 지금까지처럼 라우트 기준 상대 경로 -- 둘 다 상세/수정으로 옳게 간다.
+  const postPath = post.space
+    ? `/groups/${post.space.pubId}/posts/${post.pubId}`
+    : `posts/${post.pubId}`
   const [expanded, setExpanded] = useState(false)
   const [clampable, setClampable] = useState(false)
 
@@ -53,13 +58,37 @@ export function GroupPostCard({
 
   return (
     <article className="bg-card border-foreground/20 sm:border-border overflow-hidden border-b-2 shadow-none sm:rounded-xl sm:border sm:shadow-sm">
+      {/* 피드에서만: 이 글이 어느 그룹에서 왔는지. 제목 링크 바깥이라 그룹으로 따로 눌러 갈 수 있다. */}
+      {post.space ? (
+        <Link
+          to={`/groups/${post.space.pubId}`}
+          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold transition-colors"
+        >
+          {post.space.type === "group" ? (
+            <LandmarkIcon className="size-3.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <UsersIcon className="size-3.5 shrink-0" aria-hidden="true" />
+          )}
+          <span className="truncate">{post.space.name}</span>
+        </Link>
+      ) : null}
       {post.isPinned ? (
-        <div className="text-muted-foreground flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold">
+        <div
+          className={cn(
+            "text-muted-foreground flex items-center gap-1.5 px-4 text-xs font-semibold",
+            post.space ? "pt-1.5" : "pt-3"
+          )}
+        >
           <PinIcon className="size-3.5 -rotate-45 fill-current" aria-hidden="true" />
           고정된 게시물
         </div>
       ) : null}
-      <header className={cn("flex items-start gap-3 px-4 pb-3", post.isPinned ? "pt-2" : "pt-4")}>
+      <header
+        className={cn(
+          "flex items-start gap-3 px-4 pb-3",
+          post.isPinned || post.space ? "pt-2" : "pt-4"
+        )}
+      >
         <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -81,7 +110,7 @@ export function GroupPostCard({
           isAnonymous={post.author === null}
           canManage={canManage}
           canCurate={canCurate}
-          editTo={`posts/${post.pubId}/edit`}
+          editTo={`${postPath}/edit`}
         />
       </header>
 
@@ -91,7 +120,7 @@ export function GroupPostCard({
             단위로 훑을 수 있게 된다 -- <p>면 게시물 사이를 점프할 수가 없다. 그룹 이름이
             h1(group-header)이라 게시물 제목은 h2다(상세 모달의 제목과도 같은 레벨). */}
         <h2 className="mb-2 text-xl font-semibold">
-          <Link to={`posts/${post.pubId}`} className="hover:underline">
+          <Link to={postPath} className="hover:underline">
             <Twemoji text={post.title} />
           </Link>
         </h2>
@@ -130,7 +159,7 @@ export function GroupPostCard({
         commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
-        postPath={`posts/${post.pubId}`}
+        postPath={postPath}
         className="mt-1"
       />
     </article>

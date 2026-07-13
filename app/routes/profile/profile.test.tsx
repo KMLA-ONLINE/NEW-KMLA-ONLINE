@@ -3,8 +3,8 @@ import { render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it } from "vitest"
 
-import ProfilePage from "./_app.profile"
-import ProfileEditPage from "./_app.profile.edit"
+import ProfilePage from "./profile"
+import ProfileEditPage from "./edit"
 
 function renderWithRouter(ui: ReactNode) {
   return render(<MemoryRouter>{ui}</MemoryRouter>)

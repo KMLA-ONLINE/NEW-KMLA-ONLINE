@@ -1,4 +1,4 @@
-import type { Ref } from "react"
+import type { ReactNode, Ref } from "react"
 
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { GroupPostCard } from "~/components/group/group-post-card"
@@ -33,6 +33,7 @@ export function GroupPostFeed({
   reactionTypes,
   hasMore = false,
   sentinelRef,
+  empty,
   canManage,
   canCurate,
 }: {
@@ -41,6 +42,8 @@ export function GroupPostFeed({
   reactionTypes: ReactionType[]
   hasMore?: boolean
   sentinelRef?: Ref<HTMLDivElement>
+  /** 비었을 때 보여줄 것. 기본값은 글쓰기 입구가 있는 화면을 가정한다(첫 글을 쓰라고 권한다). */
+  empty?: ReactNode
   /** owner/admin이면 카드 ⋯에 모더레이션 메뉴가 뜬다. */
   canManage?: boolean
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
@@ -48,10 +51,12 @@ export function GroupPostFeed({
 }) {
   if (posts.length === 0) {
     return (
-      <div className="text-muted-foreground py-16 text-center">
-        <p className="text-foreground font-semibold">아직 게시물이 없습니다</p>
-        <p className="mt-1 text-sm">가장 먼저 글을 남겨보세요.</p>
-      </div>
+      empty ?? (
+        <div className="text-muted-foreground py-16 text-center">
+          <p className="text-foreground font-semibold">아직 게시물이 없습니다</p>
+          <p className="mt-1 text-sm">가장 먼저 글을 남겨보세요.</p>
+        </div>
+      )
     )
   }
 
