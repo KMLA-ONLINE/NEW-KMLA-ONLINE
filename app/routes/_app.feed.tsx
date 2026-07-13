@@ -16,8 +16,6 @@ const FEED_PAGE_SIZE = 6
 // 안에서만 의미가 있어(무슨 기준으로 맨 위?) 피드엔 없다. ISO 문자열이라 사전식이 곧 시간순.
 const feedPosts = [...mockFeedPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
-// 그룹 피드처럼 모바일에선 카드가 화면 가장자리까지 차게 여백을 없앤다(카드는 그때 border-b-2
-// 스택이 되고 sm+에서 라운드 카드가 된다). 제목·토글·급식 카드는 각자 px로 안쪽을 맞춘다.
 export const handle = { mobileContentEdge: "bleed" as const }
 
 export default function AppHomePage() {

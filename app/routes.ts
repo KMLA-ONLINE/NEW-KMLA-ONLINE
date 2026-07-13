@@ -2,7 +2,7 @@ import { index, layout, route, type RouteConfig } from "@react-router/dev/routes
 
 export default [
   layout("./routes/_app.tsx", [
-    index("./routes/_app._index.tsx"),
+    index("./routes/_app.feed.tsx"),
     route("groups", "./routes/_app.groups.tsx"),
     // discover는 정적 세그먼트라 :pubId보다 먼저 매칭된다(RR7은 배열 순서가 아니라 구체성으로
     // 랭킹한다). 그래서 "discover"는 사실상 예약된 pub_id -- 그 슬러그를 가진 그룹은 가려진다.
@@ -25,9 +25,9 @@ export default [
       ]),
     ]),
     route("menu", "./routes/_app.menu.tsx"),
-    route("profile", "./routes/_app.profile.tsx"),
-    route("profile/edit", "./routes/_app.profile.edit.tsx"),
-    route("profile/password", "./routes/_app.profile.password.tsx"),
+    route("profile", "./routes/profile/profile.tsx"),
+    route("profile/edit", "./routes/profile/edit.tsx"),
+    route("profile/password", "./routes/profile/password.tsx"),
   ]),
   route("login", "./routes/login.tsx"),
   route("signup", "./routes/signup.tsx"),
