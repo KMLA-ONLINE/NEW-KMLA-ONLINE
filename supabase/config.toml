@@ -248,6 +248,13 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# 비밀번호 재설정 메일. forgot-password가 resetPasswordForEmail로 보내고 {{ .ConfirmationURL }}
+# 링크가 /reset-password로 떨어진다. 재설정은 신원키를 회전시켜 지난 DM을 포기하므로(docs/e2ee.md)
+# 템플릿에 그 경고를 담는다.
+[auth.email.template.recovery]
+subject = "KMLA Online 비밀번호 재설정"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
