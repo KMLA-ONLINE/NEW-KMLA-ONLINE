@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router"
 
 import { GroupPostFeed } from "~/components/group/group-post-feed"
 import { PostViewToggle } from "~/components/group/post-view-toggle"
@@ -43,6 +44,16 @@ export default function AppHomePage() {
           reactionTypes={PLACEHOLDER_REACTION_TYPES}
           hasMore={hasMore}
           sentinelRef={sentinelRef}
+          empty={
+            <div className="text-muted-foreground py-16 text-center">
+              <p className="text-foreground font-semibold">아직 올라온 글이 없습니다</p>
+              <p className="mt-1 text-sm">
+                <Link to="/groups" className="underline">
+                  내 그룹
+                </Link>
+              </p>
+            </div>
+          }
         />
       </section>
 
