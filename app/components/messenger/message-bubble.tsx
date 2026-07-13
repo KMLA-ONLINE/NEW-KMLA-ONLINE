@@ -4,6 +4,7 @@ import { EllipsisIcon, PinIcon, ReplyIcon, SmileIcon } from "lucide-react"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
+import { Twemoji } from "~/components/ui/twemoji"
 import { MessageAttachmentGroup } from "~/components/messenger/message-attachment-preview"
 import { BubbleOverflowMenu } from "~/components/messenger/message-actions"
 import { QuickReactionList } from "~/components/quick-reaction-list"
@@ -40,7 +41,8 @@ function LinkedMessageText({ text }: { text: string }) {
     <>
       {getLinkedTextSegments(text).map((segment, index) => {
         if (segment.type === "text") {
-          return segment.text
+          // 링크가 아닌 조각의 이모지도 Twemoji로 통일한다. 링크 조각은 URL이라 그대로 둔다.
+          return <Twemoji key={index} text={segment.text} />
         }
 
         return (
@@ -295,9 +297,12 @@ export function MessageBubble({
         )}
       >
         {uniqueReactionValues.map((reactionValue) => (
-          <span key={reactionValue} aria-hidden="true" className="text-sm leading-none">
-            {reactionValue}
-          </span>
+          <Twemoji
+            key={reactionValue}
+            text={reactionValue}
+            aria-hidden="true"
+            className="text-sm leading-none"
+          />
         ))}
         {reactionCount > 1 ? (
           <span className="ml-1 text-[11px] leading-none">{reactionCount}</span>

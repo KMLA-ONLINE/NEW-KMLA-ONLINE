@@ -148,6 +148,16 @@ body {
     @apply font-sans;
   }
 
+  /* Twemoji: 이모지를 글자 높이(1em)에 맞춰 인라인 이미지로 그린다. @twemoji/api가 붙이는
+     기본 클래스가 `emoji`다. vertical-align은 대략적인 베이스라인 보정. */
+  img.emoji {
+    display: inline-block;
+    height: 1em;
+    width: 1em;
+    margin: 0 0.05em 0 0.1em;
+    vertical-align: -0.1em;
+  }
+
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,

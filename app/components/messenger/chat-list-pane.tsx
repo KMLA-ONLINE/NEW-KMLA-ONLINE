@@ -5,6 +5,7 @@ import { Link } from "react-router"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
+import { Twemoji } from "~/components/ui/twemoji"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import { getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
@@ -85,7 +86,7 @@ export function ChatListPane({
                       ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                      {getMessagePreview(room.lastMessage)}
+                      <Twemoji text={getMessagePreview(room.lastMessage)} />
                     </span>
                   </span>
                   <span className="flex shrink-0 flex-col items-end gap-2">

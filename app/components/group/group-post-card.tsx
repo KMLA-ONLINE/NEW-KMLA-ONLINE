@@ -10,6 +10,7 @@ import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
+import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupPost } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
@@ -91,7 +92,7 @@ export function GroupPostCard({
             h1(group-header)이라 게시물 제목은 h2다(상세 모달의 제목과도 같은 레벨). */}
         <h2 className="mb-2 text-xl font-semibold">
           <Link to={`posts/${post.pubId}`} className="hover:underline">
-            {post.title}
+            <Twemoji text={post.title} />
           </Link>
         </h2>
         <p
@@ -103,7 +104,7 @@ export function GroupPostCard({
             (clampable || expanded) && "pointer-coarse:cursor-pointer"
           )}
         >
-          {post.content}
+          <Twemoji text={post.content} />
         </p>
         {clampable || expanded ? (
           <button
