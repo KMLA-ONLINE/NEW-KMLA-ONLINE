@@ -16,9 +16,10 @@
  *   - Changing the password re-seals one 32-byte blob. Not a single message is
  *     re-encrypted, because messages are keyed off the identity key, which is
  *     keyed off `userKey`, which does not change.
- *   - The key is derived from the password, not from the device, so a phone and a
- *     laptop independently arrive at the same `userKey`. There is no device
- *     registration, no linking QR code, and no "safety number changed" to explain.
+ *   - `userKey` is random, but it is reached through the password, not the device:
+ *     any device that knows the password derives the same `encKey` and unwraps the
+ *     same `userKey`. There is no device registration, no linking QR code, and no
+ *     "safety number changed" to explain.
  *
  * The cost of that second property is stated plainly: someone who learns the
  * password can read everything, past and future, without touching the device.

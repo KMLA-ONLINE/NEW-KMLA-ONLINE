@@ -27,8 +27,9 @@ create table public.conversation_members (
 -- (docs/e2ee.md). 어느 쪽인지는 대화 타입이 정하며, CHECK로는 다른 테이블을 볼 수 없어
 -- private.enforce_message_encryption_shape() 트리거가 강제한다.
 --
--- content_ciphertext는 nonce(12) || AES-256-GCM이다. 서버는 이걸 열 수 없고, 그래서
--- 이 컬럼 위에서는 검색도, 미리보기 생성도, 길이 말고는 어떤 검증도 할 수 없다.
+-- content_ciphertext는 version(1) || nonce(12) || ciphertext || tag(16)이다(primitives.ts의 seal).
+-- 서버는 이걸 열 수 없고, 그래서 이 컬럼 위에서는 검색도, 미리보기 생성도, 길이 말고는 어떤
+-- 검증도 할 수 없다.
 create table public.messages (
   id bigserial primary key,
   conversation_id bigint not null references public.conversations (id) on delete restrict,
