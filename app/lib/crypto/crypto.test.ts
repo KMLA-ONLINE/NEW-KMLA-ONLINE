@@ -270,4 +270,22 @@ describe("seal format", () => {
     // 올바른 버전은 왕복한다.
     expect(bytesToUtf8(await open(key, sealed))).toBe("안녕")
   })
+
+  it("봉인 오버헤드는 정확히 29바이트다: version(1) + nonce(12) + tag(16)", async () => {
+    // 이 상수가 스키마의 두 크기 상한(send_encrypted_message의 max_bytes+29, message-files-encrypted
+    // 버킷의 file_size_limit)의 근거다. 버전 바이트가 붙기 전에는 28이었고, 그 두 곳은 아직 28을
+    // 들고 있다가 평문이 정확히 max_bytes인 첨부를 거부했다. 여기가 깨지면 그 두 상한도 같이 틀어진다.
+    const key = randomBytes(32)
+    for (const size of [0, 1, 256, 4096]) {
+      const sealed = await seal(key, new Uint8Array(size))
+      expect(sealed.length).toBe(size + 29)
+    }
+  })
+
+  it("nonce와 tag를 담기에도 짧은 blob은 열지 않는다", async () => {
+    // version(1) + nonce(12)보다 짧으면 복호화에 넘길 것이 없다. GCM 태그 에러로 새는 대신
+    // 명시적으로 잘렸다고 말한다.
+    const key = randomBytes(32)
+    await expect(open(key, randomBytes(10))).rejects.toThrow(/truncated/)
+  })
 })

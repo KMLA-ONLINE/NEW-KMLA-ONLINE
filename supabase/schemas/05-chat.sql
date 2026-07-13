@@ -1121,8 +1121,9 @@ begin
   from jsonb_array_elements(p_keys) as item(value);
 
   if attachment_count>0 then
-    -- size_bytes는 storage에 실제로 앉아 있는 바이트 수(= 평문 + nonce 12 + 태그 16)라서
-    -- 평문 기준 상한인 max_bytes에 그 오버헤드를 더해 비교한다.
+    -- size_bytes는 storage에 실제로 앉아 있는 바이트 수(= 평문 + version 1 + nonce 12 + 태그 16
+    -- = 평문 + 29)라서 평문 기준 상한인 max_bytes에 그 오버헤드를 더해 비교한다. 봉인 형식에 버전
+    -- 바이트가 붙은 뒤 오버헤드가 28에서 29로 늘었다(primitives.ts의 seal).
     if exists(
       select 1
       from jsonb_array_elements(p_attachments) as item(value)
@@ -1133,7 +1134,7 @@ begin
         or item.value->>'file_name_ciphertext' is null
         or (item.value->>'size_bytes')::int8 is null
         or (item.value->>'size_bytes')::int8<0
-        or (item.value->>'size_bytes')::int8>allowed.max_bytes+28
+        or (item.value->>'size_bytes')::int8>allowed.max_bytes+29
         or not exists(
           select 1 from storage.objects o
           where o.bucket_id='message-files-encrypted'

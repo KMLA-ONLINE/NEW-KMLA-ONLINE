@@ -18,7 +18,7 @@ import {
   type AccountKeys,
   type NewAccount,
 } from "./account"
-import { base64ToBytes, bytesToUtf8, utf8ToBytes } from "./encoding"
+import { base64ToBytes, bytesEqual, bytesToUtf8, utf8ToBytes } from "./encoding"
 import { MessageCrypto, type MessageKeyRow } from "./message"
 import { searchDirectMessages } from "./message-search"
 
@@ -49,6 +49,7 @@ type User = {
   password: string
   db: SupabaseClient
   profileId: number
+  authUserId: string
   account: NewAccount
   crypto: MessageCrypto
 }
@@ -95,6 +96,7 @@ async function signUp(name: string): Promise<User> {
     password,
     db,
     profileId: profile!.id,
+    authUserId: auth.user!.id,
     account,
     crypto: new MessageCrypto(account.keys),
   }
@@ -328,4 +330,98 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
     })
     expect(capped.reachedStart).toBe(false)
   })
+
+  // 맨 끝에 둔다: 이 테스트는 첨부 달린 새 메시지를 보내 "마지막 메시지"를 바꾼다. 미리보기
+  // 테스트 앞으로 가면 그쪽이 SECRET이 아니라 이 메시지를 보게 된다.
+  it(
+    "암호화 첨부가 storage를 왕복한다 -- 업로드·봉투·다운로드·복호까지",
+    async () => {
+      // content_type은 message_attachment_mime_types에 있어야 send RPC의 FK 조인을 통과한다.
+      // 시드에서 하나 집어와, 시드가 바뀌어도 테스트가 임의로 깨지지 않게 한다.
+      const { data: mimeRows, error: mimeError } = await alice.db
+        .from("message_attachment_mime_types")
+        .select("content_type")
+        .limit(1)
+      if (mimeError) throw mimeError
+      const contentType = mimeRows![0].content_type
+
+      const fileBytes = new Uint8Array(256).map((_, i) => (i * 7) % 251)
+      const fileName = "성적표.pdf"
+
+      // 발신자가 메시지 키를 만들고(본문도 같이), 그 키로 첨부와 파일명을 봉인한다. 첨부는 본문과
+      // 같은 messageKey를 타되 sort_order가 든 라벨로 자기 자리에 묶인다.
+      const sent = await alice.crypto.encrypt("이거 확인해줘", [
+        { userId: bob.profileId, publicKey: await peerPublicKey(alice, bob) },
+      ])
+      const sealedFile = await alice.crypto.encryptAttachment(fileBytes, sent.messageKey, 0)
+      const sealedName = await alice.crypto.encryptFileName(fileName, sent.messageKey, 0)
+
+      // 봉인된 blob = 평문 + 29(version 1 + nonce 12 + tag 16). 이게 storage에 앉는 바이트 수이자
+      // size_bytes이고, send RPC가 max_bytes+29와 비교하는 값이다.
+      expect(sealedFile.length).toBe(fileBytes.length + 29)
+
+      // 경로는 <conversation_id>/<내 auth uid>/<uuid>. 버킷 정책이 두 번째 세그먼트가 내 uid인지,
+      // 대화가 direct라 버킷이 message-files-encrypted인지까지 본다.
+      const path = `${conversationId}/${alice.authUserId}/${crypto.randomUUID()}`
+      const { error: uploadError } = await alice.db.storage
+        .from("message-files-encrypted")
+        .upload(path, sealedFile, { contentType: "application/octet-stream" })
+      expect(uploadError).toBeNull()
+
+      const { data: messageId, error: sendError } = await alice.db.rpc("send_encrypted_message", {
+        p_conversation_id: conversationId,
+        p_content_ciphertext: sent.contentCiphertext,
+        p_keys: sent.keys,
+        p_attachments: [
+          {
+            storage_path: path,
+            file_name_ciphertext: sealedName,
+            content_type: contentType,
+            size_bytes: sealedFile.length,
+          },
+        ],
+      })
+      if (sendError) throw sendError
+
+      // 수신자가 봉투와 첨부 메타데이터를 받는다. 파일 바이트는 여기 없다 -- storage에서 따로 받는다.
+      const { data: rows } = await bob.db.rpc("get_chat_messages", {
+        p_conversation_id: conversationId,
+      })
+      const row = (
+        rows as {
+          message_id: number
+          message_key: MessageKeyRow | null
+          attachments: {
+            storage_bucket: string
+            storage_path: string
+            content_type: string
+            file_name: string | null
+            file_name_ciphertext: string
+          }[]
+        }[]
+      ).find((r) => r.message_id === messageId)!
+      expect(row.attachments).toHaveLength(1)
+      const att = row.attachments[0]
+      expect(att.storage_bucket).toBe("message-files-encrypted")
+      expect(att.content_type).toBe(contentType)
+      // 파일명은 평문으로 오지 않는다 -- 암호문 컬럼만 채워진다.
+      expect(att.file_name).toBeNull()
+
+      // 수신자가 storage에서 암호문 blob을 받아 메시지 키로 푼다.
+      const { data: blob, error: downloadError } = await bob.db.storage
+        .from("message-files-encrypted")
+        .download(att.storage_path)
+      expect(downloadError).toBeNull()
+      const downloaded = new Uint8Array(await blob!.arrayBuffer())
+
+      const messageKey = await bob.crypto.unwrapMessageKey(row.message_key!)
+      expect(
+        bytesEqual(await bob.crypto.decryptAttachment(downloaded, messageKey, 0), fileBytes)
+      ).toBe(true)
+      expect(await bob.crypto.decryptFileName(att.file_name_ciphertext, messageKey, 0)).toBe(
+        fileName
+      )
+    },
+    TIMEOUT
+  )
 })
