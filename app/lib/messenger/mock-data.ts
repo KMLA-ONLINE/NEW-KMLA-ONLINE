@@ -362,8 +362,8 @@ export const seedRooms: Room[] = [
         attachments: [
           {
             id: "council-1-vendor-file-1",
-            name: "Vendor contacts.zip",
-            contentType: "application/zip",
+            name: "Vendor contacts.csv",
+            contentType: "text/csv",
             sizeBytes: 3_540_000,
           },
         ],

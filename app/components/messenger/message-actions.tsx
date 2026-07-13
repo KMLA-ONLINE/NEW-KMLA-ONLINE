@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 import { CopyIcon, PinIcon, PinOffIcon, ReplyIcon, SendIcon, XIcon } from "lucide-react"
 
+import { CURRENT_USER } from "~/lib/messenger/constants"
 import { getReplyText, isDeletedMessage, isPinnedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { Message } from "~/lib/messenger/types"
@@ -105,7 +106,7 @@ export function MessageActionPanel({
     return null
   }
 
-  const isMine = message.senderId === "me"
+  const isMine = message.senderId === CURRENT_USER.id
   const isPinned = isPinnedMessage(message)
   const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen)
