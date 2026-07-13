@@ -158,7 +158,9 @@ site_url = "http://localhost:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://localhost:3000"]
+# 비밀번호 재설정 메일이 /reset-password로 떨어져야 한다 (app/routes/reset-password.tsx).
+# 허용 목록에 없으면 Supabase가 조용히 site_url로 되돌려, 링크를 열어도 아무 일이 없다.
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -246,6 +248,12 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# 비밀번호 재설정 메일. forgot-password가 resetPasswordForEmail로 보내고 {{ .ConfirmationURL }}
+# 링크가 /reset-password로 떨어진다. 재설정은 신원키를 회전시켜 지난 DM을 포기하므로(docs/e2ee.md)
+# 템플릿에 그 경고를 담는다.
+[auth.email.template.recovery]
+subject = "KMLA Online 비밀번호 재설정"
+content_path = "./supabase/templates/recovery.html"
 # 온보딩 마지막 단계의 이메일 OTP. signInWithOtp가 magic_link 템플릿을 쓰고, 이 템플릿이
 # {{ .Token }}을 담아 매직 링크 대신 6자리 코드를 보낸다(otp_length/otp_expiry는 [auth.email]).
 [auth.email.template.magic_link]

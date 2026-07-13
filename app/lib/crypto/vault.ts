@@ -1,0 +1,273 @@
+/**
+ * 세션이 들고 있는 열쇠. 브라우저 전용이다 -- 서버는 이 파일의 어떤 값도 본 적이 없다.
+ *
+ * 새로고침하면 메모리의 키가 사라지는데, 비밀번호는 이미 없다(그게 요점이다). 그래서
+ * `encKey`를 IndexedDB에 **추출 불가능한 CryptoKey**로 남긴다:
+ *
+ *   - 새로고침해도 로그인 상태가 유지된다. 매번 비밀번호를 다시 묻는 것은 학교 채팅 앱에서
+ *     쓸 수 없는 UX다.
+ *   - 추출 불가능하므로 XSS가 그 키를 **복사해 나갈 수는 없다.** 물론 페이지 안에서 *쓸* 수는
+ *     있으니 XSS는 여전히 치명적이다 -- 다만 그 경우 공격자는 어차피 비밀번호를 키로깅할 수
+ *     있으므로, 이 선택으로 잃는 것은 없고 얻는 것만 있다.
+ *   - IndexedDB에서 나가는 것이 없으므로 디스크만 훔친 사람은 아무것도 얻지 못한다.
+ *
+ * userKey와 신원 비밀키는 **절대 저장하지 않는다.** 매 로드마다 서버의 봉인된 blob을 받아
+ * encKey로 풀어 메모리에만 둔다. 즉 디스크에 남는 평문 키가 하나도 없다.
+ */
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+import type { Database } from "~/lib/supabase/database.types"
+import {
+  WrongPasswordError,
+  createAccountFromKeys,
+  derivePasswordKeys,
+  resealAccount,
+  rotateAccount,
+  unlockWithEncKey,
+  unlockWithKeys,
+  type AccountKeys,
+  type NewAccount,
+  type PasswordKeys,
+  type StoredUserKeys,
+} from "./account"
+import { MessageCrypto } from "./message"
+import { importUnextractableKey } from "./primitives"
+
+type Client = SupabaseClient<Database>
+
+const DB_NAME = "kmla-vault"
+const STORE = "keys"
+const DB_VERSION = 1
+
+/**
+ * 살아 있는 세션. 클라이언트 사이드 네비게이션 사이에 살아남되(모듈 스코프), 새로고침에는
+ * 살아남지 않는다 -- 그때는 IndexedDB의 encKey로 다시 연다.
+ */
+let unlocked: { authUserId: string; keys: AccountKeys; crypto: MessageCrypto } | null = null
+
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>) {
+  return openDatabase().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const request = run(db.transaction(STORE, mode).objectStore(STORE))
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+  )
+}
+
+/**
+ * IndexedDB는 실패할 수 있다 -- iOS Safari의 프라이빗 모드처럼 아예 막아 두는 환경이 있다.
+ *
+ * 그 실패가 가입이나 로그인을 깨뜨리면 안 된다. **기기에 열쇠를 기억시키는 것은 편의이지
+ * 정확성이 아니다.** 저장이 안 되면 세션은 메모리로 멀쩡히 돌아가고, 새로고침했을 때만 금고가
+ * 잠긴 채로 뜬다(= 비밀번호를 다시 묻는다). 그래서 여기서는 삼키고, 부르는 쪽은 성공을
+ * 가정하지 않는다.
+ */
+async function persist<T>(work: () => Promise<T>): Promise<T | null> {
+  try {
+    return await work()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * CryptoKey는 구조화 복제가 되는 객체라 IndexedDB에 그대로 들어간다. 추출 불가능 플래그도
+ * 함께 보존되어, 다시 꺼내도 여전히 raw 바이트를 뽑을 수 없다.
+ *
+ * auth user id로 슬롯을 잡는 이유: 같은 기기를 다른 계정이 쓸 때(학교 공용 컴퓨터), 남의
+ * encKey로 내 금고를 열려다 조용히 실패하는 대신 애초에 다른 슬롯을 보게 된다.
+ */
+async function rememberEncKey(authUserId: string, encKey: Uint8Array) {
+  await persist(async () => {
+    const key = await importUnextractableKey(encKey)
+    return withStore("readwrite", (store) => store.put(key, authUserId))
+  })
+}
+
+async function recallEncKey(authUserId: string): Promise<CryptoKey | null> {
+  return persist(() =>
+    withStore<CryptoKey | undefined>("readonly", (store) => store.get(authUserId))
+  ).then((stored) => stored ?? null)
+}
+
+async function forgetEncKey(authUserId?: string) {
+  await persist(() =>
+    withStore("readwrite", (store) => (authUserId ? store.delete(authUserId) : store.clear()))
+  )
+}
+
+async function fetchStoredKeys(db: Client): Promise<StoredUserKeys | null> {
+  const { data, error } = await db.rpc("get_my_key_vault")
+  if (error) throw error
+  return (data as StoredUserKeys[])[0] ?? null
+}
+
+async function writeStoredKeys(db: Client, stored: StoredUserKeys) {
+  const { error } = await db.rpc("create_user_keys", {
+    p_identity_public_key: stored.identity_public_key,
+    p_wrapped_user_key: stored.wrapped_user_key,
+    p_wrapped_identity_secret_key: stored.wrapped_identity_secret_key,
+  })
+  if (error) throw error
+}
+
+function hold(authUserId: string, keys: AccountKeys) {
+  unlocked = { authUserId, keys, crypto: new MessageCrypto(keys) }
+  return unlocked
+}
+
+/**
+ * 이미 만들어 둔 계정 키를 서버에 심고 이 기기에 붙든다.
+ *
+ * createVault와 나눠 둔 이유는 순전히 비용이다: 가입 화면은 Supabase Auth에 보낼 authHash를
+ * 얻으려고 이미 createAccount를 한 번 불렀는데, 여기서 또 부르면 Argon2id가 두 번 돌아
+ * 로그인 화면이 1초씩 멈춘다.
+ */
+export async function installVault(db: Client, authUserId: string, account: NewAccount) {
+  await writeStoredKeys(db, account.stored)
+  await rememberEncKey(authUserId, account.encKey)
+  hold(authUserId, account.keys)
+}
+
+/** 열쇠고리를 만든다. 비밀번호가 유일한 열쇠다 -- 잃으면 되살릴 방법은 없다(그게 요점이다). */
+export async function createVault(db: Client, authUserId: string, keys: PasswordKeys) {
+  const account = await createAccountFromKeys(keys)
+  await installVault(db, authUserId, account)
+}
+
+/**
+ * 로그인. 호출자가 이미 유도해 둔 키를 받는다 -- 여기서 비밀번호로 다시 유도하면 Argon2id가
+ * 한 로그인에 두 번 돌아 화면이 두 배로 멈춘다.
+ *
+ * 열쇠고리가 없으면 만든다(가입 도중 create_user_keys가 실패한 계정). 잃을 히스토리가 없다.
+ *
+ * 열쇠고리가 *있는데* 안 열리는 경우에는 절대 새로 만들지 않는다 -- 그건 그냥 비밀번호가 틀린
+ * 것이고, 덮어쓰면 그 사람의 DM이 통째로 죽는다. create_user_keys가 서버에서도 같은 것을 막는다.
+ */
+export async function openVault(db: Client, authUserId: string, keys: PasswordKeys) {
+  const stored = await fetchStoredKeys(db)
+  if (!stored) {
+    await createVault(db, authUserId, keys)
+    return
+  }
+
+  const account = await unlockWithKeys(keys, stored)
+  await rememberEncKey(authUserId, keys.encKey)
+  hold(authUserId, account)
+}
+
+/**
+ * 새로고침 이후. 비밀번호는 없고 IndexedDB의 encKey만 있다. 열 수 없으면 null을 주고,
+ * 호출자는 잠긴 상태로 다룬다 -- 실패를 조용히 삼키면 "메시지가 하나도 없네"로 보인다.
+ */
+export async function resumeVault(db: Client, authUserId: string) {
+  if (unlocked?.authUserId === authUserId) return unlocked
+
+  const encKey = await recallEncKey(authUserId)
+  if (!encKey) return null
+
+  const stored = await fetchStoredKeys(db)
+  if (!stored) return null
+
+  try {
+    return hold(authUserId, await unlockWithEncKey(encKey, stored))
+  } catch (error) {
+    // 다른 기기에서 비밀번호를 바꿨다. 들고 있던 encKey는 이제 아무것도 열지 않는다.
+    if (error instanceof WrongPasswordError) {
+      await forgetEncKey(authUserId)
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * 로그인 상태에서 비밀번호를 바꾼다. 세션만으로는 부족하다 -- 남이 열어둔 화면을 훔쳐도 바꾸지
+ * 못하게, **현재 비밀번호로 금고를 한 번 열어 본인임을 확인한다.** 신원키는 그대로라 지난 대화가
+ * 전부 살아남는다(userKey를 새 encKey로 다시 봉인할 뿐, 메시지는 한 통도 재암호화되지 않는다).
+ *
+ * **updateUser를 먼저, RPC를 나중에.** 두 시스템에 걸친 2단계 커밋이라 중간에 죽을 수 있다:
+ *   - updateUser 성공, RPC 실패: 새 비번으로 로그인되지만 금고는 옛 encKey로 봉인된 채다. 현재
+ *     비번(= 방금 정한 새 비번)으로 이 흐름을 다시 타면 복구된다.
+ *   - RPC 성공, updateUser 실패: 금고는 새 encKey로 봉인됐는데 로그인은 옛 비번을 요구한다.
+ *     사용자는 옛 비번을 방금 입력했으니 알지만, 화면이 옛 비번으로 로그인되는 혼란이 남는다.
+ * 그래서 updateUser를 먼저 성공시킨다.
+ */
+export async function changeVaultPassword(
+  db: Client,
+  authUserId: string,
+  currentPassword: string,
+  newPassword: string,
+  email: string
+) {
+  const stored = await fetchStoredKeys(db)
+  if (!stored) throw new Error("key vault not found")
+
+  // 현재 비밀번호로 열어 본인 확인. 틀리면 WrongPasswordError가 올라온다.
+  const keys = await unlockWithKeys(derivePasswordKeys(currentPassword, email), stored)
+  const resealed = await resealAccount(keys, newPassword, email)
+
+  const { error: authError } = await db.auth.updateUser({ password: resealed.authHash })
+  if (authError) throw authError
+
+  const { error } = await db.rpc("reseal_user_keys", {
+    p_wrapped_user_key: resealed.stored.wrapped_user_key,
+  })
+  if (error) throw error
+
+  await rememberEncKey(authUserId, resealed.encKey)
+  hold(authUserId, keys)
+}
+
+/**
+ * 비밀번호를 잊었다. 신원키까지 전부 새로 만들어 계정을 되찾되, 지난 1:1 대화는 포기한다.
+ * 메일 링크가 준 세션 위에서 돈다.
+ *
+ * 지난 대화가 이 사람에게 영영 닫히는 것은 우회로를 만들면 서버가 읽을 수 있다는 뜻이므로,
+ * 이건 고칠 버그가 아니라 종단간 암호화가 뜻하는 바다. 상대방 쪽 히스토리는 상대의 키로 그대로
+ * 남는다. updateUser를 먼저 성공시키는 이유는 changeVaultPassword와 같다.
+ */
+export async function rotateVault(
+  db: Client,
+  authUserId: string,
+  newPassword: string,
+  email: string
+) {
+  const account = await rotateAccount(newPassword, email)
+
+  const { error: authError } = await db.auth.updateUser({ password: account.authHash })
+  if (authError) throw authError
+
+  const { error } = await db.rpc("rotate_user_keys", {
+    p_identity_public_key: account.stored.identity_public_key,
+    p_wrapped_user_key: account.stored.wrapped_user_key,
+    p_wrapped_identity_secret_key: account.stored.wrapped_identity_secret_key,
+  })
+  if (error) throw error
+
+  await rememberEncKey(authUserId, account.encKey)
+  hold(authUserId, account.keys)
+}
+
+/** 지금 열려 있는 열쇠. 잠겨 있으면 null. */
+export function currentVault() {
+  return unlocked
+}
+
+/** 로그아웃. 기기에 아무것도 남기지 않는다. */
+export async function closeVault() {
+  const authUserId = unlocked?.authUserId
+  unlocked = null
+  await forgetEncKey(authUserId)
+}

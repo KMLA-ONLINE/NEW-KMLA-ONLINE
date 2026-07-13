@@ -23,9 +23,10 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
    - **diff는 테이블 단위 grant만 낸다.** 스키마에 적은 `grant insert (col, ...)` / `grant update (col, ...)` 같은 **컬럼 단위 grant는 통째로 사라진다.** 새 테이블에 client 쓰기가 있으면 migration에 손으로 넣을 것 — 안 그러면 RLS 정책은 멀쩡한데 권한이 없어 정책이 도달 불가가 된다.
    - `storage.buckets` 같은 seed/DML은 diff에 아예 나타나지 않는다.
 
-   `schema_runtime_check.sql`이 위 세 가지를 잡는다: public 함수는 `authenticated`나 `service_role` 중 하나는 실행할 수 있어야 하고, `authenticated`에게 열린 insert/update 정책에는 대응하는 컬럼 grant가 있어야 하며, 반대로 테이블 단위 쓰기 grant는 없어야 한다.
+   `tests/00-privileges.sql`이 위 세 가지를 잡는다: public 함수는 `authenticated`나 `service_role` 중 하나는 실행할 수 있어야 하고, `authenticated`에게 열린 insert/update 정책에는 대응하는 컬럼 grant가 있어야 하며, 반대로 테이블 단위 쓰기 grant는 없어야 한다.
+
 4. rename, backfill, type 변환, NOT NULL 전환, seed 등 데이터 보존이 필요한 변경은 migration에 직접 작성한다.
-5. `supabase db reset` 후 `supabase/tests/schema_runtime_check.sql`을 실행하고, `supabase db diff`가 "No schema changes found"를 반환하는지 확인한다.
+5. `supabase db reset` 후 `npm run test:db`를 실행하고, `supabase db diff`가 "No schema changes found"를 반환하는지 확인한다.
 6. 이미 production에 적용된 migration은 수정하거나 삭제하지 않는다.
 
 ## 설계 규칙
@@ -35,7 +36,7 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 - public schema의 모든 테이블에 RLS를 활성화한다.
 - `anon`, `authenticated`, `service_role`, `PUBLIC` 권한은 필요한 객체에만 명시적으로 부여한다. `on all functions/tables` 형태의 전역 sweep은 파일 분할 구조에서 적용 순서에 따라 깨지므로 금지 — 객체 생성 직후 명시적 grant/revoke를 함께 둔다.
 - **client 쓰기 권한은 항상 컬럼 단위다** (`grant insert (a,b)`, `grant update (c)`). RLS는 행 수준이지 컬럼 수준이 아니라서, 테이블 단위 grant를 주면 정책이 허용한 행에서 `sender_id`·`created_at`·`deleted_at` 같은 컬럼까지 함께 열린다. `messages`가 이 구분에 직접 의존한다.
-- `public` schema의 어떤 객체도 `anon`에게 열지 않는다. 주의: 00-foundation의 `alter default privileges`는 **`postgres`가 만든 객체에만** 걸린다. Supabase의 `supabase_admin` 기본값은 여전히 anon에게 `arwdDxtm`를 주므로, 다른 롤로 DDL이 돌면 새 테이블이 anon에게 열린 채 태어나고 스키마 파일 어디에도 그 사실이 남지 않는다. `schema_runtime_check.sql`이 anon의 테이블·컬럼·시퀀스·함수 권한을 전부 0으로 강제한다.
+- `public` schema의 어떤 객체도 `anon`에게 열지 않는다. 주의: 00-foundation의 `alter default privileges`는 **`postgres`가 만든 객체에만** 걸린다. Supabase의 `supabase_admin` 기본값은 여전히 anon에게 `arwdDxtm`를 주므로, 다른 롤로 DDL이 돌면 새 테이블이 anon에게 열린 채 태어나고 스키마 파일 어디에도 그 사실이 남지 않는다. `tests/00-privileges.sql`이 anon의 테이블·컬럼·시퀀스·함수 권한을 전부 0으로 강제한다.
 - `SECURITY DEFINER` 함수는 `SET search_path = ''`와 내부 권한 검사를 포함한다. search_path 의존 참조(예: `gin_trgm_ops`)는 `extensions.` 접두어로 스키마를 명시한다.
 - 명시되지 않은 client 권한은 허용하지 않는다. 판단이 필요하면 권한을 추가하지 말고 작업을 중단한다.
 
@@ -43,26 +44,57 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 
 `supabase/schemas/`는 lexicographic 순서로 적용된다(`config.toml`의 `[db.migrations] schema_paths`). 숫자 접두어가 도메인 간 의존 순서를 인코딩한다.
 
-| schema 파일            | 문서                                             | 주요 내용                                                                |
-| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| `00-foundation.sql`    | [00-foundation](domains/00-foundation.md)        | 확장, 기본 권한 회수, private schema, `require_service_role()`           |
-| `01-identity.sql`      | [01-identity](domains/01-identity.md)            | profiles/permissions, Auth trigger, profile lifecycle RPC                |
-| `02-spaces.sql`        | [02-spaces](domains/02-spaces.md)                | spaces/space_members, owner 검증 trigger                                 |
-| `03-content.sql`       | [03-content](domains/03-content.md)              | posts/post_attachments/comments, 검색 인덱스                             |
-| `04-reactions.sql`     | [04-reactions](domains/04-reactions.md)          | reaction registry, post/comment reactions                                |
-| `05-chat.sql`          | [05-chat](domains/05-chat.md)                    | chat 전체 테이블, 검증 trigger, 메시지/채팅 RPC                          |
-| `06-notifications.sql` | [06-notifications](domains/06-notifications.md)  | notifications                                                            |
-| `07-utilities.sql`     | [07-utilities](domains/07-utilities.md)          | gongangs, song_requests                                                  |
-| `08-clubs.sql`         | [08-clubs](domains/08-clubs.md)                  | clubs, apply rounds, 신청                                                |
-| `09-storage.sql`       | [09-storage](domains/09-storage.md)              | storage policy, attachment cleanup queue와 정리 RPC                      |
+| schema 파일            | 문서                                            | 주요 내용                                                      |
+| ---------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `00-foundation.sql`    | [00-foundation](domains/00-foundation.md)       | 확장, 기본 권한 회수, private schema, `require_service_role()` |
+| `01-identity.sql`      | [01-identity](domains/01-identity.md)           | profiles/permissions, Auth trigger, profile lifecycle RPC      |
+| `02-spaces.sql`        | [02-spaces](domains/02-spaces.md)               | spaces/space_members, owner 검증 trigger                       |
+| `03-content.sql`       | [03-content](domains/03-content.md)             | posts/post_attachments/comments, 검색 인덱스                   |
+| `04-reactions.sql`     | [04-reactions](domains/04-reactions.md)         | reaction registry, post/comment reactions                      |
+| `05-chat.sql`          | [05-chat](domains/05-chat.md)                   | chat 전체 테이블, 검증 trigger, 메시지/채팅 RPC                |
+| `06-notifications.sql` | [06-notifications](domains/06-notifications.md) | notifications                                                  |
+| `07-utilities.sql`     | [07-utilities](domains/07-utilities.md)         | gongangs, song_requests                                        |
+| `08-clubs.sql`         | [08-clubs](domains/08-clubs.md)                 | clubs, apply rounds, 신청                                      |
+| `09-storage.sql`       | [09-storage](domains/09-storage.md)             | storage policy, attachment cleanup queue와 정리 RPC            |
 
 seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마가 아니라 migration에 있다 — `supabase/migrations/20260707000000_baseline_schema.sql` 끝부분.
 
+1:1 대화의 종단간 암호화는 01-identity(`user_keys`)·05-chat(`message_keys`)·09-storage(전용 버킷)에 걸쳐 있고, 클라이언트 프로토콜과 위협 모델은 [docs/e2ee.md](../e2ee.md)에 한 번만 적혀 있다. 도메인 문서는 스키마가 그것을 어떻게 강제하는지만 말한다.
+
 ## 검증
 
-- `supabase/tests/schema_runtime_check.sql` — begin/rollback 스모크 테스트. psql로 로컬 DB에 실행한다.
-- 이 파일은 grant와 policy가 **존재하는지**를 확인한다. 정책이 실제로 **어떻게 동작하는지**(예: `author_id` 위조가 막히는지, 탈퇴한 멤버가 읽지 못하는지)를 찔러보는 테스트는 현재 없고, 스키마를 바꿀 때마다 손으로 검증하고 있다.
+`npm run test:db` — `supabase/tests/*.sql`을 순서대로 로컬 DB에 돌린다. 파일마다 자기 `begin`/`rollback`을 갖고 있어 서로 독립이고, 하나만 돌릴 수도 있다(`node supabase/tests/run.mjs 05-chat`).
+
+**`supabase/` 아래를 건드린 커밋은 pre-commit 훅이 이걸 강제한다** (`.husky/pre-commit`): 먼저 `db diff`가 "No schema changes found"여야 하고(아니면 아래 테스트가 *옛 스키마*를 검사하고 통과한다 — 그 초록은 거짓말이다), 그다음 `test:db`가 통과해야 한다. 로컬 Supabase가 안 떠 있으면 조용히 건너뛰지 않고 **커밋을 막는다.** 스키마를 안 건드린 커밋은 지금까지와 똑같이 빠르다 — 느린 훅은 `--no-verify`를 습관으로 만들고, 그러면 검사가 아예 없는 것보다 나쁘다(있다고 믿게 되니까).
+
+| 파일                | 픽스처 | 내용                                                        |
+| ------------------- | ------ | ----------------------------------------------------------- |
+| `00-privileges.sql` | 없음   | public 스키마 전체의 권한 불변식                            |
+| `01-identity.sql`   | 있음   | Auth trigger, 프로필 생애주기, 열쇠고리(`user_keys`)        |
+| `02-spaces.sql`     | 없음   | 가입 정책 enum, 멤버십·역할 RPC의 존재 계약                 |
+| `05-chat.sql`       | 있음   | 그룹 평문 계약 + 1:1 종단간 암호화 계약                     |
+| `09-storage.sql`    | 없음   | 정리 큐, 버킷 allowlist가 MIME 레지스트리와 어긋나지 않는지 |
+
+`00-privileges.sql`이 도메인 파일이 아닌 이유: 그 검사들은 채팅 얘기도 공간 얘기도 아니라 **`supabase db diff`가 권한을 보지 못한다**는 하나의 실패 유형을 잡는다(위 워크플로 3번). 도메인 픽스처 사이에 묻어두면 정작 도메인 하나를 손볼 때 눈에 들어오지 않는다.
+
+이 파일들은 대체로 grant와 policy가 **존재하는지**를 확인한다. 정책이 실제로 **어떻게 동작하는지**(예: `author_id` 위조가 막히는지, 탈퇴한 멤버가 읽지 못하는지)를 찔러보는 테스트는 아직 드물다. 예외는 종단간 암호화로, `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다 — `npm test`에 포함되며 로컬 Supabase가 없으면 알아서 skip한다.
 
 ## Production 배포
 
 원격 DB는 2026-07-07 전환 이전 migration 이력을 갖고 있다. 최초 배포 시 `supabase db reset --linked`(pre-launch, 보존할 데이터 없음 전제) 또는 `supabase migration repair`로 baseline과 이력을 맞춘 뒤, 이후부터 일반 `supabase db push`를 사용한다.
+
+### 배포 순서: **DB 먼저, 프론트 나중에**
+
+`supabase db push`가 성공한 것을 확인한 **뒤에** 프론트를 배포한다. 순서가 뒤집히면 새 프론트가 아직 없는 RPC를 부르는데, 로그인은 이게 특히 나쁘다: Supabase Auth 세션은 정상 수립되어 **쿠키까지 심어진 뒤** `get_my_key_vault`가 "함수 없음"으로 죽는다. 사용자는 로그인된 것도 아니고 안 된 것도 아닌 상태에서 알 수 없는 오류만 본다.
+
+반대 순서(DB 먼저)는 안전하다 — 새 RPC를 아직 아무도 안 부를 뿐이다.
+
+### 배포 체크리스트 (코드로 관리되지 않는 것들)
+
+`supabase/config.toml`은 **로컬 전용**이다. 아래는 운영 Supabase 대시보드에서 손으로 맞춰야 하고, 안 맞으면 조용히 실패한다.
+
+| 항목                                               | 어디                     | 안 하면                                                                                                                                       |
+| -------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Redirect URL** — 운영 도메인의 `/reset-password` | Auth → URL Configuration | 재설정 메일 링크가 `site_url`로 되돌아가 **비밀번호 재설정이 통째로 죽는다**. 비밀번호 재설정 흐름 전체가 여기 걸려 있다                            |
+| **SMTP**                                           | Auth → SMTP Settings     | 재설정 메일이 아예 안 나간다                                                                                                                  |
+| **`password_requirements`를 건드리지 말 것**       | Auth → Policies          | `authHash`가 소문자 hex라 문자 클래스 제약을 걸면 **가입·비밀번호 변경이 전부 거부된다**. 근거는 `app/lib/crypto/account.ts`의 `PasswordKeys` |

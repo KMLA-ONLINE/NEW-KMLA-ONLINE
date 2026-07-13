@@ -1,4 +1,4 @@
-import { BellIcon, HomeIcon, MenuIcon, MessagesSquareIcon, ShapesIcon } from "lucide-react"
+import { BellIcon, HomeIcon, MenuIcon, MessagesSquareIcon, UsersRoundIcon } from "lucide-react"
 import type { ComponentType } from "react"
 
 export type AppNavItem = {
@@ -12,7 +12,7 @@ export type AppNavItem = {
 export const appNavItems: AppNavItem[] = [
   { to: "/", label: "홈", icon: HomeIcon, end: true },
   { to: "/messenger", label: "메시지", icon: MessagesSquareIcon },
-  { to: "/groups", label: "그룹", icon: ShapesIcon },
+  { to: "/groups", label: "그룹", icon: UsersRoundIcon },
   { to: "/noti", label: "알림", icon: BellIcon },
   { to: "/menu", label: "메뉴", icon: MenuIcon },
 ]

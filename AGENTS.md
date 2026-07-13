@@ -8,6 +8,7 @@
 - Tailwind CSS v4 is loaded from `app/app.css`.
 - shadcn is configured in `components.json` with style `radix-vega`.
 - Supabase browser helpers live in `app/lib/supabase/client.ts`; server helpers live in `app/lib/supabase/server.ts`.
+- **Auth runs in the browser, not in a server `action`.** Direct messages are end-to-end encrypted, and the key that opens them is derived from the password — so the raw password must never reach our SSR server. `login`/`signup`/`reset-password` therefore call the browser Supabase client and send only a derived `authHash`. Do not "simplify" them back into server actions. See [docs/e2ee.md](docs/e2ee.md).
 
 ## Local Supabase Ports
 
@@ -30,8 +31,12 @@
 - For normal code changes, run `npm run lint` then `npm run typecheck`.
 - `npm run typecheck` runs `react-router typegen && tsc`; it regenerates `.react-router/types`.
 - `npm test` runs vitest (test files live next to routes, e.g. `app/routes/_app.profile.test.tsx`).
-- DB checks live in `supabase/tests/`: run `schema_runtime_check.sql` with psql against the local DB after `supabase db reset` (`begin ... rollback`, safe to re-run). `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
-- The only CI workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync); tests are not run in CI.
+- DB checks live in `supabase/tests/`: run `npm run test:db` against the local DB after `supabase db reset`. One file per domain, each with its own `begin ... rollback` (safe to re-run, and runnable alone: `node supabase/tests/run.mjs 05-chat`). `00-privileges.sql` is not a domain — it holds the schema-wide privilege invariants that catch what `db diff` cannot see. `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
+- **The pre-commit hook enforces the expensive checks, but only for the paths that need them** (`.husky/pre-commit`). There is no test CI — the sole workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync) — so the hook *is* the safety net.
+  - Staging anything under `supabase/` ⇒ `supabase db diff` must return "No schema changes found" (otherwise `test:db` would be checking a stale DB and its green would be a lie), then `npm run test:db` must pass. If local Supabase is not running, the commit is **blocked** rather than silently skipped.
+  - Staging anything under `app/lib/crypto/` ⇒ the crypto suite runs (KDF golden vectors, AAD binding, real round-trip).
+  - Everything else stays as fast as before: lint + typecheck only. A slow hook trains people to reach for `--no-verify`, which is worse than no hook — they would still believe the check ran.
+- Why the hook is worth the seconds: `00-privileges.sql` found a live vulnerability the moment it was written. Six `private` helpers had an empty ACL (= implicit `EXECUTE TO PUBLIC`) because the declarative schema's `revoke`/`grant` lines had **never been carried into a migration** — `db diff` does not emit function grants, so nothing downstream noticed. One of them was `private.anonymize_profile(bigint)`, a `SECURITY DEFINER` function that scrubs whatever profile id you hand it, and `authenticated` has `USAGE` on the `private` schema. Any logged-in student could permanently delete any other user's account with one line. Typecheck, lint, and `db diff` all passed on that code.
 
 ## Scope / Generated Files
 
@@ -67,8 +72,8 @@ The policy below is settled. Build each piece when the wait it covers becomes re
 - The DB source of truth is `supabase/schemas/`: declarative schema files split by domain, each file ordered type → table → index → function → trigger → RLS/policy → RPC. Do not create global per-object-type files (`rls.sql`, `rpc.sql`); keep a domain's objects together. Shared `private.*` helpers used across domains belong in a foundation/shared file.
 - `supabase/migrations/` is a delta artifact for applying changes to production DB safely. It is not where you read or edit the current structure.
 - To change the DB: edit `supabase/schemas/` first, then generate the migration with `supabase db diff -f <name>`. Never modify or delete a migration that has been applied to production.
-- Data-preserving changes (rename, backfill, type conversion, NOT NULL transition, any DML) must be written explicitly in the migration. The diff tool does not capture DML (e.g. `storage.buckets` seed rows, which live at the end of the baseline migration) and is unreliable for grant/revoke changes — review generated migrations by hand; `schema_runtime_check.sql` catches grant regressions.
-- After a schema change, verify with `supabase db reset`, `schema_runtime_check.sql`, and `supabase db diff` returning "No schema changes found".
+- Data-preserving changes (rename, backfill, type conversion, NOT NULL transition, any DML) must be written explicitly in the migration. The diff tool does not capture DML (e.g. `storage.buckets` seed rows, which live at the end of the baseline migration) and is unreliable for grant/revoke changes — review generated migrations by hand; `supabase/tests/00-privileges.sql` catches grant regressions.
+- After a schema change, verify with `supabase db reset`, `npm run test:db`, and `supabase db diff` returning "No schema changes found".
 - Human-readable docs for the schema live in `docs/db/` (`README.md` for rules, `domains/*.md` mapped 1:1 to schema files, listing every RPC and trigger). Update them in the same task as schema changes.
 - The remote DB still carries pre-transition migration history; on first deploy align it with `supabase db reset --linked` (pre-launch, no data to keep) or `supabase migration repair`, then use normal `supabase db push`.
 

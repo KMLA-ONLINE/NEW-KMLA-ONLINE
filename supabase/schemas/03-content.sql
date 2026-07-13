@@ -5,6 +5,11 @@ create table public.posts (
   author_id bigint not null references public.profiles (id) on delete restrict,
   title text not null,
   content text not null,
+  -- 검색 전용 정규화 형태. 표시엔 안 쓰고 title/content에서 private.normalize_search로 파생만
+  -- 하므로 원본·인덱스·RPC 검색어와 절대 어긋날 수 없다(규칙은 그 함수 한 곳). 저장형(stored)이라
+  -- 2자 검색처럼 인덱스가 못 돕는 구간도 정규식 재계산 없이 컬럼만 훑어 훨씬 싸다.
+  title_normalized text generated always as (private.normalize_search(title)) stored,
+  content_normalized text generated always as (private.normalize_search(content)) stored,
   is_anonymous boolean not null default false,
   -- 이 글이 속한 그룹 게시판/말머리(선택). 카테고리 삭제 시 글은 남고 미분류로 떨어진다.
   -- 같은 space의 카테고리여야 한다 -- FK로 못 잡아 trg_validate_post_category가 검증.
@@ -79,7 +84,6 @@ create table public.comment_mentions (
   primary key (comment_id, user_id)
 );
 
-create index idx_posts_author_created_at on public.posts (author_id, created_at);
 create index idx_posts_active_space_created_at on public.posts (space_id, created_at desc, id desc)
 where deleted_at is null;
 create index idx_posts_active_space_category on public.posts (space_id, category_id, created_at desc, id desc)
@@ -92,13 +96,10 @@ create index idx_comments_tree on public.comments (post_id, parent_id, created_a
 create index idx_post_mentions_user on public.post_mentions (user_id);
 create index idx_comment_mentions_user on public.comment_mentions (user_id);
 create index idx_posts_title_search_gin on public.posts
-  using gin (regexp_replace(lower(title), '\s+', '', 'g') extensions.gin_trgm_ops)
+  using gin (title_normalized extensions.gin_trgm_ops)
   where deleted_at is null;
 create index idx_posts_content_search_gin on public.posts
-  using gin (regexp_replace(lower(content), '\s+', '', 'g') extensions.gin_trgm_ops)
-  where deleted_at is null;
-create index idx_comments_content_search_gin on public.comments
-  using gin (regexp_replace(lower(content), '\s+', '', 'g') extensions.gin_trgm_ops)
+  using gin (content_normalized extensions.gin_trgm_ops)
   where deleted_at is null;
 
 -- A post's comment and reaction counts are read with count(*), not cached on the
@@ -278,10 +279,14 @@ begin
   new.title := btrim(new.title);
   new.content := btrim(new.content);
   -- 카테고리 이동도 작성자가 한 변경이라 수정으로 친다(글에서 그 사람이 바꿀 수 있는 건 이 셋뿐이다).
-  if new.title is distinct from old.title
+  -- INSERT에도 걸어 작성 시 앞뒤 공백을 지우지만(수정 때만 트리밍되던 비대칭 제거) updated_at은
+  -- UPDATE일 때만 찍는다 -- 방금 만든 글은 수정된 적이 없다. old는 INSERT에 없으므로 tg_op 가드가
+  -- 없으면 new.x is distinct from (null)이 참이 되어 갓 만든 글에 updated_at이 찍힌다.
+  if tg_op = 'UPDATE' and (
+       new.title is distinct from old.title
     or new.content is distinct from old.content
     or new.category_id is distinct from old.category_id
-  then
+  ) then
     new.updated_at := now();
   end if;
   return new;
@@ -306,7 +311,7 @@ $$;
 -- pinned_at(set_post_pinned)이나 deleted_at(soft_delete_post)만 바꾸는 UPDATE는 이 컬럼들을
 -- 언급하지 않으므로 트리거가 돌지 않는다 -- 고정이 "수정됨"을 찍지 않는다.
 create trigger trg_mark_post_edited
-before update of title, content, category_id on public.posts
+before insert or update of title, content, category_id on public.posts
 for each row execute function private.mark_post_edited();
 
 create trigger trg_mark_comment_edited
@@ -419,6 +424,9 @@ returns jsonb language sql stable security definer set search_path = '' as $$
   end
 $$;
 revoke execute on function private.post_author(bigint,boolean) from public, anon, authenticated, service_role;
+-- 반응 요약 헬퍼(private.post_reaction_summary / comment_reaction_summary)는 post_reactions·
+-- comment_reactions를 참조하므로 04-reactions.sql에 산다(그 테이블들이 이 파일보다 늦게 생긴다).
+-- list_space_posts·get_post·get_post_comments가 lateral join으로 호출한다.
 
 create function public.list_space_posts(
   p_space_id bigint,
@@ -437,6 +445,7 @@ returns table(
   category jsonb,
   pinned_at timestamptz,
   created_at timestamptz,
+  updated_at timestamptz,
   comment_count bigint,
   reaction_count bigint,
   top_reactions jsonb,
@@ -488,6 +497,7 @@ begin
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
     page.pinned_at,
     page.created_at,
+    page.updated_at,
     coalesce(counts.comment_count,0),
     coalesce(counts.reaction_count,0),
     coalesce(summary.top_reactions,'[]'::jsonb),
@@ -500,20 +510,7 @@ begin
       (select count(*) from public.comments c where c.post_id=page.id and c.deleted_at is null) as comment_count,
       (select count(*) from public.post_reactions r where r.post_id=page.id) as reaction_count
   ) counts on true
-  left join lateral (
-    select
-      (select jsonb_agg(t.icon order by t.n desc, t.icon)
-       from (
-         select rt.icon, count(*) as n
-         from public.post_reactions r
-         join public.reaction_types rt on rt.id=r.reaction_type_id
-         where r.post_id=page.id and rt.icon is not null
-         group by rt.icon
-         order by count(*) desc
-         limit 3
-       ) t) as top_reactions,
-      (select r.reaction_type_id from public.post_reactions r where r.post_id=page.id and r.user_id=caller_id) as my_reaction_id
-  ) summary on true
+  left join lateral (select * from private.post_reaction_summary(page.id, caller_id)) summary on true
   left join lateral (
     select jsonb_agg(jsonb_build_object(
       'id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,
@@ -567,14 +564,8 @@ begin
     p.pinned_at, p.created_at, p.updated_at,
     (select count(*) from public.comments c where c.post_id=p.id and c.deleted_at is null),
     (select count(*) from public.post_reactions r where r.post_id=p.id),
-    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
-      from (
-        select rt.icon, count(*) as n
-        from public.post_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
-        where r.post_id=p.id and rt.icon is not null
-        group by rt.icon order by count(*) desc limit 3
-      ) t),'[]'::jsonb),
-    (select r.reaction_type_id from public.post_reactions r where r.post_id=p.id and r.user_id=caller_id),
+    rs.top_reactions,
+    rs.my_reaction_id,
     coalesce((select jsonb_agg(jsonb_build_object(
       'id',a.id,'storage_bucket',a.storage_bucket,'storage_path',a.storage_path,'file_name',a.file_name,
       'content_type',a.content_type,'kind',mime.kind,'size_bytes',a.size_bytes,'sort_order',a.sort_order,
@@ -584,6 +575,7 @@ begin
     where a.post_id=p.id),'[]'::jsonb)
   from public.posts p
   left join public.space_categories cat on cat.id=p.category_id
+  left join lateral (select * from private.post_reaction_summary(p.id, caller_id)) rs on true
   where p.id=target_id;
 end;
 $$;
@@ -606,6 +598,7 @@ returns table(
   is_mine boolean,
   is_deleted boolean,
   created_at timestamptz,
+  updated_at timestamptz,
   reaction_count bigint,
   top_reactions jsonb,
   my_reaction_id bigint
@@ -637,9 +630,13 @@ begin
   -- "익명1"과 다른 사람이 되어버린다. 그리고 이 번호는 이 글 안에서만 유효하다 -- 같은 사람이 다른
   -- 글에선 다른 번호를 받으므로 여러 글에 걸쳐 "같은 익명"이라고 이어 붙일 수 없다.
   anon_index as (
+    -- 삭제된 익명 댓글도 번호 매김에 포함한다(deleted_at 필터 없음). 빼면 A(익명1)가 지워질 때
+    -- B가 익명2에서 익명1로 당겨져, 예전 화면·알림에 남은 "익명2"가 다른 사람을 가리키게 된다.
+    -- tombstone은 author_id와 is_anonymous를 그대로 유지하므로 앵커로 쓸 수 있다. 번호는 그
+    -- 작성자의 (삭제 여부 무관) 최초 댓글 시각으로 고정된다.
     select c.author_id, dense_rank() over (order by min(c.created_at), min(c.id)) as idx
     from public.comments c
-    where c.post_id=p_post_id and c.is_anonymous and c.deleted_at is null
+    where c.post_id=p_post_id and c.is_anonymous
       -- 글쓴이 본인은 번호가 아니라 "글쓴이"로 표시하므로 번호 매김에서 뺀다.
       and not (post_is_anonymous and c.author_id=post_author_id)
     group by c.author_id
@@ -683,17 +680,13 @@ begin
     c.author_id=caller_id and c.deleted_at is null,
     c.deleted_at is not null,
     c.created_at,
+    c.updated_at,
     (select count(*) from public.comment_reactions r where r.comment_id=c.id),
-    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
-      from (
-        select rt.icon, count(*) as n
-        from public.comment_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
-        where r.comment_id=c.id and rt.icon is not null
-        group by rt.icon order by count(*) desc limit 3
-      ) t),'[]'::jsonb),
-    (select r.reaction_type_id from public.comment_reactions r where r.comment_id=c.id and r.user_id=caller_id)
+    rs.top_reactions,
+    rs.my_reaction_id
   from thread th
   join public.comments c on c.id=th.id
+  left join lateral (select * from private.comment_reaction_summary(c.id, caller_id)) rs on true
   where c.deleted_at is null or private.has_active_descendant(c.id)
   order by c.created_at, c.id;
 end;
@@ -701,7 +694,8 @@ $$;
 
 -- search_messages와 달리 security definer다. author_id의 select를 회수했으므로 invoker로는
 -- 작성자를 못 붙이고, 익명 지우기도 함수 안에서 해야 한다. 대신 멤버십을 직접 확인한다.
--- 공백을 지운 소문자로 비교해 idx_posts_title/content_search_gin(같은 표현식의 trgm)을 탄다.
+-- title_normalized/content_normalized(생성 컬럼)로 비교해 그 위의 trgm 인덱스를 탄다 -- 정규화
+-- 규칙이 컬럼 정의 한 곳에만 있어 인덱스와 절대 어긋나지 않는다.
 create function public.search_posts(p_query text, p_space_id bigint)
 returns table(
   post_id bigint,
@@ -712,11 +706,11 @@ returns table(
   created_at timestamptz
 )
 language plpgsql stable security definer set search_path = '' as $$
-declare normalized_query text := regexp_replace(lower(btrim(p_query)), '\s+', '', 'g');
+declare normalized_query text := private.normalize_search(p_query);
 begin
   if p_space_id is null then raise exception 'space target required'; end if;
   if not private.can_participate_space(p_space_id) then raise exception 'space membership required'; end if;
-  if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or normalized_query='' then
+  if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or coalesce(normalized_query,'')='' then
     raise exception 'query must contain 1 to 200 characters';
   end if;
 
@@ -727,22 +721,30 @@ begin
   from public.posts p
   where p.space_id=p_space_id
     and p.deleted_at is null
-    and (regexp_replace(lower(p.title),'\s+','','g') ilike '%'||normalized_query||'%'
-      or regexp_replace(lower(p.content),'\s+','','g') ilike '%'||normalized_query||'%')
+    -- 검색어의 %,_는 escape_like로 무력화한다(search_messages와 같은 이유). 둘 다 소문자로
+    -- 접혀 있으니 like다.
+    and (p.title_normalized like '%'||private.escape_like(normalized_query)||'%'
+      or p.content_normalized like '%'||private.escape_like(normalized_query)||'%')
   order by p.created_at desc, p.id desc
   limit 50;
 end;
 $$;
 
 -- 첨부 검증. 작성(create_post_with_attachments)과 수정(set_post_attachments)이 같은 규칙을
--- 써야 하므로 한 곳에 둔다. blob은 post_files_insert 정책대로 <space.pub_id>/<uid>/<uuid>에 있다.
+-- 써야 하므로 한 곳에 둔다. blob은 post_files_insert 정책대로 <space.pub_id>/<uuid>에 있다.
+--
+-- 경로에 업로더 uid가 **없다**. 있으면 그 자체가 익명을 깬다: 익명 글과 실명 글의 첨부
+-- storage_path 가운데 세그먼트가 같은 uid라, 아무 멤버나 get_post 응답만으로 "이 익명 글은
+-- 저 실명 글과 같은 사람"임을 확정할 수 있었다. 소유권은 이제 경로가 아니라 storage.objects의
+-- owner_id로 강제한다(아래 owner_id 검사, 그리고 post_files_insert 정책). owner_id는 storage가
+-- JWT에서 채우므로 클라이언트가 위조할 수 없고, 경로에는 아무 신원도 남지 않는다.
 --
 -- p_post_id는 "이미 이 글에 붙어 있는 첨부"를 알아보기 위한 것이다 -- 수정할 때 그 blob은
 -- 24시간보다 오래됐을 수 있어 스토리지 재확인을 건너뛴다. 새 글이면 붙어 있는 게 없으니 전부
 -- 새 업로드로 검사된다.
 create function private.validate_post_attachments(p_post_id bigint, p_space_pub_id text, p_attachments jsonb)
 returns void language plpgsql stable security definer set search_path = '' as $$
-declare expected_prefix text := p_space_pub_id || '/' || (select auth.uid())::text || '/';
+declare expected_prefix text := p_space_pub_id || '/';
 begin
   if p_attachments is null or jsonb_typeof(p_attachments)<>'array' then
     raise exception 'attachments must be a json array';
@@ -773,6 +775,10 @@ begin
           select 1 from storage.objects o
           where o.bucket_id='post-files'
             and o.name=item.value->>'storage_path'
+            -- 내가 올린 blob만. 경로에 uid가 없어졌으므로 "남의 첨부를 자기 글에 붙이기"를
+            -- 막던 일이 이 owner_id 검사로 넘어온다(예전엔 경로 prefix의 uid가 그 역할).
+            -- storage.objects.owner_id는 text 컬럼이다(uuid인 owner와 헷갈리지 말 것).
+            and o.owner_id=(select auth.uid())::text
             and o.created_at>=now()-interval '24 hours'
             and o.metadata->>'mimetype'=item.value->>'content_type'
             and (o.metadata->>'size')::int8=(item.value->>'size_bytes')::int8
@@ -782,6 +788,25 @@ begin
 end;
 $$;
 revoke execute on function private.validate_post_attachments(bigint,text,jsonb) from public, anon, authenticated, service_role;
+
+-- 첨부 행 삽입. 작성(create_post_with_attachments)과 수정(set_post_attachments)이 배열 순서를
+-- sort_order로 매기는 같은 INSERT를 쓰므로 한 곳에 둔다. sort_order 매김 규칙이 두 군데로
+-- 갈리면 조용히 어긋난다.
+create function private.insert_post_attachments(p_post_id bigint, p_attachments jsonb)
+returns void language sql security definer set search_path = '' as $$
+  insert into public.post_attachments(post_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
+  select
+    p_post_id,'post-files',
+    item.value->>'storage_path',
+    btrim(item.value->>'file_name'),
+    item.value->>'content_type',
+    (item.value->>'size_bytes')::int8,
+    (item.position-1)::int4,
+    (item.value->>'width')::int4,
+    (item.value->>'height')::int4
+  from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
+$$;
+revoke execute on function private.insert_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
 
 -- 글과 첨부를 한 트랜잭션으로 만든다. 실패하면 아무것도 남지 않는다 -- 미리 올려둔 blob은 고아
 -- 청소가 걷어가므로, 글을 만들었다가 되감는 보상 트랜잭션이 필요 없다(그 보상도 실패할 수 있고,
@@ -814,18 +839,7 @@ begin
   returning id, pub_id into new_post_id, new_pub_id;
 
   perform private.validate_post_attachments(new_post_id, space_pub_id, p_attachments);
-
-  insert into public.post_attachments(post_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
-  select
-    new_post_id,'post-files',
-    item.value->>'storage_path',
-    btrim(item.value->>'file_name'),
-    item.value->>'content_type',
-    (item.value->>'size_bytes')::int8,
-    (item.position-1)::int4,
-    (item.value->>'width')::int4,
-    (item.value->>'height')::int4
-  from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
+  perform private.insert_post_attachments(new_post_id, p_attachments);
 
   return new_pub_id;
 end;
@@ -864,18 +878,7 @@ begin
       last_error=null;
 
   delete from public.post_attachments where post_id=p_post_id;
-
-  insert into public.post_attachments(post_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
-  select
-    p_post_id,'post-files',
-    item.value->>'storage_path',
-    btrim(item.value->>'file_name'),
-    item.value->>'content_type',
-    (item.value->>'size_bytes')::int8,
-    (item.position-1)::int4,
-    (item.value->>'width')::int4,
-    (item.value->>'height')::int4
-  from jsonb_array_elements(p_attachments) with ordinality as item(value,position);
+  perform private.insert_post_attachments(p_post_id, p_attachments);
 end;
 $$;
 
@@ -894,15 +897,14 @@ declare
   caller_id bigint := private.require_current_profile(true);
   target_space_id bigint;
 begin
-  select space_id into target_space_id
-  from public.posts where id=p_id and deleted_at is null
-  for update;
-  if not found then return; end if;
   -- can_manage_space가 아니라 can_curate_space다: 고정은 게시판을 정리하는 일이라 manager도 한다.
   -- (남의 글 삭제·익명 정지는 여전히 can_manage_space -- 그건 사람을 다루는 일이다.)
-  if not private.can_curate_space(target_space_id) then
-    raise exception 'space curator required';
-  end if;
+  -- 권한 조건을 SELECT에 합쳐 존재 오라클을 없앤다(soft_delete_post와 같은 이유).
+  select space_id into target_space_id
+  from public.posts
+  where id=p_id and deleted_at is null and private.can_curate_space(space_id)
+  for update;
+  if not found then return; end if;
 
   update public.posts
   set pinned_at = case when p_pinned then now() else null end,
@@ -917,16 +919,17 @@ create function public.soft_delete_post(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
   caller_id bigint := private.require_current_profile(true);
-  target_author_id bigint;
   target_space_id bigint;
 begin
-  select author_id, space_id into target_author_id, target_space_id
-  from public.posts where id=p_id and deleted_at is null
+  -- 권한 조건을 SELECT에 합친다. "없는 글"과 "권한 없는 글"이 똑같이 0행이 되어, 학교 전체
+  -- 승인 사용자가 id를 1부터 훑으며 "예외가 뜨나 / 조용히 성공하나"로 비공개 space(징계·상담
+  -- 등)에 살아있는 글이 몇 개인지 세던 오라클을 없앤다. 권한이 있으면 그 글만 잡힌다.
+  select space_id into target_space_id
+  from public.posts
+  where id=p_id and deleted_at is null
+    and (author_id=caller_id or private.can_manage_space(space_id))
   for update;
   if not found then return; end if;
-  if target_author_id<>caller_id and not private.can_manage_space(target_space_id) then
-    raise exception 'post author or space manager required';
-  end if;
 
   insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by)
   select a.storage_bucket,a.storage_path,caller_id
@@ -951,18 +954,17 @@ create function public.soft_delete_comment(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
   caller_id bigint := private.require_current_profile(true);
-  target_author_id bigint;
   target_space_id bigint;
 begin
-  select c.author_id, p.space_id into target_author_id, target_space_id
+  -- soft_delete_post와 같은 이유로 권한 조건을 SELECT에 합친다: "없는 댓글"과 "권한 없는 댓글"이
+  -- 똑같이 0행이 되어 존재 여부 오라클을 없앤다.
+  select p.space_id into target_space_id
   from public.comments c
   join public.posts p on p.id=c.post_id
   where c.id=p_id and c.deleted_at is null
+    and (c.author_id=caller_id or private.can_manage_space(p.space_id))
   for update of c;
   if not found then return; end if;
-  if target_author_id<>caller_id and not private.can_manage_space(target_space_id) then
-    raise exception 'comment author or space manager required';
-  end if;
 
   delete from public.comment_reactions where comment_id=p_id;
 

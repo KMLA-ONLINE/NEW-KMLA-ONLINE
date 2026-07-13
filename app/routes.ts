@@ -27,6 +27,7 @@ export default [
     route("menu", "./routes/_app.menu.tsx"),
     route("profile", "./routes/_app.profile.tsx"),
     route("profile/edit", "./routes/_app.profile.edit.tsx"),
+    route("profile/password", "./routes/_app.profile.password.tsx"),
   ]),
   route("login", "./routes/login.tsx"),
   route("signup", "./routes/signup.tsx"),
@@ -34,4 +35,5 @@ export default [
   route("setup", "./routes/setup.tsx"),
   route("pending", "./routes/pending.tsx"),
   route("forgot-password", "./routes/forgot-password.tsx"),
+  route("reset-password", "./routes/reset-password.tsx"),
 ] satisfies RouteConfig

@@ -6,7 +6,7 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 
 ## 테이블
 
-`notifications` — recipient / `type` / actor + 대상 FK 4종(space·post·comment·message) + `payload` + `read_at`.
+`notifications` — recipient / `type` / actor + 대상 FK 3종(space·post·comment) + `payload` + `read_at`.
 
 - **`type`이 없으면 안 되는 이유**: FK 모양으로는 종류를 유추할 수 없다. "내 글에 댓글", "내 댓글에 답글", "댓글에서 멘션"은 `(space_id, post_id, comment_id)`가 전부 채워진 **완전히 같은 모양**인데 아이콘도 문구도 목적지도 다르다.
 - `actor_is_anonymous` — 익명으로 한 행동인가. `list_notifications()`가 이걸 보고 actor를 지운다. 원본에서 매번 읽지 않는 이유: `is_anonymous`는 불변이라 drift가 없고, 원본이 하드 삭제돼도 "가려야 한다"는 판단은 남아야 한다.
@@ -18,8 +18,9 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 | 그룹   | 값                                                                                                                                                                        | 게이트                                                          |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | 콘텐츠 | `post_comment`, `comment_reply`, `post_mention`, `comment_mention`                                                                                                        | `space_members.notification_setting` (`off`/`mentions`/`all`)   |
-| 채팅   | `message_mention`                                                                                                                                                         | (아직 트리거 없음 — 아래 주의)                                  |
 | 운영   | `space_join_request`, `space_join_approved`, `space_join_rejected`, `space_invited`, `space_role_changed`, `space_anonymity_suspended`, `post_removed`, `comment_removed` | 없음 — **끌 수 없다** (가입 승인·정지 통보를 안 받을 수는 없다) |
+
+**채팅은 없다.** 알림함과 채팅은 별개 체계이고, 그건 빠뜨린 게 아니라 결정이다 — 아래 "주의" 참고.
 
 ## RPC
 
@@ -57,8 +58,8 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 
 - **내가 바꾼 내 역할은 알리지 않는다.** `transfer_space_ownership`이 기존 owner를 admin으로 내리는 게 정확히 그 경우다. `notifications_no_self_notify` 제약은 이걸 못 잡는다 — 그 제약은 `actor_id`를 보는데 역할 변경 알림은 actor를 아예 안 싣기 때문이다.
 
-- **채팅은 메시지마다 행을 만들지 않는다.** 안 읽음은 `chat_read_states`에서 파생되고 푸시는 저장 안 하는 일시적 전달이다. 메시지당 수신자당 행을 쌓으면 같은 사실을 두 곳에 저장하며 팬아웃이 터진다. `message_id`는 **멘션**처럼 지속되어야 하는 알림에만 쓴다.
+- **채팅 알림은 행이 아니라 푸시다.** 이 도메인은 `messages`도 `conversations`도 참조하지 않으며, 그건 빠뜨린 게 아니라 결정이다. 메시지당 수신자당 행을 쌓으면 (1) 같은 사실이 두 곳에 저장되어 서로 다른 말을 하고 — 메시지를 읽어도 알림함의 그 줄은 안 읽음으로 남는다 — (2) 팬아웃이 터진다. 채팅에서 지속되는 상태는 `chat_read_states`의 커서 하나뿐이고, 안 읽은 수는 거기서 파생되며(`get_unread_message_count`), 음소거는 `chat_notification_settings`가 맡는다.
 
-- **`message_mention`은 값만 있고 트리거가 없다** (`message_mentions` 테이블이 없다). 그래서 `chat_notification_settings.level`의 `'mention'`은 아직 죽은 설정이다. 값을 미리 넣어 둔 이유: enum에 값을 추가하는 마이그레이션은 **같은 트랜잭션에서 그 값을 쓸 수 없어**(check 제약이 리터럴로 참조한다) 나중에 넣으려면 마이그레이션을 둘로 쪼개야 한다.
+  한때 멘션만은 예외로 두려고 `message_mention` enum 값과 `notifications.message_id`를 예약해 뒀으나 생산자를 끝내 만들지 않았고, 이제 만들 수도 없다: 1:1 대화는 종단간 암호화되어 서버가 본문을 못 읽으므로 멘션을 탐지할 방법이 없고([docs/e2ee.md](../../e2ee.md)), 애초에 1:1에는 멘션할 제3자가 없다. 그룹 대화의 멘션이 필요해지면 그때도 알림함이 아니라 **채팅 자신의 푸시**로 간다 — `chat_notification_settings.level='mention'`이 이미 그 자리다. (제거: `20260712154754_decouple_notifications_from_chat.sql`)
 
 - **아직 없는 알림**: 공지/고정글 팬아웃, 반응(팬아웃이 크고 개별 가치가 낮아 `actor_count` 집계가 필요하다), 익명 정지 **해제** 통보.

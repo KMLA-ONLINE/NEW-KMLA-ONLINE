@@ -75,11 +75,9 @@ export function getLastMessage(room: Room) {
   return undefined
 }
 
-export function getMessagePreview(message: Message | undefined) {
-  if (!message) {
-    return "아직 메시지가 없습니다."
-  }
-
+// Shared by getMessagePreview and getReplyText: both render "what does this
+// message say" and differ only in how they handle a missing message.
+function getMessageBodyPreview(message: Message) {
   if (isDeletedMessage(message)) {
     return DELETED_MESSAGE_LABEL
   }
@@ -94,6 +92,14 @@ export function getMessagePreview(message: Message | undefined) {
   }
 
   return "첨부 파일"
+}
+
+export function getMessagePreview(message: Message | undefined) {
+  if (!message) {
+    return "아직 메시지가 없습니다."
+  }
+
+  return getMessageBodyPreview(message)
 }
 
 export type AttachmentKind = "image" | "audio" | "video" | "file"
@@ -340,20 +346,7 @@ export function formatRoomTime(value: string | undefined) {
 }
 
 export function getReplyText(message: Message) {
-  if (isDeletedMessage(message)) {
-    return DELETED_MESSAGE_LABEL
-  }
-
-  if (message.content) {
-    return message.content
-  }
-
-  const attachmentPreview = getAttachmentPreview(message.attachments)
-  if (attachmentPreview) {
-    return attachmentPreview
-  }
-
-  return "첨부 파일"
+  return getMessageBodyPreview(message)
 }
 
 export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroupPosition) {

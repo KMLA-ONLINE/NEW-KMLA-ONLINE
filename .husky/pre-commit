@@ -1,3 +1,95 @@
 set -e
+
+# 스테이지된 목록은 lint-staged가 파일을 건드리기 전에 잡아둔다.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
 npm run typecheck
 npx lint-staged
+
+# ---------------------------------------------------------------------------
+# 아래는 **건드린 곳에 따라서만** 돈다.
+#
+# 전부 매번 돌리면 훅이 느려지고, 느린 훅은 --no-verify를 습관으로 만든다. 그러면 검사가
+# 아예 없는 것보다 나쁘다 -- 있다고 믿게 되니까. 스키마도 크립토도 안 건드린 커밋은
+# 지금까지와 똑같이 빠르다.
+# ---------------------------------------------------------------------------
+
+CONTAINER="${SUPABASE_DB_CONTAINER:-supabase_db_NEW-KMLA-ONLINE}"
+
+if echo "$STAGED" | grep -qE '^supabase/'; then
+  if ! command -v docker >/dev/null 2>&1 || ! docker exec "$CONTAINER" true >/dev/null 2>&1; then
+    echo ""
+    echo "✗ supabase/ 를 고쳤는데 로컬 Supabase가 안 떠 있어 DB 검사를 돌릴 수 없습니다."
+    echo ""
+    echo "  이 검사가 실제로 잡아낸 것들:"
+    echo "    · 아무 로그인 학생이나 private.anonymize_profile() 한 줄로 남의 계정을 영구 삭제"
+    echo "    · drop+recreate된 RPC가 grant를 잃고 anon에게 열린 사고"
+    echo "  둘 다 스키마 파일은 멀쩡해 보였다. supabase db diff 는 함수 grant를 아예 내지 않는다."
+    echo ""
+    echo "  npx supabase start   후 다시 커밋하세요."
+    echo "  정말 건너뛰려면:      git commit --no-verify"
+    echo ""
+    exit 1
+  fi
+
+  # 로컬 DB가 schemas/ 와 어긋나 있으면 아래 테스트는 '옛 스키마'를 검사하고 통과한다.
+  # 그 초록은 거짓말이므로, 둘이 같은지부터 확인한다. 반환 타입이 바뀐 RPC도 여기서
+  # shadow DB와 대조한다. CLI 출력은 숨기지 않는다 -- 오래 걸릴 때 멈춤과 구분해야 한다.
+  echo "→ supabase db diff  (로컬 DB가 schemas/ 와 일치하는가)"
+  echo "  · shadow DB와 선언형 schemas를 비교합니다. 보통 20 ~ 60초 걸립니다."
+  DIFF_LOG=$(mktemp "${TMPDIR:-/tmp}/kmla-supabase-diff.XXXXXX")
+  npx --no-install supabase db diff >"$DIFF_LOG" 2>&1 &
+  DIFF_PID=$!
+  ELAPSED=0
+  PRINTED_LINES=0
+
+  while kill -0 "$DIFF_PID" 2>/dev/null; do
+    CURRENT_LINES=$(wc -l < "$DIFF_LOG" | tr -d ' ')
+    if [ "$CURRENT_LINES" -gt "$PRINTED_LINES" ]; then
+      sed -n "$((PRINTED_LINES + 1)),$CURRENT_LINES p" "$DIFF_LOG"
+      PRINTED_LINES=$CURRENT_LINES
+    fi
+
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    if [ $((ELAPSED % 10)) -eq 0 ]; then
+      echo "  · 아직 비교 중입니다... ${ELAPSED}초 경과"
+    fi
+  done
+
+  if ! wait "$DIFF_PID"; then
+    cat "$DIFF_LOG"
+    rm -f "$DIFF_LOG"
+    echo ""
+    echo "✗ supabase db diff 실행에 실패했습니다. 위 CLI 로그를 확인하세요."
+    exit 1
+  fi
+
+  CURRENT_LINES=$(wc -l < "$DIFF_LOG" | tr -d ' ')
+  if [ "$CURRENT_LINES" -gt "$PRINTED_LINES" ]; then
+    sed -n "$((PRINTED_LINES + 1)),$CURRENT_LINES p" "$DIFF_LOG"
+  fi
+
+  if ! grep -q "No schema changes found" "$DIFF_LOG"; then
+    rm -f "$DIFF_LOG"
+    echo ""
+    echo "✗ 로컬 DB가 supabase/schemas/ 와 다릅니다. 이대로 DB 테스트를 돌리면 '옛 스키마'를"
+    echo "  검사하고 통과합니다 -- 그 초록은 거짓말입니다."
+    echo ""
+    echo "  마이그레이션을 만들었나요?   npx supabase db diff -f <name>"
+    echo "  적용했나요?                 npx supabase db reset"
+    echo ""
+    exit 1
+  fi
+  rm -f "$DIFF_LOG"
+
+  echo "→ npm run test:db"
+  npm run test:db
+fi
+
+if echo "$STAGED" | grep -qE '^app/lib/crypto/'; then
+  # KDF 고정 벡터(파라미터가 조용히 바뀌면 배포 후 전 계정 로그인 불가), AAD 바인딩,
+  # 그리고 진짜 DB 왕복. 통합 테스트는 로컬 Supabase가 없으면 스스로 skip한다.
+  echo "→ 크립토 테스트"
+  npx vitest run app/lib/crypto
+fi

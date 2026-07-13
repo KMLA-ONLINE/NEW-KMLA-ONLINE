@@ -24,9 +24,13 @@ create policy space_images_select on storage.objects for select to authenticated
 create policy post_files_select on storage.objects for select to authenticated using (
   bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=storage.objects.name and private.can_access_post(a.post_id))
 );
+-- 첨부 버킷이 둘인 이유: 1:1 대화의 blob은 암호문이라 storage 입장에서는 전부
+-- application/octet-stream이다. 그걸 message-files에 넣으면 그 버킷의 MIME 화이트리스트가
+-- (image/svg+xml 차단을 포함해서) 통째로 무력해진다. 그래서 octet-stream만 받는 버킷을 따로
+-- 두고, 그룹 채팅의 화이트리스트는 손대지 않은 채로 남겨둔다.
 create policy message_files_select on storage.objects for select to authenticated using (
-  bucket_id='message-files' and (
-    exists(select 1 from public.message_attachments a where a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
+  bucket_id in ('message-files','message-files-encrypted') and (
+    exists(select 1 from public.message_attachments a where a.storage_bucket=storage.objects.bucket_id and a.storage_path=storage.objects.name and private.can_access_message(a.message_id))
     or (
       split_part(storage.objects.name,'/',2)=(select auth.uid())::text
       and exists(
@@ -55,29 +59,37 @@ create policy space_images_insert on storage.objects for insert to authenticated
       and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
--- 경로는 <space.pub_id>/<auth.uid()>/<uuid>다. blob을 글이 아니라 space에 매는 이유:
--- 글보다 먼저 업로드할 수 있어야 create_post_with_attachments가 글+첨부를 한 트랜잭션으로 끝낸다.
--- 글에 매면 작성 -> 업로드 -> 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상
--- 트랜잭션(soft delete)이 필요해진다 -- 그 보상도 실패할 수 있어 유령 글이 생긴다.
--- message_files_insert가 blob을 대화에 매는 것과 같은 구조이고, 보안 성질도 같다: 내가 참여하는
--- 공간의, 내 uid 경로에만 올릴 수 있다. 확정되지 않은 blob은 고아 청소가 걷어간다.
+-- 경로는 <space.pub_id>/<uuid>다. 경로에 업로더 uid를 넣지 않는다: 넣으면 익명 글과 실명 글의
+-- 첨부 경로에 같은 uid가 실려 익명이 깨진다(get_post 응답만으로 두 글이 같은 작성자임이 드러난다).
+-- 소유권은 경로가 아니라 owner_id로 강제한다 -- storage가 JWT에서 채우므로 클라이언트가 위조할 수
+-- 없고, 경로에는 신원이 남지 않는다. message_files_insert는 대화 참여자가 서로를 이미 알기에
+-- (익명 개념이 없다) 경로에 uid를 그대로 두지만, post는 익명이 걸려 있어 이렇게 갈라진다.
+--
+-- blob을 글이 아니라 space에 매는 이유: 글보다 먼저 업로드할 수 있어야
+-- create_post_with_attachments가 글+첨부를 한 트랜잭션으로 끝낸다. 글에 매면 작성 -> 업로드 ->
+-- 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상 트랜잭션(soft delete)이 필요해진다
+-- -- 그 보상도 실패할 수 있어 유령 글이 생긴다. 확정되지 않은 blob은 고아 청소가 걷어간다.
 create policy post_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='post-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
+  bucket_id='post-files' and owner_id=(select auth.uid())::text and exists(
     select 1 from public.spaces s
     where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
       and private.can_participate_space(s.id)
-      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/'||(select auth.uid())::text||'/')
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
+-- 버킷을 클라이언트가 고르는 게 아니라 대화 타입이 정한다. 그래서 1:1 대화 경로에 평문
+-- 파일을 올리는 것 자체가 불가능하다 -- 나중에 send RPC나 첨부 트리거에서 걸러지는 게 아니라,
+-- 업로드가 애초에 통과하지 못한다.
 create policy message_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='message-files'
+  bucket_id in ('message-files','message-files-encrypted')
   and split_part(storage.objects.name,'/',2)=(select auth.uid())::text
   and exists(
     select 1 from public.conversations c
     where c.id::text=split_part(storage.objects.name,'/',1)
       and private.is_conversation_member(c.id)
       and private.has_uuid_object_suffix(storage.objects.name,c.id::text||'/'||(select auth.uid())::text||'/')
+      and bucket_id = case when c.type='direct' then 'message-files-encrypted' else 'message-files' end
   )
 );
 
@@ -104,14 +116,23 @@ begin
     delete from public.post_attachments where id=p_attachment_id and storage_path=path;
   else
     delete from public.message_attachments where id=p_attachment_id and storage_path=path;
-    delete from public.message_reactions where message_id=target_message_id;
 
+    -- 마지막 첨부를 뗐는데 본문도 없으면(평문이든 암호문이든) 남는 게 없으니 메시지째 삭제된다.
     update public.messages m
-    set content=null,deleted_at=now(),deleted_by=caller_id
+    set content=null,content_ciphertext=null,deleted_at=now(),deleted_by=caller_id
     where m.id=target_message_id
       and m.deleted_at is null
       and m.content is null
+      and m.content_ciphertext is null
       and not exists(select 1 from public.message_attachments a where a.message_id=m.id);
+
+    -- 반응과 봉투는 **메시지가 실제로 죽었을 때만** 지운다. 조건 없이 지우면 사진 세 장 중
+    -- 하나만 뗀 사람이 그 메시지에 달린 반응을 전부 날려 버린다 -- 메시지도 본문도 나머지
+    -- 첨부도 멀쩡히 살아 있는데.
+    if found then
+      delete from public.message_reactions where message_id=target_message_id;
+      delete from public.message_keys where message_id=target_message_id;
+    end if;
   end if;
 end $$;
 
@@ -137,12 +158,12 @@ begin
   union
   select o.bucket_id,o.name from storage.objects o
   where o.created_at<now()-interval '48 hours'
-    and o.bucket_id in ('avatars','profile-covers','space-images','post-files','message-files')
+    and o.bucket_id in ('avatars','profile-covers','space-images','post-files','message-files','message-files-encrypted')
     and not exists(select 1 from public.profiles p where o.bucket_id='avatars' and p.avatar_url=o.name)
     and not exists(select 1 from public.profiles p where o.bucket_id='profile-covers' and p.cover_image_url=o.name)
     and not exists(select 1 from public.spaces s where o.bucket_id='space-images' and s.image_url=o.name)
     and not exists(select 1 from public.post_attachments a where o.bucket_id='post-files' and a.storage_path=o.name)
-    and not exists(select 1 from public.message_attachments a where o.bucket_id='message-files' and a.storage_path=o.name)
+    and not exists(select 1 from public.message_attachments a where o.bucket_id in ('message-files','message-files-encrypted') and a.storage_bucket=o.bucket_id and a.storage_path=o.name)
   on conflict(storage_bucket,storage_path) do update
   set available_at=least(private.attachment_cleanup_queue.available_at,excluded.available_at),processed_at=null;
 
@@ -179,7 +200,7 @@ begin
   select storage_bucket,storage_path into bucket,path from private.attachment_cleanup_queue where id=p_id and processed_at is null for update;
   if path is null then return; end if;
   if bucket='post-files' then delete from public.post_attachments where storage_path=path;
-  elsif bucket='message-files' then delete from public.message_attachments where storage_path=path;
+  elsif bucket in ('message-files','message-files-encrypted') then delete from public.message_attachments where storage_bucket=bucket and storage_path=path;
   elsif bucket='avatars' then update public.profiles set avatar_url=null where avatar_url=path;
   elsif bucket='profile-covers' then update public.profiles set cover_image_url=null where cover_image_url=path;
   elsif bucket='space-images' then update public.spaces set image_url=null where image_url=path and deleted_at is not null;

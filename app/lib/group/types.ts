@@ -190,4 +190,6 @@ export type GroupComment = {
    * updated_at이 "삭제한 시각"이 돼 버린다.
    */
   updatedAt?: string | null
+  // TODO(reactions): get_post_comments는 reaction_count, top_reactions, my_reaction_id도 반환한다.
+  // 실제 반응 연동 시 reactionCount/topReactions/myReactionId를 추가하고, loader에서 camelCase로 변환한다.
 }

@@ -58,7 +58,7 @@ export function GroupPostImageGrid({
             >
               <img src={image.src} alt={image.alt} className="h-full w-full object-cover" />
               {showOverflow ? (
-                <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-lg font-semibold text-white">
+                <span className="bg-foreground/60 text-background absolute inset-0 flex items-center justify-center text-lg font-semibold">
                   +{overflow}
                 </span>
               ) : null}

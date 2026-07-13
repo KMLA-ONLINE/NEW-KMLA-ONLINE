@@ -1,5 +1,16 @@
--- public.notification_level lives in 00-foundation: 05-chat needs it, and this
--- file is applied after that one.
+-- 알림함은 **채팅과 아무 관계가 없다.** 이 파일 어디에도 messages나 conversations가 나오지
+-- 않으며, 그건 빠뜨린 게 아니라 결정이다.
+--
+-- 원칙: **채팅 알림은 행이 아니라 푸시다.** 메시지마다 알림 행을 쌓으면 (1) 같은 사실이 두 곳에
+-- 저장되어 서로 다른 말을 하고 -- 메시지를 읽어도 알림함의 그 줄은 안 읽음으로 남는다 --
+-- (2) 팬아웃이 터진다. 채팅에서 지속되는 상태는 chat_read_states의 커서 하나뿐이고, 안 읽은
+-- 수는 거기서 파생되며(get_unread_message_count), 음소거는 chat_notification_settings가 맡는다.
+--
+-- 한때 멘션만은 예외로 두려고 'message_mention' enum 값과 notifications.message_id를 예약해
+-- 뒀지만 생산자를 끝내 만들지 않았고, 이제 만들 수도 없다: 1:1 대화는 종단간 암호화되어 서버가
+-- 본문을 읽지 못하므로 멘션을 탐지할 방법이 없고(docs/e2ee.md), 애초에 1:1에는 멘션할 제3자가
+-- 없다. 그룹 대화의 멘션이 필요해지면 그때도 알림함이 아니라 **채팅 자신의 푸시**로 갈 것 --
+-- chat_notification_settings.level='mention'이 이미 그 자리다.
 
 -- 알림의 종류. 이게 없으면 클라이언트가 어떤 FK가 채워졌는지로 종류를 유추해야 하는데, 그게 불가능
 -- 하다: "내 글에 댓글", "내 댓글에 답글", "댓글에서 나를 멘션"은 (space_id, post_id, comment_id)가
@@ -10,12 +21,6 @@ create type public.notification_type as enum (
   'comment_reply',
   'post_mention',
   'comment_mention',
-  -- 채팅. 메시지마다 행을 쌓지 않는다 -- 안 읽음은 chat_read_states에서 파생되고, 행을 쌓으면
-  -- 같은 사실을 두 곳에 저장하면서 팬아웃이 터진다. 지속되어야 하는 건 멘션뿐이다.
-  -- 아직 message_mentions 테이블이 없어 이 값을 만드는 트리거도 없다(아래 주의 참고). 값을 미리
-  -- 두는 이유: enum에 값을 추가하는 마이그레이션은 같은 트랜잭션에서 그 값을 쓸 수 없어서
-  -- (check 제약이 리터럴로 참조한다) 나중에 넣으려면 마이그레이션을 둘로 쪼개야 한다.
-  'message_mention',
   -- 운영. 끌 수 없다 -- 가입 승인이나 정지 통보를 사용자가 안 받기로 선택할 수 있으면 안 된다.
   'space_join_request',
   'space_join_approved',
@@ -40,7 +45,6 @@ create table public.notifications (
   space_id bigint null references public.spaces (id) on delete cascade,
   post_id bigint null references public.posts (id) on delete cascade,
   comment_id bigint null references public.comments (id) on delete cascade,
-  message_id bigint null references public.messages (id) on delete cascade,
   -- FK로 표현되지 않는 소량의 사실만 담는다(바뀐 역할, 정지 만료 시각). 렌더된 문구는 절대 넣지
   -- 않는다: 문구를 박으면 작성자가 개명해도 옛 이름을 계속 실어 나르고, 문구 수정이 데이터
   -- 마이그레이션이 되며, 무엇보다 댓글 미리보기를 캐시하는 순간 삭제된 댓글의 원문이 여기로
@@ -57,15 +61,14 @@ alter table public.notifications
   -- 종류별 대상 모양을 못 박는다. 트리거가 잘못된 행을 만들면 런타임이 아니라 여기서 걸린다.
   add constraint notifications_target_shape_check check (
     case type
-      when 'post_comment'    then space_id is not null and post_id is not null and comment_id is not null and message_id is null
-      when 'comment_reply'   then space_id is not null and post_id is not null and comment_id is not null and message_id is null
-      when 'comment_mention' then space_id is not null and post_id is not null and comment_id is not null and message_id is null
-      when 'comment_removed' then space_id is not null and post_id is not null and comment_id is not null and message_id is null
-      when 'post_mention'    then space_id is not null and post_id is not null and comment_id is null and message_id is null
-      when 'post_removed'    then space_id is not null and post_id is not null and comment_id is null and message_id is null
-      when 'message_mention' then message_id is not null and space_id is null and post_id is null and comment_id is null
+      when 'post_comment'    then space_id is not null and post_id is not null and comment_id is not null
+      when 'comment_reply'   then space_id is not null and post_id is not null and comment_id is not null
+      when 'comment_mention' then space_id is not null and post_id is not null and comment_id is not null
+      when 'comment_removed' then space_id is not null and post_id is not null and comment_id is not null
+      when 'post_mention'    then space_id is not null and post_id is not null and comment_id is null
+      when 'post_removed'    then space_id is not null and post_id is not null and comment_id is null
       -- 나머지 운영 알림은 전부 공간 단위다.
-      else space_id is not null and post_id is null and comment_id is null and message_id is null
+      else space_id is not null and post_id is null and comment_id is null
     end
   ),
   -- 모더레이션/행정 알림은 행위자를 밝히지 않는다. 스키마는 이미
@@ -128,7 +131,6 @@ returns table(
   space jsonb,
   post jsonb,
   comment jsonb,
-  conversation jsonb,
   payload jsonb,
   read_at timestamptz,
   created_at timestamptz
@@ -157,8 +159,6 @@ begin
     -- 삭제된 댓글은 soft_delete_comment가 content를 이미 비웠다. 알림이 원문을 되살리지 않는다.
     case when c.id is null then null
          else jsonb_build_object('id',c.id,'content',c.content,'is_deleted',c.deleted_at is not null) end,
-    case when cv.id is null then null
-         else jsonb_build_object('id',cv.id,'name',cv.name) end,
     n.payload,
     n.read_at,
     n.created_at
@@ -167,8 +167,6 @@ begin
   left join public.spaces s on s.id=n.space_id
   left join public.posts p on p.id=n.post_id
   left join public.comments c on c.id=n.comment_id
-  left join public.messages m on m.id=n.message_id
-  left join public.conversations cv on cv.id=m.conversation_id
   where n.recipient_id=caller_id
     and (p_before_id is null or n.id < p_before_id)
   order by n.id desc

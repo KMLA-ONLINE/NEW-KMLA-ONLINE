@@ -2,7 +2,9 @@
 
 Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage.sql)
 
-파일 업로드 모델과 blob 정리 파이프라인. private bucket 5개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`) + storage RLS + finalize RPC + cleanup queue 조합.
+파일 업로드 모델과 blob 정리 파이프라인. private bucket 6개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`, `message-files-encrypted`) + storage RLS + finalize RPC + cleanup queue 조합.
+
+메시지 첨부 bucket이 둘인 이유는 종단간 암호화다 — 아래 "주의" 참고.
 
 업로드는 2단계다: (1) Storage SDK로 provisional 경로에 직접 업로드 — bucket별 insert policy가 경로/소유권을 검증, (2) finalize류 RPC가 object 존재/MIME/크기/경로를 재검증하고 DB row를 만든다. bucket 정의 자체는 데이터라서 스키마가 아니라 baseline migration에 있다.
 
@@ -39,5 +41,8 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 - profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}`(direct/room 구분 없음), **post 첨부는 `{space.pub_id}/{auth_uid}/{uuid}`** 경로를 사용한다.
 - post 첨부 경로가 post가 아니라 **space**에 매달린 건 blob을 글보다 먼저 올릴 수 있게 하려는 것이다(그래야 글+첨부가 한 트랜잭션이 된다). 근거는 [03-content](03-content.md)의 "첨부". 보안 성질은 message 첨부와 같다 — 내가 참여하는 공간의, 내 uid 경로에만 올린다.
 - `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat, `create_post_with_attachments()`/`set_post_attachments()`는 content 문서에 있다.
-- `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `schema_runtime_check.sql`이 둘의 drift를 잡는다.
+- `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `tests/09-storage.sql`이 둘의 drift를 잡는다.
+- **메시지 첨부 bucket이 둘인 이유**: 1:1 대화의 blob은 암호문이라 storage 입장에서 전부 `application/octet-stream`이다. 그걸 `message-files`에 허용하면 octet-stream이 위의 registry에 들어가야 하고, 그러면 **그룹** 첨부도 octet-stream으로 신고할 수 있게 되어 그쪽의 MIME 보호가 무너진다. 그래서 octet-stream만 받는 `message-files-encrypted`를 따로 두고 그룹 채팅의 화이트리스트는 손대지 않는다. 크기 상한은 평문 상한 + AEAD 오버헤드(nonce 12 + GCM 태그 16).
+- **버킷은 클라이언트가 고르지 않는다** — `message_files_insert` 정책이 대화 타입에서 유도한다. 그래서 1:1 경로에 평문 파일을 올리는 것은 나중에 RPC나 트리거에서 걸러지는 게 아니라 **업로드 자체가 통과하지 못한다.**
+- 암호화되어도 `message_attachments.content_type`은 여전히 registry에 FK로 묶여 있다 — 발신자가 `image/svg+xml`을 신고할 수는 없다. 바뀐 것은 그 신고가 **브라우저에 어디서 전달되느냐**다: 평문은 Storage가 `Content-Type` 헤더로 주지만, 암호문은 헤더가 없어 **클라이언트가 Blob을 만들며 직접 세운다.** 그 한 줄이 `app/lib/crypto/attachment.ts`의 `decryptedAttachmentUrl()`이고, 거기서 바이트를 sniff하거나 octet-stream을 쓰면 보호가 그 자리에서 사라진다. 전체 논증은 [docs/e2ee.md](../../e2ee.md).
 - space 이미지는 finalize RPC가 없어 `space-images` bucket에 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).

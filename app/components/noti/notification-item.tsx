@@ -27,7 +27,6 @@ const ACTOR_TYPES: ReadonlySet<NotificationType> = new Set([
   "comment_reply",
   "post_mention",
   "comment_mention",
-  "message_mention",
   "space_join_request",
   "space_invited",
 ])
@@ -45,7 +44,7 @@ type Descriptor = {
 
 const TONE = {
   neutral: "bg-primary text-primary-foreground",
-  positive: "bg-emerald-600 text-white",
+  positive: "bg-primary/10 text-primary",
   negative: "bg-destructive text-white",
 } as const
 
@@ -63,7 +62,7 @@ function Em({ children }: { children: ReactNode }) {
  * 링크를 걸지 않는다.
  */
 function describe(notification: AppNotification): Descriptor {
-  const { actor, actorIsAnonymous, space, post, comment, conversation, payload } = notification
+  const { actor, actorIsAnonymous, space, post, comment, payload } = notification
 
   const spaceName = space?.name ?? "그룹"
   const spaceHref = space ? `/groups/${space.pubId}` : null
@@ -119,13 +118,6 @@ function describe(notification: AppNotification): Descriptor {
         href: postHref,
         message: <>{subject} 댓글에서 나를 언급했습니다</>,
         snippet,
-      }
-    case "message_mention":
-      return {
-        icon: AtSignIcon,
-        tone: TONE.neutral,
-        href: conversation ? `/messenger/${conversation.id}` : null,
-        message: <>{subject} 대화에서 나를 언급했습니다</>,
       }
     case "space_join_request":
       // 그룹의 가입요청 탭이 로컬 상태라 URL로 못 짚는다. 일단 그룹까지만 보낸다.
@@ -241,7 +233,7 @@ export function NotificationItem({
 
   const body = (
     <>
-      <div className="relative shrink-0">
+      <div className="relative size-10 shrink-0">
         {hasActor ? (
           <>
             {/* 탈퇴한 사용자는 이니셜이 없다. "?"는 "이름을 알 수 없는 사람"으로 읽히고, 익명의
@@ -254,7 +246,7 @@ export function NotificationItem({
             {/* 아바타 위에 얹는 종류 뱃지. ring이 카드 배경색이라 아바타에서 파낸 것처럼 보인다. */}
             <span
               className={cn(
-                "ring-card absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full ring-2",
+                "ring-card absolute right-0 bottom-0 z-10 flex size-5 translate-x-1/4 translate-y-1/4 items-center justify-center rounded-full ring-1",
                 tone
               )}
             >

@@ -12,7 +12,6 @@ create table public.post_reactions (
   user_id bigint not null references public.profiles (id) on delete restrict,
   reaction_type_id bigint not null references public.reaction_types (id) on delete restrict,
   created_at timestamptz not null default now(),
-  updated_at timestamptz null,
   primary key (post_id, user_id)
 );
 
@@ -21,7 +20,6 @@ create table public.comment_reactions (
   user_id bigint not null references public.profiles (id) on delete restrict,
   reaction_type_id bigint not null references public.reaction_types (id) on delete restrict,
   created_at timestamptz not null default now(),
-  updated_at timestamptz null,
   primary key (comment_id, user_id)
 );
 
@@ -55,3 +53,37 @@ grant update (reaction_type_id) on public.post_reactions,public.comment_reaction
 grant delete on public.post_reactions,public.comment_reactions to authenticated;
 grant select, insert, update, delete on public.reaction_types, public.post_reactions, public.comment_reactions to service_role;
 grant usage, select on sequence public.reaction_types_id_seq to service_role;
+
+-- 반응 요약(상위 3개 아이콘 + 내 반응 id). 03-content의 list_space_posts·get_post·
+-- get_post_comments 세 곳에 같은 상관 서브쿼리가 복붙돼 있던 것을 함수로 모은다. post와 comment는
+-- 반응 테이블이 달라 두 함수로 갈리지만 규칙은 각각 한 곳에만 산다. post_reactions를 참조하므로
+-- 그 테이블이 정의된 뒤인 이 파일에 둔다(03-content가 아니라). 호출자가 전부 security definer라
+-- 이 private 함수도 소유자 권한으로 실행되므로 authenticated grant는 없다.
+create function private.post_reaction_summary(p_post_id bigint, p_caller_id bigint)
+returns table(top_reactions jsonb, my_reaction_id bigint)
+language sql stable security definer set search_path = '' as $$
+  select
+    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
+      from (
+        select rt.icon, count(*) as n
+        from public.post_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
+        where r.post_id=p_post_id and rt.icon is not null
+        group by rt.icon order by count(*) desc limit 3
+      ) t),'[]'::jsonb),
+    (select r.reaction_type_id from public.post_reactions r where r.post_id=p_post_id and r.user_id=p_caller_id)
+$$;
+
+create function private.comment_reaction_summary(p_comment_id bigint, p_caller_id bigint)
+returns table(top_reactions jsonb, my_reaction_id bigint)
+language sql stable security definer set search_path = '' as $$
+  select
+    coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
+      from (
+        select rt.icon, count(*) as n
+        from public.comment_reactions r join public.reaction_types rt on rt.id=r.reaction_type_id
+        where r.comment_id=p_comment_id and rt.icon is not null
+        group by rt.icon order by count(*) desc limit 3
+      ) t),'[]'::jsonb),
+    (select r.reaction_type_id from public.comment_reactions r where r.comment_id=p_comment_id and r.user_id=p_caller_id)
+$$;
+revoke execute on function private.post_reaction_summary(bigint,bigint), private.comment_reaction_summary(bigint,bigint) from public, anon, authenticated, service_role;
