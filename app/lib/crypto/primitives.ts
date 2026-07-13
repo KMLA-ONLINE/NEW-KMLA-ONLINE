@@ -17,6 +17,23 @@ export const KEY_BYTES = 32
 export const NONCE_BYTES = 12
 
 /**
+ * 봉인 형식 버전. 모든 seal 출력의 맨 앞 1바이트다:
+ *
+ *   version(1) || nonce(12) || ciphertext || tag(16)
+ *
+ * 지금 형식이 하나뿐인데 왜 두느냐: 나중에 AEAD나 KDF나 인코딩을 바꿔야 할 때, 그날 DB에 이미
+ * 쌓인 암호문을 열 수 있으려면 "이 blob이 어느 규칙으로 봉인됐는가"가 blob 안에 적혀 있어야 한다.
+ * 그 표식이 없으면 형식 전환은 곧 전 사용자의 과거 메시지·금고를 여는 능력을 잃는 것이 된다.
+ * 1바이트가 그 운영 호환성을 산다. 형식을 바꾸는 날 SEAL_VERSION을 올리고 open()에서 분기한다.
+ *
+ * 버전 바이트는 AAD에 넣지 않는다 -- 그래야 미래의 open이 태그를 검증하기 전에 버전을 먼저 읽어
+ * 어느 규칙으로 열지 고를 수 있다. 대신 다운그레이드가 걱정되는 필드라면 호출자가 AAD 라벨에
+ * 버전을 함께 묶으면 된다(현 라벨들은 이미 -v1 접미어를 갖는다).
+ */
+export const SEAL_VERSION = 1
+const VERSION_BYTES = 1
+
+/**
  * OWASP's minimum Argon2id configuration (19 MiB, 2 passes). Measured at ~470ms
  * in pure JS on a desktop; call it ~2s on a phone. That is the entire cost of a
  * login, and it is the only thing standing between a stolen `wrapped_user_key`
@@ -105,8 +122,9 @@ function aeadParams(nonce: Uint8Array, label?: SealLabel): AesGcmParams {
 }
 
 /**
- * AES-256-GCM. The nonce is random and prefixed to the ciphertext, so a sealed
- * blob is self-contained: `nonce(12) || ciphertext || tag(16)`.
+ * AES-256-GCM. The nonce is random and prefixed to the ciphertext, and a version
+ * byte is prefixed to that, so a sealed blob is self-contained and self-describing:
+ * `version(1) || nonce(12) || ciphertext || tag(16)`.
  */
 export async function seal(
   key: Uint8Array,
@@ -119,7 +137,7 @@ export async function seal(
     await aesKey(key),
     plaintext as BufferSource
   )
-  return concatBytes(nonce, new Uint8Array(ciphertext))
+  return concatBytes(new Uint8Array([SEAL_VERSION]), nonce, new Uint8Array(ciphertext))
 }
 
 /**
@@ -134,11 +152,17 @@ export async function open(
   sealed: Uint8Array,
   label?: SealLabel
 ): Promise<Uint8Array> {
-  if (sealed.length <= NONCE_BYTES) throw new Error("sealed blob is truncated")
+  if (sealed.length <= VERSION_BYTES + NONCE_BYTES) throw new Error("sealed blob is truncated")
+  // 버전을 먼저 읽는다. 지금은 하나뿐이지만, 이 분기가 있어야 나중에 형식을 올려도 옛 blob을
+  // 옛 규칙으로 열 수 있다. 모르는 버전은 조용히 엉뚱하게 복호화하는 대신 명시적으로 실패한다.
+  const version = sealed[0]
+  if (version !== SEAL_VERSION) throw new Error(`unsupported ciphertext version: ${version}`)
+  const nonceStart = VERSION_BYTES
+  const bodyStart = VERSION_BYTES + NONCE_BYTES
   const plaintext = await crypto.subtle.decrypt(
-    aeadParams(sealed.subarray(0, NONCE_BYTES), label),
+    aeadParams(sealed.subarray(nonceStart, bodyStart), label),
     await aesKey(key),
-    sealed.subarray(NONCE_BYTES) as BufferSource
+    sealed.subarray(bodyStart) as BufferSource
   )
   return new Uint8Array(plaintext)
 }

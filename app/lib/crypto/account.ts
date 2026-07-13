@@ -7,7 +7,6 @@
  *                                        └─HKDF "enc"──► encKey     → never leaves the device
  *
  *   userKey (random, permanent) ──sealed by encKey──────► wrapped_user_key
- *                               └─sealed by recoveryKey─► recovery_wrapped_user_key
  *
  *   identity X25519 secret key ──sealed by userKey─────► wrapped_identity_secret_key
  *   identity X25519 public key ────────────────────────► published, readable by every accepted user
@@ -23,6 +22,11 @@
  *
  * The cost of that second property is stated plainly: someone who learns the
  * password can read everything, past and future, without touching the device.
+ *
+ * There is deliberately no second way in. A forgotten password cannot recover the
+ * old `userKey` -- only rotateAccount, which mints a brand new identity and gives
+ * up every past DM. That is the whole point of end-to-end encryption, not a gap to
+ * be filled with an escrow blob the server could be compelled to unwrap.
  */
 import { bytesToBase64, base64ToBytes, bytesToHex } from "./encoding"
 import {
@@ -37,7 +41,6 @@ import {
   seal,
   type IdentityKeyPair,
 } from "./primitives"
-import { deriveRecoveryKey, generateRecoveryCode } from "./recovery"
 
 /** The unlocked secrets. Held in memory for the session; never persisted as-is. */
 export type AccountKeys = {
@@ -50,7 +53,6 @@ export type StoredUserKeys = {
   identity_public_key: string
   wrapped_user_key: string
   wrapped_identity_secret_key: string
-  recovery_wrapped_user_key: string
 }
 
 /**
@@ -61,13 +63,6 @@ export class WrongPasswordError extends Error {
   constructor(options?: { cause?: unknown }) {
     super("비밀번호가 올바르지 않습니다.", options)
     this.name = "WrongPasswordError"
-  }
-}
-
-export class WrongRecoveryCodeError extends Error {
-  constructor(options?: { cause?: unknown }) {
-    super("복구 코드가 올바르지 않습니다.", options)
-    this.name = "WrongRecoveryCodeError"
   }
 }
 
@@ -107,21 +102,16 @@ function identityWrapKey(userKey: Uint8Array): Uint8Array {
 }
 
 /**
- * 세 blob이 전부 **다른 키**로 봉인된다(encKey / identityWrapKey / recoveryKey). 그래서 서로
- * 자리를 바꿔치기해도 그냥 안 열린다 -- 메시지 쪽과 달리 여기엔 AAD 라벨이 필요 없다.
+ * 두 blob이 서로 **다른 키**로 봉인된다(encKey / identityWrapKey). 그래서 서로 자리를 바꿔치기해도
+ * 그냥 안 열린다 -- 메시지 쪽과 달리 여기엔 AAD 라벨이 필요 없다.
  */
-async function sealAccount(
-  keys: AccountKeys,
-  encKey: Uint8Array,
-  recoveryKey: Uint8Array
-): Promise<StoredUserKeys> {
+async function sealAccount(keys: AccountKeys, encKey: Uint8Array): Promise<StoredUserKeys> {
   return {
     identity_public_key: bytesToBase64(keys.identity.publicKey),
     wrapped_user_key: bytesToBase64(await seal(encKey, keys.userKey)),
     wrapped_identity_secret_key: bytesToBase64(
       await seal(identityWrapKey(keys.userKey), keys.identity.secretKey)
     ),
-    recovery_wrapped_user_key: bytesToBase64(await seal(recoveryKey, keys.userKey)),
   }
 }
 
@@ -134,16 +124,13 @@ export type NewAccount = {
    * CryptoKey and drops these bytes. Nothing else should hold onto it.
    */
   encKey: Uint8Array
-  /** Shown to the user exactly once. Not recoverable from anything stored. */
-  recoveryCode: string
 }
 
 /** 이미 유도해 둔 키로 계정을 만든다. Argon2id를 다시 돌리지 않는다. */
-export async function createAccountFromKeys(
-  { authHash, encKey }: PasswordKeys,
-  email: string
-): Promise<NewAccount> {
-  const recoveryCode = generateRecoveryCode()
+export async function createAccountFromKeys({
+  authHash,
+  encKey,
+}: PasswordKeys): Promise<NewAccount> {
   const keys: AccountKeys = {
     userKey: randomBytes(KEY_BYTES),
     identity: generateIdentityKeyPair(),
@@ -152,14 +139,13 @@ export async function createAccountFromKeys(
     authHash,
     keys,
     encKey,
-    recoveryCode,
-    stored: await sealAccount(keys, encKey, deriveRecoveryKey(recoveryCode, email)),
+    stored: await sealAccount(keys, encKey),
   }
 }
 
 /** Signup. */
 export async function createAccount(password: string, email: string): Promise<NewAccount> {
-  return createAccountFromKeys(derivePasswordKeys(password, email), email)
+  return createAccountFromKeys(derivePasswordKeys(password, email))
 }
 
 async function unwrapIdentity(userKey: Uint8Array, stored: StoredUserKeys): Promise<AccountKeys> {
@@ -219,29 +205,11 @@ export async function unlockWithEncKey(
   return unwrapIdentity(userKey, stored)
 }
 
-/** Password reset: the user has the code but not the old password. */
-export async function unlockWithRecoveryCode(
-  recoveryCode: string,
-  email: string,
-  stored: StoredUserKeys
-): Promise<AccountKeys> {
-  let userKey: Uint8Array
-  try {
-    userKey = await open(
-      deriveRecoveryKey(recoveryCode, email),
-      base64ToBytes(stored.recovery_wrapped_user_key)
-    )
-  } catch (cause) {
-    throw new WrongRecoveryCodeError({ cause })
-  }
-  return unwrapIdentity(userKey, stored)
-}
-
 /**
- * Change or reset the password on keys that are already unlocked. Re-seals
- * `userKey` under the new `encKey` and mints a fresh recovery code -- the old one
- * unwraps a blob that is about to be overwritten, so leaving it valid would be a
- * lie.
+ * Change the password on keys that are already unlocked. Re-seals `userKey` under
+ * the new `encKey` and nothing else -- not one message is re-encrypted, because the
+ * identity key lives under `userKey`, which does not move. The old password's
+ * `encKey` stops opening the vault.
  */
 export async function resealAccount(
   keys: AccountKeys,
@@ -251,22 +219,19 @@ export async function resealAccount(
   authHash: string
   encKey: Uint8Array
   stored: StoredUserKeys
-  recoveryCode: string
 }> {
   const { authHash, encKey } = derivePasswordKeys(newPassword, email)
-  const recoveryCode = generateRecoveryCode()
   return {
     authHash,
     encKey,
-    recoveryCode,
-    stored: await sealAccount(keys, encKey, deriveRecoveryKey(recoveryCode, email)),
+    stored: await sealAccount(keys, encKey),
   }
 }
 
 /**
- * The last resort: neither the password nor the recovery code. Nothing can unwrap
- * the old `userKey`, so the account gets a brand new one and a brand new identity
- * key.
+ * The last resort: the password is gone. There is no second key to recover the old
+ * `userKey` -- by design -- so the account gets a brand new one and a brand new
+ * identity key.
  *
  * Every message key ever sealed to the old identity key is now unopenable, by
  * anyone, forever -- which is what end-to-end encryption means and is not a bug to

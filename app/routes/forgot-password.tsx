@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link } from "react-router"
-import { Loader2, MailCheck, MailQuestion } from "lucide-react"
+import { AlertTriangle, Loader2, MailCheck, MailQuestion } from "lucide-react"
 
 import { createClient } from "~/lib/supabase/client"
 import { Button } from "~/components/ui/button"
@@ -18,13 +18,14 @@ import { Label } from "~/components/ui/label"
 /**
  * 비밀번호 재설정의 1단계. 여기서는 메일만 보낸다.
  *
- * 종단간 암호화 때문에 이 흐름은 보통의 것보다 한 단계 길다. 메일 링크는 Supabase Auth에
- * "이 사람이 이 메일함의 주인이다"를 증명해 새 비밀번호를 세울 권한만 준다 -- 그것만으로는
- * 금고가 열리지 않는다. 금고를 여는 것은 여전히 복구 코드뿐이고, 그건 2단계
- * (/reset-password)에서 묻는다.
+ * 메일 링크는 Supabase Auth에 "이 사람이 이 메일함의 주인이다"를 증명해 새 비밀번호를 세울
+ * 권한만 준다 -- 그것만으로는 금고가 열리지 않는다. 비밀번호를 잊은 사람은 옛 encKey를 만들 수
+ * 없어 지난 대화를 살릴 방법이 없으므로, 2단계(/reset-password)는 신원키를 새로 발급해 계정을
+ * 되찾되 지난 1:1 대화는 포기한다.
  *
  * 이 비대칭이 요점이다. 메일함을 장악한 공격자도(또는 Auth를 쥔 운영자도) 비밀번호를
- * 갈아치울 수는 있지만 지난 DM은 읽지 못한다. 복구 코드가 없기 때문이다.
+ * 갈아치우고 계정을 차지할 수는 있지만, 그 순간 지난 DM은 아무도 못 여는 상태가 된다 -- 옛
+ * 신원키를 되살릴 escrow가 서버 어디에도 없기 때문이다.
  */
 export default function ForgotPassword() {
   const [sent, setSent] = useState(false)
@@ -71,7 +72,7 @@ export default function ForgotPassword() {
           </CardTitle>
           <CardDescription>
             {sent
-              ? "재설정 링크를 보냈습니다. 링크를 열면 복구 코드와 새 비밀번호를 입력하게 됩니다."
+              ? "재설정 링크를 보냈습니다. 링크를 열어 새 비밀번호를 설정하세요."
               : "가입한 이메일로 재설정 링크를 보내드립니다."}
           </CardDescription>
         </CardHeader>
@@ -80,10 +81,12 @@ export default function ForgotPassword() {
           {sent ? (
             <div className="bg-muted/60 rounded-lg p-4">
               <p className="text-muted-foreground text-sm leading-relaxed">
-                링크만으로는 지난 1:1 대화가 열리지 않습니다. 대화는 종단간 암호화되어 있어 서버가
-                열쇠를 갖고 있지 않기 때문입니다 — 가입할 때 받은{" "}
-                <strong className="text-foreground font-medium">복구 코드</strong>를 함께 준비해
-                주세요.
+                비밀번호를 재설정하면 계정은 되찾지만{" "}
+                <strong className="text-foreground font-medium">
+                  지난 1:1 대화는 열 수 없게 됩니다.
+                </strong>{" "}
+                대화는 종단간 암호화되어 있어 서버가 열쇠를 갖고 있지 않기 때문입니다. 새 대화는
+                정상적으로 주고받을 수 있습니다.
               </p>
             </div>
           ) : (
@@ -97,6 +100,20 @@ export default function ForgotPassword() {
                   {error}
                 </p>
               )}
+
+              <div className="border-destructive/40 bg-destructive/5 flex gap-2.5 rounded-lg border p-3">
+                <AlertTriangle
+                  className="text-destructive mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  비밀번호를 초기화하면{" "}
+                  <strong className="text-foreground font-medium">
+                    지난 1:1 대화는 영구히 열 수 없게 됩니다.
+                  </strong>{" "}
+                  비밀번호를 안다면 로그인 후 프로필에서 바꾸세요.
+                </p>
+              </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="email" className="text-sm font-medium">

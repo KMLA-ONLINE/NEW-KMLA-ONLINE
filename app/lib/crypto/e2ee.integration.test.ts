@@ -15,7 +15,6 @@ import {
   createAccount,
   resealAccount,
   unlockWithPassword,
-  unlockWithRecoveryCode,
   type AccountKeys,
   type NewAccount,
 } from "./account"
@@ -80,7 +79,6 @@ async function signUp(name: string): Promise<User> {
     p_identity_public_key: account.stored.identity_public_key,
     p_wrapped_user_key: account.stored.wrapped_user_key,
     p_wrapped_identity_secret_key: account.stored.wrapped_identity_secret_key,
-    p_recovery_wrapped_user_key: account.stored.recovery_wrapped_user_key,
   })
 
   // 승인은 관리자의 일이라 여기서는 service_role로 대신한다. teacher인 이유는 student가
@@ -186,7 +184,7 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       .single()
     const { data: vault } = await admin
       .from("user_keys")
-      .select("wrapped_user_key, wrapped_identity_secret_key, recovery_wrapped_user_key")
+      .select("wrapped_user_key, wrapped_identity_secret_key")
       .eq("user_id", alice.profileId)
       .single()
     const { data: envelope } = await admin
@@ -203,7 +201,6 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       message!.content_ciphertext,
       vault!.wrapped_user_key,
       vault!.wrapped_identity_secret_key,
-      vault!.recovery_wrapped_user_key,
       envelope!.wrapped_key,
     ].join("")
     for (const bytes of [utf8ToBytes(SECRET), utf8ToBytes(alice.password)]) {
@@ -222,7 +219,6 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       await alice.db.auth.updateUser({ password: resealed.authHash })
       const { error } = await alice.db.rpc("reseal_user_keys", {
         p_wrapped_user_key: resealed.stored.wrapped_user_key,
-        p_recovery_wrapped_user_key: resealed.stored.recovery_wrapped_user_key,
       })
       expect(error).toBeNull()
 
@@ -246,20 +242,6 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       const message = (rows as ChatRow[])[0]
       expect(
         await new MessageCrypto(reopened).decrypt(message.content_ciphertext!, message.message_key!)
-      ).toBe(SECRET)
-    },
-    TIMEOUT
-  )
-
-  it(
-    "복구 코드로도 금고가 열린다 -- 비밀번호를 잊었을 때의 유일한 길",
-    async () => {
-      const { data: vault } = await bob.db.rpc("get_my_key_vault")
-      const keys = await unlockWithRecoveryCode(bob.account.recoveryCode, bob.email, vault[0])
-
-      const [message] = await readMessages(bob, conversationId)
-      expect(
-        await new MessageCrypto(keys).decrypt(message.content_ciphertext!, message.message_key!)
       ).toBe(SECRET)
     },
     TIMEOUT

@@ -49,8 +49,6 @@ create table public.user_keys (
   identity_public_key bytea not null,
   wrapped_user_key bytea not null,
   wrapped_identity_secret_key bytea not null,
-  -- 복구 코드로 봉인한 userKey 두 번째 사본. 이게 없으면 비밀번호 분실이 곧 DM 영구 소실이다.
-  recovery_wrapped_user_key bytea not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz null
 );
@@ -102,14 +100,13 @@ alter table public.profiles
     description is null or char_length(description) <= 2000
   );
 
--- 봉인된 blob은 nonce(12) + 32바이트 키 + GCM 태그(16) = 60바이트다. 범위로 두는 이유는
--- AEAD를 바꾸면(예: 24바이트 nonce) 길이가 달라지기 때문 -- 그래도 "봉인된 32바이트 키"
--- 말고는 아무것도 이 안에 들어맞지 않는다.
+-- 봉인된 blob은 version(1) + nonce(12) + 32바이트 키 + GCM 태그(16) = 61바이트다. 범위로 두는
+-- 이유는 AEAD나 봉인 형식을 바꾸면 길이가 달라지기 때문 -- 그래도 "봉인된 32바이트 키" 말고는
+-- 아무것도 이 안에 들어맞지 않는다.
 alter table public.user_keys
   add constraint user_keys_identity_public_key_check check (octet_length(identity_public_key) = 32),
   add constraint user_keys_wrapped_user_key_check check (octet_length(wrapped_user_key) between 48 and 128),
-  add constraint user_keys_wrapped_identity_secret_key_check check (octet_length(wrapped_identity_secret_key) between 48 and 128),
-  add constraint user_keys_recovery_wrapped_user_key_check check (octet_length(recovery_wrapped_user_key) between 48 and 128);
+  add constraint user_keys_wrapped_identity_secret_key_check check (octet_length(wrapped_identity_secret_key) between 48 and 128);
 
 create function private.handle_auth_user_created()
 returns trigger
@@ -345,8 +342,6 @@ with check (
 -- 굳이 회수하는 이유: wrapped_user_key는 *비밀번호에서 유도된* 키로 봉인돼 있다. 테이블
 -- 전체 select를 주면 같은 학교 아무나 반 친구들 것을 통째로 긁어다 약한 비밀번호를 오프라인
 -- 에서 때릴 수 있다. 지금은 그게 DB 유출 시나리오지 로그인한 학생 시나리오가 아니다.
--- (recovery_wrapped_user_key는 120비트 랜덤이라 무차별 대입이 애초에 불가능하지만,
---  두 개를 다르게 취급할 이유가 없다.)
 create policy user_keys_select
 on public.user_keys
 for select
@@ -462,8 +457,7 @@ create function public.get_my_key_vault()
 returns table(
   identity_public_key text,
   wrapped_user_key text,
-  wrapped_identity_secret_key text,
-  recovery_wrapped_user_key text
+  wrapped_identity_secret_key text
 )
 language plpgsql stable security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(false);
@@ -472,8 +466,7 @@ begin
   select
     encode(k.identity_public_key, 'base64'),
     encode(k.wrapped_user_key, 'base64'),
-    encode(k.wrapped_identity_secret_key, 'base64'),
-    encode(k.recovery_wrapped_user_key, 'base64')
+    encode(k.wrapped_identity_secret_key, 'base64')
   from public.user_keys k
   where k.user_id = caller_id;
 end;
@@ -501,48 +494,44 @@ $$;
 create function public.create_user_keys(
   p_identity_public_key text,
   p_wrapped_user_key text,
-  p_wrapped_identity_secret_key text,
-  p_recovery_wrapped_user_key text
+  p_wrapped_identity_secret_key text
 )
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(false);
 begin
   insert into public.user_keys (
-    user_id, identity_public_key, wrapped_user_key, wrapped_identity_secret_key, recovery_wrapped_user_key
+    user_id, identity_public_key, wrapped_user_key, wrapped_identity_secret_key
   )
   values (
     caller_id,
     decode(p_identity_public_key, 'base64'),
     decode(p_wrapped_user_key, 'base64'),
-    decode(p_wrapped_identity_secret_key, 'base64'),
-    decode(p_recovery_wrapped_user_key, 'base64')
+    decode(p_wrapped_identity_secret_key, 'base64')
   );
 exception when unique_violation then
   raise exception 'key vault already exists';
 end;
 $$;
 
--- 비밀번호 변경·재설정(옛 비밀번호나 복구 코드로 금고를 이미 연 상태). userKey는 그대로고
--- 봉인만 새 encKey로 다시 한다. 신원키를 건드릴 수 없다는 것이 이 함수의 요점이다 --
--- 그래서 메시지가 한 통도 재암호화되지 않고, 히스토리가 그대로 살아남는다.
+-- 로그인 상태에서 비밀번호 변경(현재 비밀번호로 금고를 이미 연 상태). userKey는 그대로고 봉인만
+-- 새 encKey로 다시 한다. 신원키를 건드릴 수 없다는 것이 이 함수의 요점이다 -- 그래서 메시지가
+-- 한 통도 재암호화되지 않고, 히스토리가 그대로 살아남는다.
 create function public.reseal_user_keys(
-  p_wrapped_user_key text,
-  p_recovery_wrapped_user_key text
+  p_wrapped_user_key text
 )
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(false);
 begin
   update public.user_keys
   set wrapped_user_key = decode(p_wrapped_user_key, 'base64'),
-      recovery_wrapped_user_key = decode(p_recovery_wrapped_user_key, 'base64'),
       updated_at = now()
   where user_id = caller_id;
   if not found then raise exception 'key vault not found'; end if;
 end;
 $$;
 
--- 최후의 수단: 비밀번호도 복구 코드도 없다. 옛 userKey를 풀 수 있는 것이 세상에 없으므로
--- 신원키까지 전부 새로 발급한다.
+-- 최후의 수단: 비밀번호를 잊었다. 옛 userKey를 풀 수 있는 것이 세상에 없으므로(escrow 사본을
+-- 두지 않는다) 신원키까지 전부 새로 발급한다.
 --
 -- message_keys는 손대지 않는다. 내 옛 공개키 앞으로 봉인된 행들은 나에게는 죽었지만
 -- 상대방에게는 멀쩡하다(행이 봉인 당시의 두 공개키를 다 들고 있어서, 상대는 여전히
@@ -551,8 +540,7 @@ $$;
 create function public.rotate_user_keys(
   p_identity_public_key text,
   p_wrapped_user_key text,
-  p_wrapped_identity_secret_key text,
-  p_recovery_wrapped_user_key text
+  p_wrapped_identity_secret_key text
 )
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(false);
@@ -561,15 +549,14 @@ begin
   set identity_public_key = decode(p_identity_public_key, 'base64'),
       wrapped_user_key = decode(p_wrapped_user_key, 'base64'),
       wrapped_identity_secret_key = decode(p_wrapped_identity_secret_key, 'base64'),
-      recovery_wrapped_user_key = decode(p_recovery_wrapped_user_key, 'base64'),
       updated_at = now()
   where user_id = caller_id;
   if not found then raise exception 'key vault not found'; end if;
 end;
 $$;
 
-revoke execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text,text), public.reseal_user_keys(text,text), public.rotate_user_keys(text,text,text,text) from public, anon, authenticated, service_role;
-grant execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text,text), public.reseal_user_keys(text,text), public.rotate_user_keys(text,text,text,text) to authenticated;
+revoke execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text), public.reseal_user_keys(text), public.rotate_user_keys(text,text,text) from public, anon, authenticated, service_role;
+grant execute on function public.get_my_key_vault(), public.get_identity_public_keys(bigint[]), public.create_user_keys(text,text,text), public.reseal_user_keys(text), public.rotate_user_keys(text,text,text) to authenticated;
 
 create function public.bootstrap_first_app_admin(p_profile_id bigint)
 returns void language plpgsql security definer set search_path='' as $$

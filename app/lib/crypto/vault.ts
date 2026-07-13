@@ -20,11 +20,11 @@ import type { Database } from "~/lib/supabase/database.types"
 import {
   WrongPasswordError,
   createAccountFromKeys,
+  derivePasswordKeys,
   resealAccount,
   rotateAccount,
   unlockWithEncKey,
   unlockWithKeys,
-  unlockWithRecoveryCode,
   type AccountKeys,
   type NewAccount,
   type PasswordKeys,
@@ -118,7 +118,6 @@ async function writeStoredKeys(db: Client, stored: StoredUserKeys) {
     p_identity_public_key: stored.identity_public_key,
     p_wrapped_user_key: stored.wrapped_user_key,
     p_wrapped_identity_secret_key: stored.wrapped_identity_secret_key,
-    p_recovery_wrapped_user_key: stored.recovery_wrapped_user_key,
   })
   if (error) throw error
 }
@@ -141,46 +140,31 @@ export async function installVault(db: Client, authUserId: string, account: NewA
   hold(authUserId, account.keys)
 }
 
-/**
- * 열쇠고리를 만든다. 복구 코드를 딱 한 번 돌려주며, 서버에도 여기에도 그걸 되살릴 방법은 없다.
- * **호출자는 이 값을 반드시 화면에 띄워야 한다** -- 버리면 그 사람은 비밀번호를 잊는 날 DM을
- * 되살릴 길이 영영 없다.
- */
-export async function createVault(
-  db: Client,
-  authUserId: string,
-  keys: PasswordKeys,
-  email: string
-) {
-  const account = await createAccountFromKeys(keys, email)
+/** 열쇠고리를 만든다. 비밀번호가 유일한 열쇠다 -- 잃으면 되살릴 방법은 없다(그게 요점이다). */
+export async function createVault(db: Client, authUserId: string, keys: PasswordKeys) {
+  const account = await createAccountFromKeys(keys)
   await installVault(db, authUserId, account)
-  return { recoveryCode: account.recoveryCode }
 }
 
 /**
  * 로그인. 호출자가 이미 유도해 둔 키를 받는다 -- 여기서 비밀번호로 다시 유도하면 Argon2id가
  * 한 로그인에 두 번 돌아 화면이 두 배로 멈춘다.
  *
- * 열쇠고리가 없으면 만들고, **그때는 복구 코드를 돌려준다(non-null).** 열쇠고리 없이 존재하는
- * 계정은 가입 도중 create_user_keys가 실패한 경우다. 어느 쪽이든 잃을 히스토리가 없지만,
- * 새로 발급된 복구 코드는 지금 이 화면이 보여주지 않으면 영영 사라진다.
+ * 열쇠고리가 없으면 만든다(가입 도중 create_user_keys가 실패한 계정). 잃을 히스토리가 없다.
  *
  * 열쇠고리가 *있는데* 안 열리는 경우에는 절대 새로 만들지 않는다 -- 그건 그냥 비밀번호가 틀린
  * 것이고, 덮어쓰면 그 사람의 DM이 통째로 죽는다. create_user_keys가 서버에서도 같은 것을 막는다.
  */
-export async function openVault(
-  db: Client,
-  authUserId: string,
-  keys: PasswordKeys,
-  email: string
-): Promise<{ recoveryCode: string | null }> {
+export async function openVault(db: Client, authUserId: string, keys: PasswordKeys) {
   const stored = await fetchStoredKeys(db)
-  if (!stored) return createVault(db, authUserId, keys, email)
+  if (!stored) {
+    await createVault(db, authUserId, keys)
+    return
+  }
 
   const account = await unlockWithKeys(keys, stored)
   await rememberEncKey(authUserId, keys.encKey)
   hold(authUserId, account)
-  return { recoveryCode: null }
 }
 
 /**
@@ -209,31 +193,29 @@ export async function resumeVault(db: Client, authUserId: string) {
 }
 
 /**
- * 비밀번호 재설정. 메일 링크가 준 세션 위에서 돈다.
+ * 로그인 상태에서 비밀번호를 바꾼다. 세션만으로는 부족하다 -- 남이 열어둔 화면을 훔쳐도 바꾸지
+ * 못하게, **현재 비밀번호로 금고를 한 번 열어 본인임을 확인한다.** 신원키는 그대로라 지난 대화가
+ * 전부 살아남는다(userKey를 새 encKey로 다시 봉인할 뿐, 메시지는 한 통도 재암호화되지 않는다).
  *
- * **updateUser를 먼저 부르고 RPC를 나중에 부르는 순서가 중요하다.** 두 시스템에 걸친
- * 2단계 커밋이라 중간에 죽을 수 있고, 그때 어느 쪽이 살아남느냐가 갈린다:
- *
- *   - updateUser 성공, RPC 실패: 새 비밀번호로 로그인되지만 금고는 옛 encKey로 봉인된 채다.
- *     그런데 복구 코드는 아직 옛것 그대로이므로(RPC가 안 돌았으니) 이 흐름을 다시 타면 된다.
- *     **복구 가능하다.**
- *   - RPC 성공, updateUser 실패: 금고는 새 encKey로 봉인됐는데 로그인은 여전히 옛 비밀번호를
- *     요구한다 -- 그 비밀번호를 몰라서 여기 온 사람에게. 게다가 새 복구 코드는 화면에 뜨기
- *     전에 죽었다. **계정이 벽돌이 된다.**
- *
- * 그래서 무조건 updateUser가 먼저다.
+ * **updateUser를 먼저, RPC를 나중에.** 두 시스템에 걸친 2단계 커밋이라 중간에 죽을 수 있다:
+ *   - updateUser 성공, RPC 실패: 새 비번으로 로그인되지만 금고는 옛 encKey로 봉인된 채다. 현재
+ *     비번(= 방금 정한 새 비번)으로 이 흐름을 다시 타면 복구된다.
+ *   - RPC 성공, updateUser 실패: 금고는 새 encKey로 봉인됐는데 로그인은 옛 비번을 요구한다.
+ *     사용자는 옛 비번을 방금 입력했으니 알지만, 화면이 옛 비번으로 로그인되는 혼란이 남는다.
+ * 그래서 updateUser를 먼저 성공시킨다.
  */
-export async function resetVaultWithRecoveryCode(
+export async function changeVaultPassword(
   db: Client,
   authUserId: string,
-  recoveryCode: string,
+  currentPassword: string,
   newPassword: string,
   email: string
 ) {
   const stored = await fetchStoredKeys(db)
   if (!stored) throw new Error("key vault not found")
 
-  const keys = await unlockWithRecoveryCode(recoveryCode, email, stored)
+  // 현재 비밀번호로 열어 본인 확인. 틀리면 WrongPasswordError가 올라온다.
+  const keys = await unlockWithKeys(derivePasswordKeys(currentPassword, email), stored)
   const resealed = await resealAccount(keys, newPassword, email)
 
   const { error: authError } = await db.auth.updateUser({ password: resealed.authHash })
@@ -241,22 +223,20 @@ export async function resetVaultWithRecoveryCode(
 
   const { error } = await db.rpc("reseal_user_keys", {
     p_wrapped_user_key: resealed.stored.wrapped_user_key,
-    p_recovery_wrapped_user_key: resealed.stored.recovery_wrapped_user_key,
   })
   if (error) throw error
 
   await rememberEncKey(authUserId, resealed.encKey)
   hold(authUserId, keys)
-  // 옛 코드는 방금 덮어쓴 blob을 열던 것이라, 살려두면 거짓말이 된다.
-  return { recoveryCode: resealed.recoveryCode }
 }
 
 /**
- * 비밀번호도 복구 코드도 없다. 신원키까지 전부 새로 만든다.
+ * 비밀번호를 잊었다. 신원키까지 전부 새로 만들어 계정을 되찾되, 지난 1:1 대화는 포기한다.
+ * 메일 링크가 준 세션 위에서 돈다.
  *
- * 지난 1:1 대화는 이 사람에게 영영 닫힌다. 우회로를 만들 수 있다면 그건 서버가 읽을 수
- * 있다는 뜻이므로, 이건 고칠 버그가 아니라 종단간 암호화가 뜻하는 바다. 상대방 쪽 히스토리는
- * 상대의 키로 그대로 남는다.
+ * 지난 대화가 이 사람에게 영영 닫히는 것은 우회로를 만들면 서버가 읽을 수 있다는 뜻이므로,
+ * 이건 고칠 버그가 아니라 종단간 암호화가 뜻하는 바다. 상대방 쪽 히스토리는 상대의 키로 그대로
+ * 남는다. updateUser를 먼저 성공시키는 이유는 changeVaultPassword와 같다.
  */
 export async function rotateVault(
   db: Client,
@@ -273,13 +253,11 @@ export async function rotateVault(
     p_identity_public_key: account.stored.identity_public_key,
     p_wrapped_user_key: account.stored.wrapped_user_key,
     p_wrapped_identity_secret_key: account.stored.wrapped_identity_secret_key,
-    p_recovery_wrapped_user_key: account.stored.recovery_wrapped_user_key,
   })
   if (error) throw error
 
   await rememberEncKey(authUserId, account.encKey)
   hold(authUserId, account.keys)
-  return { recoveryCode: account.recoveryCode }
 }
 
 /** 지금 열려 있는 열쇠. 잠겨 있으면 null. */

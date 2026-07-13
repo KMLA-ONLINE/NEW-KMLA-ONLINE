@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 
-import { RecoveryCodeNotice } from "~/components/auth/recovery-code-notice"
 import { createAccount } from "~/lib/crypto/account"
 import { installVault } from "~/lib/crypto/vault"
 import { createClient } from "~/lib/supabase/client"
@@ -24,7 +23,6 @@ export default function Signup() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [recoveryCode, setRecoveryCode] = useState<string | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -58,7 +56,7 @@ export default function Signup() {
 
     try {
       // 딱 한 번만 유도한다. authHash는 Supabase Auth로 가고, 나머지(encKey, userKey,
-      // 신원키, 복구 코드)는 브라우저를 떠나지 않는다.
+      // 신원키)는 브라우저를 떠나지 않는다.
       const account = await createAccount(password, email)
 
       const db = createClient()
@@ -72,8 +70,10 @@ export default function Signup() {
         return
       }
 
+      // 이메일 확인이 꺼져 있어 signUp이 이미 세션을 줬고, on_auth_user_created가 status 'none'인
+      // 프로필을 만들어 뒀다. 남은 것은 온보딩뿐이다.
       await installVault(db, data.user.id, account)
-      setRecoveryCode(account.recoveryCode)
+      navigate("/setup")
     } catch {
       setError("회원가입 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
     } finally {
@@ -87,128 +87,114 @@ export default function Signup() {
         <div className="flex flex-col gap-8">
           <div className="text-center">
             <p className="text-foreground text-2xl font-bold tracking-tight">KMLA Online</p>
-            <p className="text-muted-foreground mt-1.5 text-sm">
-              {recoveryCode ? "거의 다 됐습니다" : "새 계정을 만드세요"}
-            </p>
+            <p className="text-muted-foreground mt-1.5 text-sm">새 계정을 만드세요</p>
           </div>
 
           <div className="bg-card text-card-foreground rounded-xl border shadow-xs">
             <div className="p-6 md:p-8">
-              {recoveryCode ? (
-                // 이메일 확인이 꺼져 있어 signUp이 이미 세션을 줬고, on_auth_user_created가
-                // status 'none'인 프로필을 만들어 뒀다. 남은 것은 온보딩뿐이다.
-                <RecoveryCodeNotice
-                  recoveryCode={recoveryCode}
-                  continueLabel="프로필 설정하기"
-                  onContinue={() => navigate("/setup")}
-                />
-              ) : (
-                <>
-                  {/* action이 없다: 이 폼은 절대 서버로 POST되지 않는다. 그게 요점이다. */}
-                  <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-                    {error && (
-                      <p
-                        role="alert"
-                        aria-live="polite"
-                        className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium"
-                      >
-                        {error}
-                      </p>
-                    )}
-
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="email" className="text-sm font-medium">
-                        이메일
-                      </Label>
-                      <Input
-                        ref={emailRef}
-                        id="email"
-                        name="email"
-                        type="email"
-                        placeholder="name@example.com"
-                        autoComplete="email"
-                        required
-                        spellCheck={false}
-                        className="h-10"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="password" className="text-sm font-medium">
-                        비밀번호
-                      </Label>
-                      <div className="relative">
-                        <Input
-                          id="password"
-                          name="password"
-                          type={showPw ? "text" : "password"}
-                          placeholder="6자 이상 입력하세요"
-                          autoComplete="new-password"
-                          required
-                          minLength={6}
-                          className="h-10 pr-10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPw((v) => !v)}
-                          aria-label={showPw ? "Hide password" : "Show password"}
-                          className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
-                        >
-                          {showPw ? (
-                            <EyeOff className="size-4" aria-hidden="true" />
-                          ) : (
-                            <Eye className="size-4" aria-hidden="true" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="confirmPassword" className="text-sm font-medium">
-                        비밀번호 확인
-                      </Label>
-                      <div className="relative">
-                        <Input
-                          id="confirmPassword"
-                          name="confirmPassword"
-                          type={showConfirm ? "text" : "password"}
-                          placeholder="비밀번호를 다시 입력하세요"
-                          autoComplete="new-password"
-                          required
-                          className="h-10 pr-10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirm((v) => !v)}
-                          aria-label={showConfirm ? "Hide password" : "Show password"}
-                          className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
-                        >
-                          {showConfirm ? (
-                            <EyeOff className="size-4" aria-hidden="true" />
-                          ) : (
-                            <Eye className="size-4" aria-hidden="true" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <Button type="submit" className="h-10 w-full" disabled={loading}>
-                      {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
-                      {loading ? "계정 생성 중..." : "회원가입"}
-                    </Button>
-                  </form>
-
-                  <p className="text-muted-foreground mt-6 text-center text-sm">
-                    이미 계정이 있으신가요?{" "}
-                    <Link
-                      to="/login"
-                      className="text-primary hover:text-primary/80 font-medium underline-offset-2 hover:underline"
-                    >
-                      로그인
-                    </Link>
+              {/* action이 없다: 이 폼은 절대 서버로 POST되지 않는다. 그게 요점이다. */}
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                {error && (
+                  <p
+                    role="alert"
+                    aria-live="polite"
+                    className="text-destructive bg-destructive/10 rounded-lg px-3 py-2 text-sm font-medium"
+                  >
+                    {error}
                   </p>
-                </>
-              )}
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="email" className="text-sm font-medium">
+                    이메일
+                  </Label>
+                  <Input
+                    ref={emailRef}
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    required
+                    spellCheck={false}
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="password" className="text-sm font-medium">
+                    비밀번호
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPw ? "text" : "password"}
+                      placeholder="6자 이상 입력하세요"
+                      autoComplete="new-password"
+                      required
+                      minLength={6}
+                      className="h-10 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((v) => !v)}
+                      aria-label={showPw ? "Hide password" : "Show password"}
+                      className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
+                    >
+                      {showPw ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                    비밀번호 확인
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type={showConfirm ? "text" : "password"}
+                      placeholder="비밀번호를 다시 입력하세요"
+                      autoComplete="new-password"
+                      required
+                      className="h-10 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm((v) => !v)}
+                      aria-label={showConfirm ? "Hide password" : "Show password"}
+                      className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-3 transition-colors"
+                    >
+                      {showConfirm ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <Button type="submit" className="h-10 w-full" disabled={loading}>
+                  {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+                  {loading ? "계정 생성 중..." : "회원가입"}
+                </Button>
+              </form>
+
+              <p className="text-muted-foreground mt-6 text-center text-sm">
+                이미 계정이 있으신가요?{" "}
+                <Link
+                  to="/login"
+                  className="text-primary hover:text-primary/80 font-medium underline-offset-2 hover:underline"
+                >
+                  로그인
+                </Link>
+              </p>
             </div>
           </div>
         </div>

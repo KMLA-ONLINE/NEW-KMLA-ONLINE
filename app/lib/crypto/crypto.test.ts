@@ -2,24 +2,23 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import {
   WrongPasswordError,
-  WrongRecoveryCodeError,
   createAccount,
   derivePasswordKeys,
   resealAccount,
   rotateAccount,
   unlockWithPassword,
-  unlockWithRecoveryCode,
   type NewAccount,
 } from "./account"
-import { base64ToBytes, bytesEqual, bytesToBase64, bytesToHex } from "./encoding"
-import { MessageCrypto, UndecryptableMessageError } from "./message"
-import { open } from "./primitives"
 import {
-  formatRecoveryCode,
-  generateRecoveryCode,
-  isValidRecoveryCode,
-  normalizeRecoveryCode,
-} from "./recovery"
+  base64ToBytes,
+  bytesEqual,
+  bytesToBase64,
+  bytesToHex,
+  bytesToUtf8,
+  utf8ToBytes,
+} from "./encoding"
+import { MessageCrypto, UndecryptableMessageError } from "./message"
+import { SEAL_VERSION, open, randomBytes, seal } from "./primitives"
 
 // Argon2id is ~500ms by design, and these tests run it for real rather than with
 // weakened parameters -- the point is that the shipped configuration round-trips.
@@ -114,26 +113,6 @@ describe("unlock", () => {
     },
     TIMEOUT
   )
-
-  it(
-    "recovers the same identity key from the recovery code",
-    async () => {
-      const keys = await unlockWithRecoveryCode(alice.recoveryCode, ALICE_EMAIL, alice.stored)
-      expect(bytesEqual(keys.userKey, alice.keys.userKey)).toBe(true)
-      expect(bytesEqual(keys.identity.secretKey, alice.keys.identity.secretKey)).toBe(true)
-    },
-    TIMEOUT
-  )
-
-  it(
-    "rejects a wrong recovery code",
-    async () => {
-      await expect(
-        unlockWithRecoveryCode(generateRecoveryCode(), ALICE_EMAIL, alice.stored)
-      ).rejects.toBeInstanceOf(WrongRecoveryCodeError)
-    },
-    TIMEOUT
-  )
 })
 
 describe("password change", () => {
@@ -152,22 +131,6 @@ describe("password change", () => {
       await expect(
         unlockWithPassword(ALICE_PW, ALICE_EMAIL, resealed.stored)
       ).rejects.toBeInstanceOf(WrongPasswordError)
-    },
-    TIMEOUT
-  )
-
-  it(
-    "retires the old recovery code, which no longer unwraps anything",
-    async () => {
-      const resealed = await resealAccount(alice.keys, "yet another password", ALICE_EMAIL)
-      expect(resealed.recoveryCode).not.toBe(alice.recoveryCode)
-
-      await expect(
-        unlockWithRecoveryCode(alice.recoveryCode, ALICE_EMAIL, resealed.stored)
-      ).rejects.toBeInstanceOf(WrongRecoveryCodeError)
-      await expect(
-        unlockWithRecoveryCode(resealed.recoveryCode, ALICE_EMAIL, resealed.stored)
-      ).resolves.toBeDefined()
     },
     TIMEOUT
   )
@@ -270,7 +233,7 @@ describe("messages", () => {
       const bobCrypto = new MessageCrypto(bob.keys)
       const before = await new MessageCrypto(alice.keys).encrypt("갈아엎기 전", recipientsOf(bob))
 
-      // Alice forgets both her password and her recovery code. Everything is new.
+      // Alice forgets her password. There is no second key by design, so everything is new.
       const reborn = await rotateAccount("a fresh start", ALICE_EMAIL)
       const rebornCrypto = new MessageCrypto(reborn.keys)
 
@@ -291,22 +254,20 @@ describe("messages", () => {
   )
 })
 
-describe("recovery code", () => {
-  it("is 120 bits in six writable groups, with no character that reads as another", () => {
-    const code = generateRecoveryCode()
-    expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){5}$/)
-    expect(isValidRecoveryCode(code)).toBe(true)
-  })
+describe("seal format", () => {
+  it("prefixes a version byte and refuses to open an unknown version", async () => {
+    const key = randomBytes(32)
+    const sealed = await seal(key, utf8ToBytes("안녕"))
 
-  it("forgives the ways a handwritten code gets mistyped", () => {
-    expect(normalizeRecoveryCode("abcd efgh-jkmn")).toBe("ABCDEFGHJKMN")
-    // I, L and O are not in the alphabet, so they can only ever be 1, 1 and 0.
-    expect(normalizeRecoveryCode("I1-LO")).toBe("1110")
-    expect(formatRecoveryCode("9wq4m2xk0j7pvbht5n3rycd8")).toBe("9WQ4-M2XK-0J7P-VBHT-5N3R-YCD8")
-  })
+    // 형식은 version(1) || nonce(12) || ciphertext || tag(16). 맨 앞이 버전이라, 나중에 형식을
+    // 올려도 open()이 태그를 검증하기 전에 어느 규칙으로 열지 고를 수 있다.
+    expect(sealed[0]).toBe(SEAL_VERSION)
 
-  it("rejects a code of the wrong length or alphabet", () => {
-    expect(isValidRecoveryCode("TOO-SHORT")).toBe(false)
-    expect(isValidRecoveryCode("UUUU-UUUU-UUUU-UUUU-UUUU-UUUU")).toBe(false)
+    const wrongVersion = sealed.slice()
+    wrongVersion[0] = 0x09
+    await expect(open(key, wrongVersion)).rejects.toThrow(/unsupported ciphertext version/)
+
+    // 올바른 버전은 왕복한다.
+    expect(bytesToUtf8(await open(key, sealed))).toBe("안녕")
   })
 })

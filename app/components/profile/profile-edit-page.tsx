@@ -136,6 +136,20 @@ export function ProfileEditPageContent() {
           </form>
         </CardContent>
       </Card>
+
+      <Card className="border-border/70 shadow-xs">
+        <CardContent className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="text-sm font-medium">비밀번호</p>
+            <p className="text-muted-foreground text-sm">
+              계정 비밀번호를 변경합니다. 지난 대화는 유지됩니다.
+            </p>
+          </div>
+          <Button asChild variant="outline" className="shrink-0">
+            <Link to="/profile/password">변경</Link>
+          </Button>
+        </CardContent>
+      </Card>
     </main>
   )
 }

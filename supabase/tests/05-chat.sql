@@ -86,6 +86,17 @@ begin
   -- `update of pinned_at` 트리거는 값이 같아도 컬럼이 SET 목록에 있기만 하면 발화하므로,
   -- 가드가 없으면 아무 멤버나 남이 고정한 메시지의 "고정한 사람"을 자기 이름으로 바꿔친다.
   perform set_config('request.jwt.claim.sub', user3::text, true);
+
+  -- get_chat_messages의 유일한 접근 통제는 멤버십 검사다. 비멤버가 임의 conversation_id로 부르면
+  -- 예외가 나야 한다 -- 0행을 조용히 주면 내용은 안 새도 "그 대화가 존재하고 내가 못 본다"가 새고,
+  -- conversation_id가 bigserial이라 순차 추측된다. room1(1:1)에 profile3는 절대 낄 수 없다.
+  begin
+    perform public.get_chat_messages(room1);
+    raise exception 'a non-member must not read a conversation via get_chat_messages';
+  exception when others then
+    if sqlerrm not like '%conversation membership required%' then raise; end if;
+  end;
+
   insert into public.conversation_members (conversation_id, user_id) values (group1, profile3) on conflict do nothing;
   update public.messages set pinned_at = pinned_at where id = message1;
   if not exists (select 1 from public.messages where id = message1 and pinned_by = profile2) then
@@ -123,9 +134,9 @@ begin
   -- 종단간 암호화: 1:1 대화 (docs/e2ee.md)
   -- -------------------------------------------------------------------------
 
-  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   perform set_config('request.jwt.claim.sub', user2::text, true);
-  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   perform set_config('request.jwt.claim.sub', user1::text, true);
 
   -- 암호문 쓰기는 RPC만이 문이다. 컬럼 grant가 없으므로 테이블 직접 쓰기는 구조적으로 막힌다.
@@ -252,7 +263,7 @@ begin
 
   -- 상대가 키를 갈아엎은 뒤 옛 공개키로 봉인해 보내면 아무도 못 여는 메시지가 영구히 남는다.
   -- 서버가 알아채고 거절해야 클라이언트가 키를 다시 읽고 재시도한다.
-  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   perform set_config('request.jwt.claim.sub', user1::text, true);
   begin
     perform public.send_encrypted_message(room1, encode(sealed,'base64'), envelope);

@@ -47,15 +47,15 @@ begin
   -- 열쇠고리 (docs/e2ee.md)
   -- -------------------------------------------------------------------------
 
-  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   perform set_config('request.jwt.claim.sub', user2::text, true);
-  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   perform set_config('request.jwt.claim.sub', user1::text, true);
 
   -- 열쇠고리를 덮어쓰면 그 사람의 DM 히스토리가 통째로 죽는다. 비밀번호가 틀려 금고가
   -- 안 열리는 클라이언트가 "그럼 새로 만들지" 하고 넘어가는 것을 막는 것이 이 실패다.
   begin
-    perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+    perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
     raise exception 'a second key vault should have been rejected';
   exception when others then
     if sqlerrm <> 'key vault already exists' then raise; end if;
@@ -67,7 +67,6 @@ begin
   if not has_column_privilege('authenticated', 'public.user_keys', 'identity_public_key', 'SELECT')
     or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_user_key', 'SELECT')
     or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_identity_secret_key', 'SELECT')
-    or has_column_privilege('authenticated', 'public.user_keys', 'recovery_wrapped_user_key', 'SELECT')
   then
     raise exception 'user_keys must expose only the identity public key';
   end if;
@@ -97,7 +96,7 @@ begin
 
   -- 비밀번호 변경. userKey는 그대로고 봉인만 새로 한다. **신원키가 움직이지 않는다**는 것이
   -- 이 함수의 요점이다 -- 그래서 메시지를 한 통도 재암호화하지 않는데 히스토리가 살아남는다.
-  perform public.reseal_user_keys(encode(resealed,'base64'), encode(resealed,'base64'));
+  perform public.reseal_user_keys(encode(resealed,'base64'));
   if not exists (
     select 1 from public.user_keys
     where user_id = profile1
@@ -108,8 +107,8 @@ begin
     raise exception 'reseal must not touch the identity key';
   end if;
 
-  -- 비밀번호도 복구 코드도 없을 때의 최후 수단. 신원키까지 전부 새로 간다.
-  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
+  -- 비밀번호를 잊었을 때의 최후 수단. 신원키까지 전부 새로 간다.
+  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
   if not exists (select 1 from public.user_keys where user_id = profile1 and identity_public_key = pubkey_new) then
     raise exception 'rotate must replace the identity key';
   end if;
