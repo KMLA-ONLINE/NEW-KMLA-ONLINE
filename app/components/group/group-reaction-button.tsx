@@ -2,6 +2,7 @@ import { ThumbsUpIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { QuickReactionList } from "~/components/quick-reaction-list"
+import { Twemoji } from "~/components/ui/twemoji"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -84,7 +85,7 @@ export function GroupReactionButton({
         )}
       >
         {selected ? (
-          <span className="text-base leading-none">{getReactionGlyph(selected)}</span>
+          <Twemoji text={getReactionGlyph(selected)} className="text-base leading-none" />
         ) : (
           <ThumbsUpIcon className="size-4.5" aria-hidden="true" />
         )}

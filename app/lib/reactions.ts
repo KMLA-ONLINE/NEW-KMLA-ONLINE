@@ -21,10 +21,10 @@ export type ReactionType = {
 export const PLACEHOLDER_REACTION_TYPES: ReactionType[] = [
   { id: 1, key: "like", name: "좋아요", icon: "👍" },
   { id: 2, key: "love", name: "하트", icon: "❤️" },
-  { id: 3, key: "haha", name: "웃겨요", icon: "😂" },
+  { id: 3, key: "haha", name: "웃겨요", icon: "😆" },
   { id: 4, key: "wow", name: "놀라워요", icon: "😮" },
   { id: 5, key: "sad", name: "슬퍼요", icon: "😢" },
-  { id: 6, key: "pray", name: "부탁해요", icon: "🙏" },
+  { id: 6, key: "pray", name: "화나요", icon: "😡" },
 ]
 
 export function getReactionGlyph(reactionType: ReactionType) {
