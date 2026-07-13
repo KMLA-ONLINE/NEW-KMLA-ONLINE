@@ -33,11 +33,45 @@ if echo "$STAGED" | grep -qE '^supabase/'; then
   fi
 
   # 로컬 DB가 schemas/ 와 어긋나 있으면 아래 테스트는 '옛 스키마'를 검사하고 통과한다.
-  # 그 초록은 거짓말이므로, 둘이 같은지부터 확인한다.
-  # 2>&1 이어야 한다. supabase CLI는 "No schema changes found"를 **stderr로** 낸다
-  # (stdout에는 JSON만 간다). stderr를 버리면 이 검사가 언제나 실패한다.
+  # 그 초록은 거짓말이므로, 둘이 같은지부터 확인한다. 반환 타입이 바뀐 RPC도 여기서
+  # shadow DB와 대조한다. CLI 출력은 숨기지 않는다 -- 오래 걸릴 때 멈춤과 구분해야 한다.
   echo "→ supabase db diff  (로컬 DB가 schemas/ 와 일치하는가)"
-  if ! npx supabase db diff 2>&1 | grep -q "No schema changes found"; then
+  echo "  · shadow DB와 선언형 schemas를 비교합니다. 보통 20 ~ 60초 걸립니다."
+  DIFF_LOG=$(mktemp "${TMPDIR:-/tmp}/kmla-supabase-diff.XXXXXX")
+  npx --no-install supabase db diff >"$DIFF_LOG" 2>&1 &
+  DIFF_PID=$!
+  ELAPSED=0
+  PRINTED_LINES=0
+
+  while kill -0 "$DIFF_PID" 2>/dev/null; do
+    CURRENT_LINES=$(wc -l < "$DIFF_LOG" | tr -d ' ')
+    if [ "$CURRENT_LINES" -gt "$PRINTED_LINES" ]; then
+      sed -n "$((PRINTED_LINES + 1)),$CURRENT_LINES p" "$DIFF_LOG"
+      PRINTED_LINES=$CURRENT_LINES
+    fi
+
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    if [ $((ELAPSED % 10)) -eq 0 ]; then
+      echo "  · 아직 비교 중입니다... ${ELAPSED}초 경과"
+    fi
+  done
+
+  if ! wait "$DIFF_PID"; then
+    cat "$DIFF_LOG"
+    rm -f "$DIFF_LOG"
+    echo ""
+    echo "✗ supabase db diff 실행에 실패했습니다. 위 CLI 로그를 확인하세요."
+    exit 1
+  fi
+
+  CURRENT_LINES=$(wc -l < "$DIFF_LOG" | tr -d ' ')
+  if [ "$CURRENT_LINES" -gt "$PRINTED_LINES" ]; then
+    sed -n "$((PRINTED_LINES + 1)),$CURRENT_LINES p" "$DIFF_LOG"
+  fi
+
+  if ! grep -q "No schema changes found" "$DIFF_LOG"; then
+    rm -f "$DIFF_LOG"
     echo ""
     echo "✗ 로컬 DB가 supabase/schemas/ 와 다릅니다. 이대로 DB 테스트를 돌리면 '옛 스키마'를"
     echo "  검사하고 통과합니다 -- 그 초록은 거짓말입니다."
@@ -47,6 +81,7 @@ if echo "$STAGED" | grep -qE '^supabase/'; then
     echo ""
     exit 1
   fi
+  rm -f "$DIFF_LOG"
 
   echo "→ npm run test:db"
   npm run test:db
