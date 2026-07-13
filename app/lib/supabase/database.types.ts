@@ -265,21 +265,18 @@ export type Database = {
           comment_id: number
           created_at: string
           reaction_type_id: number
-          updated_at: string | null
           user_id: number
         }
         Insert: {
           comment_id: number
           created_at?: string
           reaction_type_id: number
-          updated_at?: string | null
           user_id: number
         }
         Update: {
           comment_id?: number
           created_at?: string
           reaction_type_id?: number
-          updated_at?: string | null
           user_id?: number
         }
         Relationships: [
@@ -710,6 +707,7 @@ export type Database = {
         Row: {
           content: string | null
           content_ciphertext: string | null
+          content_normalized: string | null
           conversation_id: number
           created_at: string
           deleted_at: string | null
@@ -724,6 +722,7 @@ export type Database = {
         Insert: {
           content?: string | null
           content_ciphertext?: string | null
+          content_normalized?: string | null
           conversation_id: number
           created_at?: string
           deleted_at?: string | null
@@ -738,6 +737,7 @@ export type Database = {
         Update: {
           content?: string | null
           content_ciphertext?: string | null
+          content_normalized?: string | null
           conversation_id?: number
           created_at?: string
           deleted_at?: string | null
@@ -1025,21 +1025,18 @@ export type Database = {
           created_at: string
           post_id: number
           reaction_type_id: number
-          updated_at: string | null
           user_id: number
         }
         Insert: {
           created_at?: string
           post_id: number
           reaction_type_id: number
-          updated_at?: string | null
           user_id: number
         }
         Update: {
           created_at?: string
           post_id?: number
           reaction_type_id?: number
-          updated_at?: string | null
           user_id?: number
         }
         Relationships: [
@@ -1071,6 +1068,7 @@ export type Database = {
           author_id: number
           category_id: number | null
           content: string
+          content_normalized: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: number | null
@@ -1081,12 +1079,14 @@ export type Database = {
           pub_id: string
           space_id: number
           title: string
+          title_normalized: string | null
           updated_at: string | null
         }
         Insert: {
           author_id: number
           category_id?: number | null
           content: string
+          content_normalized?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -1097,12 +1097,14 @@ export type Database = {
           pub_id?: string
           space_id: number
           title: string
+          title_normalized?: string | null
           updated_at?: string | null
         }
         Update: {
           author_id?: number
           category_id?: number | null
           content?: string
+          content_normalized?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: number | null
@@ -1113,6 +1115,7 @@ export type Database = {
           pub_id?: string
           space_id?: number
           title?: string
+          title_normalized?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -1620,7 +1623,6 @@ export type Database = {
         Row: {
           created_at: string
           identity_public_key: string
-          recovery_wrapped_user_key: string
           updated_at: string | null
           user_id: number
           wrapped_identity_secret_key: string
@@ -1629,7 +1631,6 @@ export type Database = {
         Insert: {
           created_at?: string
           identity_public_key: string
-          recovery_wrapped_user_key: string
           updated_at?: string | null
           user_id: number
           wrapped_identity_secret_key: string
@@ -1638,7 +1639,6 @@ export type Database = {
         Update: {
           created_at?: string
           identity_public_key?: string
-          recovery_wrapped_user_key?: string
           updated_at?: string | null
           user_id?: number
           wrapped_identity_secret_key?: string
@@ -1750,7 +1750,6 @@ export type Database = {
       create_user_keys: {
         Args: {
           p_identity_public_key: string
-          p_recovery_wrapped_user_key: string
           p_wrapped_identity_secret_key: string
           p_wrapped_user_key: string
         }
@@ -1821,7 +1820,6 @@ export type Database = {
         Args: never
         Returns: {
           identity_public_key: string
-          recovery_wrapped_user_key: string
           wrapped_identity_secret_key: string
           wrapped_user_key: string
         }[]
@@ -1951,10 +1949,7 @@ export type Database = {
         Returns: undefined
       }
       reseal_user_keys: {
-        Args: {
-          p_recovery_wrapped_user_key: string
-          p_wrapped_user_key: string
-        }
+        Args: { p_wrapped_user_key: string }
         Returns: undefined
       }
       review_profile: {
@@ -1968,7 +1963,6 @@ export type Database = {
       rotate_user_keys: {
         Args: {
           p_identity_public_key: string
-          p_recovery_wrapped_user_key: string
           p_wrapped_identity_secret_key: string
           p_wrapped_user_key: string
         }

@@ -18,19 +18,19 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 **읽기가 RPC인 이유**: `author_id`의 select grant를 회수했으므로(아래 "익명") 작성자를 붙여줄 수 있는 건 security definer 함수뿐이고, 그 함수가 익명이면 `author`를 null로 지운다. 덤으로 댓글/반응 수와 첨부를 한 번에 묶어 N+1을 없앤다.
 
-| 함수                                                          | 인증                                  | 목적                                                                                         |
-| ------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버                            | 피드. `created_at`·`updated_at`을 함께 내려 수정 표기를 지원하며, 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다 |
-| `get_post(pub_id)`                                            | post 접근 권한                        | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                 |
-| `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한                        | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래) |
-| `search_posts(query, space_id)`                               | space 멤버                            | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다             |
-| `create_post_with_attachments(space_id, title, content, ...)` | `can_post_in_space`                   | 글+첨부를 **한 트랜잭션**으로. 실패하면 아무것도 안 남는다                                   |
-| `set_post_attachments(post_id, attachments)`                  | 작성자 본인                           | 수정용. 목록 통째 교체. 이미 붙은 첨부는 스토리지 재확인(24h 신선도)을 건너뛴다              |
-| `set_post_pinned(id, pinned)`                                 | `can_curate_space` (**manager 포함**) | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                              |
-| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | soft delete + 반응/첨부 정리 + blob 삭제 큐. 댓글은 **본문을 비운다**                        |
-| `suspend_post_author_anonymity(post_id)` / `..._comment_...`  | 관리자                                | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)` |
-| `undo_post_anonymity_suspension(post_id)` / `..._comment_...` | 관리자                                | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                           |
-| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | soft delete된 글·댓글 하드 정리 (기본 30일, 배치 100)                                        |
+| 함수                                                          | 인증                                  | 쓰기 | 목적                                                                                         |
+| ------------------------------------------------------------- | ------------------------------------- | ---- | -------------------------------------------------------------------------------------------- |
+| `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버                            | X | 피드. `created_at`·`updated_at`을 함께 내려 수정 표기를 지원하며, 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다 |
+| `get_post(pub_id)`                                            | post 접근 권한                        | X | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                 |
+| `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한                        | X | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래) |
+| `search_posts(query, space_id)`                               | space 멤버                            | X | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다             |
+| `create_post_with_attachments(space_id, title, content, ...)` | `can_post_in_space`                   | O | 글+첨부를 **한 트랜잭션**으로. 실패하면 아무것도 안 남는다                                   |
+| `set_post_attachments(post_id, attachments)`                  | 작성자 본인                           | O | 수정용. 목록 통째 교체. 이미 붙은 첨부는 스토리지 재확인(24h 신선도)을 건너뛴다              |
+| `set_post_pinned(id, pinned)`                                 | `can_curate_space` (**manager 포함**) | O | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                              |
+| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | O | soft delete + 반응/첨부 정리 + blob 삭제 큐. 댓글은 **본문을 비운다**                        |
+| `suspend_post_author_anonymity(post_id)` / `..._comment_...`  | 관리자                                | O | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)` |
+| `undo_post_anonymity_suspension(post_id)` / `..._comment_...` | 관리자                                | O | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                           |
+| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | O | soft delete된 글·댓글 하드 정리 (기본 30일, 배치 100)                                        |
 
 **메인 글 작성은 `can_post_in_space`가 연다** — `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 검사가 `posts_insert` 정책 **과** `create_post_with_attachments` **양쪽**에 있는 이유: 후자는 security definer라 RLS를 지나치므로 정책만 고치면 그대로 뒷문이 된다. `comments_insert`는 건드리지 않는다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
 

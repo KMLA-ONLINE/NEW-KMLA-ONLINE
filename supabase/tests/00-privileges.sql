@@ -116,14 +116,23 @@ begin
   -- private 스키마의 헬퍼는 위 검사가 보지 못한다(public만 본다). 그런데 RLS 정책 표현식과
   -- security invoker 함수는 **호출자 권한으로** 실행되므로, 거기서 쓰이는 헬퍼가 grant를
   -- 잃으면 그 정책이 걸린 모든 읽기·쓰기가 "permission denied for function"으로 죽는다.
-  -- 잃기 가장 쉬운 것들을 이름으로 못박아 둔다.
+  -- RLS 정책이 실제로 참조하는 헬퍼를 전부 못박아 둔다 -- 하나라도 빠지면 그게 grant를 잃어도
+  -- 안 잡힌다(감사에서 6개가 빠져 있었다). 새 RLS 헬퍼를 만들면 여기에도 반드시 추가할 것.
   if not has_function_privilege('authenticated', 'private.current_profile_id()', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.is_accepted_user()', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.is_conversation_member(bigint)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.can_access_message(bigint)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.is_direct_conversation(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.has_active_message_reply(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.is_valid_message_parent(bigint, bigint)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.can_post_in_space(bigint)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'private.can_curate_space(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.can_participate_space(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.can_manage_space(bigint, member_role[])', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.is_space_member(bigint, member_role[])', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.can_access_post(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.can_access_comment(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'private.has_active_descendant(bigint)', 'EXECUTE')
   then
     raise exception 'a private helper used by an RLS policy has lost its execute grant';
   end if;

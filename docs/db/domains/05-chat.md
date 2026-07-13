@@ -13,10 +13,10 @@ Source: [`supabase/schemas/05-chat.sql`](../../../supabase/schemas/05-chat.sql)
 - `conversation_members` — 그룹 대화 멤버십 (`conversation_id`, `user_id` PK)
 - `messages` — `parent_id` 답글, `edited_at`, soft delete, `pinned_at`/`pinned_by`. 답글은 스레드가 아니라 **인용**이라 깊이 제한이 없다(C가 B를, B가 A를 인용). 한 단계만 preview로 렌더하고 눌러서 거슬러 올라간다. 고정은 **대화 멤버라면 누구나**(발신자가 아니어도) 하고, 한 대화에 여럿을 동시에 고정할 수 있다
   - 본문이 두 컬럼이다: `content`(그룹, 평문)와 `content_ciphertext`(1:1, `nonce(12) || AES-256-GCM`). 동시에 둘 다 채워질 수 없고(`messages_body_exclusive_check`), 어느 쪽이어야 하는지는 대화 타입이 정한다 — CHECK로는 다른 테이블을 볼 수 없어 `trg_enforce_message_encryption_shape`가 강제한다
-- `message_keys` — 메시지 키 봉투. **수신자당 한 행**이고 발신자 사본은 없다: X25519 DH가 대칭이라 발신자가 수신자 앞으로 봉인된 그 행을 그대로 연다(1:1이면 메시지당 정확히 한 행). 봉인 당시의 두 공개키(`sender_public_key`, `recipient_public_key`)를 같이 들고 있어서, 키가 회전되면 그 행이 스스로 죽었다고 밝힌다 — **epoch도 재키잉 핸드셰이크도 없다**
+- `message_keys` — 메시지 키 봉투. **수신자당 한 행**, 발신자 사본은 없다. 봉인 당시의 두 공개키(`sender_public_key`, `recipient_public_key`)를 같이 저장해 키 회전을 감지한다. 프로토콜과 근거는 [docs/e2ee.md](../../e2ee.md)
 - `message_attachment_mime_types` — 받아들이는 MIME과 타입별 `max_bytes`. **첨부 가능 여부의 단일 출처**다: `message_attachments.content_type`가 FK를 걸어 안 받는 MIME은 저장 자체가 불가능하고, bucket의 `allowed_mime_types`/`file_size_limit`도 이 행들에서 생성한다. `image/svg+xml`은 스크립트를 품을 수 있어 **의도적으로 제외**. 행은 seed라 migration에 있다
 - `message_attachments` — blob은 Storage `message-files`(평문) 또는 `message-files-encrypted`(암호문). 한 메시지에 최대 `max_message_attachments()`개, 단 **2개 이상이면 전부 `kind='image'`** 여야 한다. `width`/`height`/`duration_ms`는 클라이언트가 측정해 보고한다
-  - 이름도 두 컬럼이다: `file_name`(평문) / `file_name_ciphertext`(암호문). 파일명은 사실상 내용이라("성적표.pdf") 본문만 암호화하고 이름을 남기면 반쪽이 된다. 어느 쪽이 채워지는지는 버킷이 정하고(`message_attachments_name_shape_check`), 버킷은 대화 타입이 정한다(`trg_enforce_message_attachment_shape`)
+  - 이름도 두 컬럼이다: `file_name`(평문) / `file_name_ciphertext`(암호문). 왜 파일명까지 가리는지는 [docs/e2ee.md](../../e2ee.md). 어느 쪽이 채워지는지는 버킷이 정하고(`message_attachments_name_shape_check`), 버킷은 대화 타입이 정한다(`trg_enforce_message_attachment_shape`)
 - `message_reactions` / `chat_read_states` — 각각 `(message_id, user_id)`, `(conversation_id, user_id)` 자연 PK
 - `chat_notification_settings` — `(conversation_id, user_id)` PK. **음소거는 대화의 속성이 아니라 사용자의 선호**이고 boolean도 아니다: `muted_until`이 "8시간 동안"과 "내가 풀 때까지"(`'infinity'`)를 한 컬럼에 담는다. `level`은 직교하는 축이라, 시끄러운 방을 음소거하지 않은 채 멘션에만 알림받을 수 있다.
   - 별도 테이블인 이유: `chat_read_states`의 insert 정책이 `last_read_message_id is not null`을 요구해 **한 번도 열지 않은 대화를 음소거할 수 없고**, `conversation_members`는 1:1 대화에 행이 없다.

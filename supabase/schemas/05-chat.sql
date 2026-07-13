@@ -36,6 +36,10 @@ create table public.messages (
   parent_id bigint null references public.messages (id) on delete restrict,
   content text null,
   content_ciphertext bytea null,
+  -- 검색 전용 정규화 형태(private.normalize_search). 그룹 평문 전용이다: 암호화 메시지는 content가
+  -- null이라 이것도 null이 되어 인덱스에도 안 들어가고 서버는 여전히 본문을 못 본다. posts의 정규화
+  -- 컬럼과 같은 함수를 쓰므로 게시글 검색과 채팅 검색이 같은 문자열을 같게 취급한다.
+  content_normalized text generated always as (private.normalize_search(content)) stored,
   edited_at timestamptz null,
   deleted_at timestamptz null,
   deleted_by bigint null references public.profiles (id) on delete set null,
@@ -150,7 +154,7 @@ create index idx_message_reactions_user_created_at on public.message_reactions (
 create index idx_chat_read_states_user_last_read_at on public.chat_read_states (user_id, last_read_at);
 create index idx_chat_notification_settings_user on public.chat_notification_settings (user_id, conversation_id);
 create index idx_messages_content_search_gin on public.messages
-  using gin (regexp_replace(lower(content), '\s+', '', 'g') extensions.gin_trgm_ops)
+  using gin (content_normalized extensions.gin_trgm_ops)
   where deleted_at is null;
 
 alter table public.conversations
@@ -357,6 +361,15 @@ begin
   --  service_role만 세울 수 있고, 그 RPC가 발신자 본인인지 이미 확인한다.)
   if new.deleted_at is not null and old.deleted_at is null then
     return new;
+  end if;
+
+  -- 편집으로 본문을 비우는 것은 삭제를 가장한 우회다. messages_pin_update가 아무 멤버에게나 active
+  -- row UPDATE를 열어주는데 그 정책엔 content is not null 조건이 없어(messages_update에는 있다),
+  -- 발신자가 15분 내에 {"content": null}이나 공백만(위 nullif로 null이 된다)으로 PATCH하면
+  -- deleted_at 없이 본문만 사라진 좀비 메시지가 된다 -- soft_delete_message를 거치지 않아 첨부·반응·
+  -- 봉투 정리도 건너뛴다. 삭제(deleted_at 설정)는 위에서 이미 빠졌으니, 여기 오면 본문은 반드시 남아야 한다.
+  if new.content is null and new.content_ciphertext is null then
+    raise exception 'a message body cannot be emptied by an edit; delete it instead';
   end if;
 
   -- messages_pin_update lets any conversation member update an active
@@ -902,9 +915,12 @@ create function public.soft_delete_message(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(true); target_sender_id bigint;
 begin
-  select sender_id into target_sender_id from public.messages where id=p_id and deleted_at is null for update;
+  -- 내 메시지만 잡는다(sender면 당연히 멤버다). 이 조건이 없으면 "없는 메시지 -> 조용한 리턴"과
+  -- "남의 메시지 -> 예외"가 갈려, 비멤버가 임의 id로 메시지 존재·활성 여부를 알아내는 오라클이 된다.
+  select sender_id into target_sender_id from public.messages
+  where id=p_id and deleted_at is null and sender_id=caller_id
+  for update;
   if target_sender_id is null then return; end if;
-  if target_sender_id<>caller_id then raise exception 'message sender required'; end if;
 
   insert into private.attachment_cleanup_queue(storage_bucket,storage_path,requested_by)
   select a.storage_bucket,a.storage_path,caller_id
@@ -933,10 +949,10 @@ $$;
 create function public.search_messages(p_query text,p_conversation_id bigint)
 returns table(message_id bigint,content_snippet text,sender_name text,created_at timestamptz)
 language plpgsql security invoker set search_path = '' as $$
-declare normalized_query text := regexp_replace(lower(btrim(p_query)), '\s+', '', 'g');
+declare normalized_query text := private.normalize_search(p_query);
 begin
   if p_conversation_id is null then raise exception 'conversation target required'; end if;
-  if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or normalized_query='' then raise exception 'query must contain 1 to 200 characters'; end if;
+  if p_query is null or char_length(btrim(p_query)) not between 1 and 200 or coalesce(normalized_query,'')='' then raise exception 'query must contain 1 to 200 characters'; end if;
   -- 멤버십을 **먼저** 본다. is_direct_conversation은 security definer라 RLS를 지나쳐 대화 타입을
   -- 답해 주므로, 이 순서가 뒤집히면 비멤버가 "예외가 뜨는가 / 빈 결과가 오는가"로 임의의
   -- conversation_id(bigserial이라 순차 추측된다)가 1:1인지를 스캔할 수 있다. 내용은 안 새지만
@@ -945,12 +961,15 @@ begin
   if private.is_direct_conversation(p_conversation_id) then
     raise exception 'direct conversations are end-to-end encrypted: search them on the client';
   end if;
+  -- content_normalized(생성 컬럼)로 비교해 그 위의 trgm 인덱스를 탄다. 검색어의 %,_는
+  -- escape_like로 무력화한다 -- 안 그러면 '30%'가 와일드카드로 해석돼 1:1 클라이언트 검색과
+  -- 다른 결과를 낸다. 둘 다 소문자로 접혀 있으니 ilike가 아니라 like다.
   return query select m.id,left(m.content,300),p.name,m.created_at
   from public.messages m join public.profiles p on p.id=m.sender_id
   where m.conversation_id=p_conversation_id
     and m.deleted_at is null
     and m.content is not null
-    and regexp_replace(lower(m.content),'\s+','','g') ilike '%'||normalized_query||'%'
+    and m.content_normalized like '%'||private.escape_like(normalized_query)||'%'
   order by m.created_at desc,m.id desc limit 50;
 end;
 $$;
@@ -1156,7 +1175,11 @@ create function public.edit_encrypted_message(p_id bigint,p_content_ciphertext t
 returns void language plpgsql security definer set search_path='' as $$
 declare caller_id bigint := private.require_current_profile(true); target public.messages;
 begin
-  select * into target from public.messages where id=p_id and deleted_at is null for update;
+  -- 내가 멤버인 대화의 메시지만 잡는다. 이 조건이 없으면 비멤버가 임의의 message_id로 "존재하나 /
+  -- 1:1인가 / 내가 보냈나"를 예외 메시지 차이로 스캔할 수 있다(search_messages와 같은 방어).
+  select * into target from public.messages
+  where id=p_id and deleted_at is null and private.is_conversation_member(conversation_id)
+  for update;
   if target.id is null then raise exception 'message not found'; end if;
   if not private.is_direct_conversation(target.conversation_id) then raise exception 'conversation is not end-to-end encrypted'; end if;
   if target.sender_id<>caller_id then raise exception 'message sender required'; end if;

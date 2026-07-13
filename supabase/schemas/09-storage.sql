@@ -59,19 +59,23 @@ create policy space_images_insert on storage.objects for insert to authenticated
       and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
--- 경로는 <space.pub_id>/<auth.uid()>/<uuid>다. blob을 글이 아니라 space에 매는 이유:
--- 글보다 먼저 업로드할 수 있어야 create_post_with_attachments가 글+첨부를 한 트랜잭션으로 끝낸다.
--- 글에 매면 작성 -> 업로드 -> 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상
--- 트랜잭션(soft delete)이 필요해진다 -- 그 보상도 실패할 수 있어 유령 글이 생긴다.
--- message_files_insert가 blob을 대화에 매는 것과 같은 구조이고, 보안 성질도 같다: 내가 참여하는
--- 공간의, 내 uid 경로에만 올릴 수 있다. 확정되지 않은 blob은 고아 청소가 걷어간다.
+-- 경로는 <space.pub_id>/<uuid>다. 경로에 업로더 uid를 넣지 않는다: 넣으면 익명 글과 실명 글의
+-- 첨부 경로에 같은 uid가 실려 익명이 깨진다(get_post 응답만으로 두 글이 같은 작성자임이 드러난다).
+-- 소유권은 경로가 아니라 owner_id로 강제한다 -- storage가 JWT에서 채우므로 클라이언트가 위조할 수
+-- 없고, 경로에는 신원이 남지 않는다. message_files_insert는 대화 참여자가 서로를 이미 알기에
+-- (익명 개념이 없다) 경로에 uid를 그대로 두지만, post는 익명이 걸려 있어 이렇게 갈라진다.
+--
+-- blob을 글이 아니라 space에 매는 이유: 글보다 먼저 업로드할 수 있어야
+-- create_post_with_attachments가 글+첨부를 한 트랜잭션으로 끝낸다. 글에 매면 작성 -> 업로드 ->
+-- 확정 3단계가 되고, 중간에 실패하면 첨부 없는 글이 남아 보상 트랜잭션(soft delete)이 필요해진다
+-- -- 그 보상도 실패할 수 있어 유령 글이 생긴다. 확정되지 않은 blob은 고아 청소가 걷어간다.
 create policy post_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id='post-files' and split_part(storage.objects.name,'/',2)=(select auth.uid())::text and exists(
+  bucket_id='post-files' and owner_id=(select auth.uid())::text and exists(
     select 1 from public.spaces s
     where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
       and private.can_participate_space(s.id)
-      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/'||(select auth.uid())::text||'/')
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
   )
 );
 -- 버킷을 클라이언트가 고르는 게 아니라 대화 타입이 정한다. 그래서 1:1 대화 경로에 평문

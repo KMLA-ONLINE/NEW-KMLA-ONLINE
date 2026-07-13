@@ -6,7 +6,7 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 
 ## 테이블
 
-`notifications` — recipient / `type` / actor + 대상 FK 4종(space·post·comment·message) + `payload` + `read_at`.
+`notifications` — recipient / `type` / actor + 대상 FK 3종(space·post·comment) + `payload` + `read_at`.
 
 - **`type`이 없으면 안 되는 이유**: FK 모양으로는 종류를 유추할 수 없다. "내 글에 댓글", "내 댓글에 답글", "댓글에서 멘션"은 `(space_id, post_id, comment_id)`가 전부 채워진 **완전히 같은 모양**인데 아이콘도 문구도 목적지도 다르다.
 - `actor_is_anonymous` — 익명으로 한 행동인가. `list_notifications()`가 이걸 보고 actor를 지운다. 원본에서 매번 읽지 않는 이유: `is_anonymous`는 불변이라 drift가 없고, 원본이 하드 삭제돼도 "가려야 한다"는 판단은 남아야 한다.
