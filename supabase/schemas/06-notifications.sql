@@ -143,7 +143,10 @@ as $$
 declare
   caller_id bigint := private.require_current_profile(true);
 begin
-  if p_limit not between 1 and 50 then raise exception 'limit must be between 1 and 50'; end if;
+  -- null을 빼먹으면 `limit null`이 되어 상한이 통째로 사라진다(null not between …은 참이 아니라
+  -- null이라 이 가드를 그냥 지나간다). 그러면 클라이언트가 p_limit=null 한 번으로 내 알림을 전부
+  -- 가져간다. 03-content와 05-chat의 읽기 RPC가 같은 이유로 `p_limit is null`을 함께 본다.
+  if p_limit is null or p_limit not between 1 and 50 then raise exception 'limit must be between 1 and 50'; end if;
 
   return query
   select

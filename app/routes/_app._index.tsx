@@ -1,116 +1,80 @@
+import { useState } from "react"
+
+import { GroupPostFeed } from "~/components/group/group-post-feed"
+import { PostViewToggle } from "~/components/group/post-view-toggle"
+import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { Separator } from "~/components/ui/separator"
-import type { FeedPostCardProps } from "~/components/feed/feed-post-card"
-import { FeedPostList } from "~/components/feed/feed-post-list"
-import { Button } from "~/components/ui/button"
+import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
+import { mockFeedPosts, mockMealPlan } from "~/lib/feed/mock-data"
+import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
-// Stand-in rows until a loader reads posts across the spaces the viewer belongs
-// to. Timestamps are ISO, as posts.created_at will be; the card decides how to
-// say "2시간전".
-const feedItems: FeedPostCardProps[] = [
-  {
-    source: "Group: Academic Office",
-    title: "Academic schedule updates for next week",
-    description:
-      "Midterm preparation sessions and advisory room allocations were finalized. Check your group space for detailed time slots.",
-    author: "Academic Office",
-    createdAt: "2026-07-10T07:00:00.000Z",
-    comments: 3,
-    likes: 14,
-    isFeatured: true,
-  },
-  {
-    source: "Group: Student Council",
-    title: "Spring Festival volunteer sign-up closes tomorrow",
-    description:
-      "Please register by 6 PM. Team assignments will be shared in each committee space.",
-    author: "Student Council",
-    createdAt: "2026-07-10T08:45:00.000Z",
-    comments: 8,
-    likes: 21,
-  },
-  {
-    source: "Community: Lost Gadgets",
-    title: "Found wireless earbuds near the library entrance",
-    description: "If these are yours, send a message with the case color to verify ownership.",
-    author: "2-3 J. Kim",
-    createdAt: "2026-07-10T08:17:00.000Z",
-    comments: 11,
-    likes: 9,
-  },
-  {
-    source: "Community: Secondhand Transactions",
-    title: "Selling TI graphing calculator in good condition",
-    description: "Includes cover and extra batteries. Available for pickup after study hall.",
-    author: "3-2 H. Lee",
-    createdAt: "2026-07-10T08:00:00.000Z",
-    comments: 5,
-    likes: 6,
-  },
-  {
-    source: "Community: Secondhand Transactions",
-    title: "Selling TI graphing calculator in good condition",
-    description: "Includes cover and extra batteries. Available for pickup after study hall.",
-    author: "3-2 H. Lee",
-    createdAt: "2026-07-10T07:55:00.000Z",
-    comments: 5,
-    likes: 6,
-  },
-]
+// 피드도 한 번에 다 렌더하지 않고 페이지 단위로(스크롤이 바닥에 닿으면 다음 페이지). 그룹 피드와
+// 같은 규칙 -- 로더가 붙으면 이 슬라이스가 list_feed_posts의 keyset 페이지네이션으로 바뀐다.
+const FEED_PAGE_SIZE = 6
 
-const recentlyViewedPosts = [
-  {
-    title: "How to prepare for next week's chemistry quiz efficiently",
-    source: "Community: Study Tips",
-  },
-  {
-    title: "Dorm laundry room etiquette reminder for all grade levels",
-    source: "Group: Student Council",
-  },
-  {
-    title: "Lost USB drive found near auditorium back entrance",
-    source: "Community: Lost Gadgets",
-  },
-  {
-    title: "Weekend self-study room reservation schedule announced",
-    source: "Group: Academic Office",
-  },
-]
+// 여러 그룹의 글을 한 흐름으로 모아 순수 최신순으로 보여준다(created_at 내림차순). 고정은 그룹
+// 안에서만 의미가 있어(무슨 기준으로 맨 위?) 피드엔 없다. ISO 문자열이라 사전식이 곧 시간순.
+const feedPosts = [...mockFeedPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+// 그룹 피드처럼 모바일에선 카드가 화면 가장자리까지 차게 여백을 없앤다(카드는 그때 border-b-2
+// 스택이 되고 sm+에서 라운드 카드가 된다). 제목·토글·급식 카드는 각자 px로 안쪽을 맞춘다.
+export const handle = { mobileContentEdge: "bleed" as const }
 
 export default function AppHomePage() {
+  const [viewMode, setViewMode] = usePostViewMode()
+  const [visible, setVisible] = useState(FEED_PAGE_SIZE)
+
+  const hasMore = visible < feedPosts.length
+  const sentinelRef = useInfiniteScroll(
+    () => setVisible((count) => count + FEED_PAGE_SIZE),
+    hasMore
+  )
+  const visiblePosts = feedPosts.slice(0, visible)
+
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <section className="flex min-w-0 flex-col gap-1">
-        <h1 className="px-4 py-1 text-xl font-semibold sm:text-2xl">Posts</h1>
-        <Separator className="my-1" />
-        <FeedPostList items={feedItems} className="flex flex-col" />
+      <section className="flex min-w-0 flex-col gap-2 sm:gap-4">
+        {/* 모바일 bleed에선 카드가 가장자리까지 가지만, 제목·토글은 px-4로 카드 내부 여백에 맞춘다. */}
+        <div className="flex items-center justify-between px-4 pt-1 sm:px-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">피드</h1>
+          <PostViewToggle value={viewMode} onChange={setViewMode} />
+        </div>
+        <GroupPostFeed
+          posts={visiblePosts}
+          viewMode={viewMode}
+          reactionTypes={PLACEHOLDER_REACTION_TYPES}
+          hasMore={hasMore}
+          sentinelRef={sentinelRef}
+        />
       </section>
 
-      <aside className="flex flex-col gap-2 lg:sticky lg:top-4 lg:self-start">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-medium tracking-wide">Recently Viewed</h2>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={recentlyViewedPosts.length === 0}
-            className="text-muted-foreground"
-          >
-            Clear
-          </Button>
-        </div>
-        <Separator />
-        {recentlyViewedPosts.length > 0 ? (
-          <ul className="divide-border divide-y">
-            {recentlyViewedPosts.map((post, index) => (
-              <li key={`${post.source}-${post.title}-${index}`} className="px-1 py-3 first:pt-0">
-                <p className="line-clamp-2 text-xs leading-5 font-medium">{post.title}</p>
-                <p className="text-muted-foreground mt-1 text-xs">{post.source}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground text-sm">No recently viewed posts.</p>
-        )}
+      <aside className="px-4 sm:px-0 lg:sticky lg:top-4 lg:self-start">
+        <MealPlanCard />
       </aside>
+    </div>
+  )
+}
+
+// 오늘의 급식. 지금은 레이아웃만 -- 데이터는 나중에 cron이 급식 API에서 받아 채운다.
+function MealPlanCard() {
+  return (
+    <div className="bg-card flex flex-col gap-3 rounded-xl border p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">오늘의 급식</h2>
+        <span className="text-muted-foreground text-xs">{mockMealPlan.dateLabel}</span>
+      </div>
+      <Separator />
+      <ul className="flex flex-col gap-3">
+        {mockMealPlan.meals.map((meal) => (
+          <li key={meal.label} className="flex flex-col gap-0.5">
+            <p className="text-muted-foreground text-xs font-medium">{meal.label}</p>
+            <p className="text-sm leading-relaxed">{meal.items.join(" · ")}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="text-muted-foreground border-t pt-2 text-[11px]">
+        매일 자동으로 업데이트됩니다.
+      </p>
     </div>
   )
 }
