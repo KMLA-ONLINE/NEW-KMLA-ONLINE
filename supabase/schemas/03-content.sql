@@ -437,6 +437,7 @@ returns table(
   category jsonb,
   pinned_at timestamptz,
   created_at timestamptz,
+  updated_at timestamptz,
   comment_count bigint,
   reaction_count bigint,
   top_reactions jsonb,
@@ -488,6 +489,7 @@ begin
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
     page.pinned_at,
     page.created_at,
+    page.updated_at,
     coalesce(counts.comment_count,0),
     coalesce(counts.reaction_count,0),
     coalesce(summary.top_reactions,'[]'::jsonb),
@@ -606,6 +608,7 @@ returns table(
   is_mine boolean,
   is_deleted boolean,
   created_at timestamptz,
+  updated_at timestamptz,
   reaction_count bigint,
   top_reactions jsonb,
   my_reaction_id bigint
@@ -683,6 +686,7 @@ begin
     c.author_id=caller_id and c.deleted_at is null,
     c.deleted_at is not null,
     c.created_at,
+    c.updated_at,
     (select count(*) from public.comment_reactions r where r.comment_id=c.id),
     coalesce((select jsonb_agg(t.icon order by t.n desc, t.icon)
       from (

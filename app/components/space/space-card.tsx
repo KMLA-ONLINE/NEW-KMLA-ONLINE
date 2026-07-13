@@ -25,8 +25,8 @@ export function SpaceCard({
   to?: string
 }) {
   return (
-    <article className="relative grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 rounded-2xl border bg-white p-4 transition hover:border-blue-200 hover:shadow-sm sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-lg font-bold text-blue-500 sm:h-16 sm:w-16 sm:text-xl">
+    <article className="bg-card hover:border-primary/20 relative grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3 rounded-2xl border p-4 transition hover:shadow-sm sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+      <div className="border-primary/20 bg-primary/10 text-primary flex size-14 shrink-0 items-center justify-center rounded-xl border text-lg font-bold sm:size-16 sm:text-xl">
         {space.name.slice(0, 1)}
       </div>
 

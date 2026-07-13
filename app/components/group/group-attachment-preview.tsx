@@ -35,7 +35,7 @@ export function GroupAttachmentPreview({
                 type="button"
                 aria-label="이미지 삭제"
                 onClick={image.onRemove}
-                className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
+                className="bg-foreground/60 text-background hover:bg-foreground/80 absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded-full transition-colors"
               >
                 <XIcon className="size-3.5" />
               </button>

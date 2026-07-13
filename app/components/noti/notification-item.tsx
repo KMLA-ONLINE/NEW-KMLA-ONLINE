@@ -44,7 +44,7 @@ type Descriptor = {
 
 const TONE = {
   neutral: "bg-primary text-primary-foreground",
-  positive: "bg-emerald-600 text-white",
+  positive: "bg-primary/10 text-primary",
   negative: "bg-destructive text-white",
 } as const
 
@@ -233,7 +233,7 @@ export function NotificationItem({
 
   const body = (
     <>
-      <div className="relative shrink-0">
+      <div className="relative size-10 shrink-0">
         {hasActor ? (
           <>
             {/* 탈퇴한 사용자는 이니셜이 없다. "?"는 "이름을 알 수 없는 사람"으로 읽히고, 익명의
@@ -246,7 +246,7 @@ export function NotificationItem({
             {/* 아바타 위에 얹는 종류 뱃지. ring이 카드 배경색이라 아바타에서 파낸 것처럼 보인다. */}
             <span
               className={cn(
-                "ring-card absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full ring-2",
+                "ring-card absolute right-0 bottom-0 z-10 flex size-5 translate-x-1/4 translate-y-1/4 items-center justify-center rounded-full ring-1",
                 tone
               )}
             >

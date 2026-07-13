@@ -90,12 +90,12 @@ export default function GroupsPage() {
           </p>
         </section>
 
-        <div className="flex w-fit rounded-xl border bg-white p-1">
+        <div className="bg-card flex w-fit rounded-xl border p-1">
           <button
             onClick={() => setActiveTab("official")}
             className={
               isOfficial
-                ? "rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600"
+                ? "bg-primary/10 text-primary rounded-lg px-4 py-2 text-sm font-medium"
                 : "text-muted-foreground rounded-lg px-4 py-2 text-sm font-medium"
             }
           >
@@ -106,7 +106,7 @@ export default function GroupsPage() {
             onClick={() => setActiveTab("unofficial")}
             className={
               !isOfficial
-                ? "rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600"
+                ? "bg-primary/10 text-primary rounded-lg px-4 py-2 text-sm font-medium"
                 : "text-muted-foreground rounded-lg px-4 py-2 text-sm font-medium"
             }
           >
@@ -185,7 +185,7 @@ export default function GroupsPage() {
 
 function SidePanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border bg-white p-4">
+    <section className="bg-card rounded-2xl border p-4">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
       {children}
     </section>

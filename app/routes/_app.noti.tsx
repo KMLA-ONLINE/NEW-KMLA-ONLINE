@@ -49,7 +49,7 @@ export default function NotiPage() {
         </Button>
       </section>
 
-      <div className="flex w-fit rounded-xl border bg-white p-1">
+      <div className="bg-card flex w-fit rounded-xl border p-1">
         <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>
           전체
         </FilterTab>
@@ -97,7 +97,7 @@ function FilterTab({
       aria-pressed={active}
       className={cn(
         "rounded-lg px-4 py-2 text-sm font-medium",
-        active ? "bg-blue-50 text-blue-600" : "text-muted-foreground"
+        active ? "bg-primary/10 text-primary" : "text-muted-foreground"
       )}
     >
       {children}

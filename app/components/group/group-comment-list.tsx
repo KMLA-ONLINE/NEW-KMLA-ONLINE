@@ -124,6 +124,8 @@ function GroupCommentItem({
   // 부모가 삭제된 tombstone이면 붙일 이름이 없다 -- 서버가 작성자를 지워서 내려주기 때문이다.
   const parent = comment.parentId !== null ? byId.get(comment.parentId) : null
   const parentName = parent && !parent.isDeleted ? displayName(parent) : null
+  // TODO(reactions): 현재는 mock UI라 항상 null에서 시작한다. 실제 연동 시 comment.myReactionId를
+  // reactionTypes에서 찾아 초기값으로 쓰고, reactionCount/topReactions 요약도 함께 렌더한다.
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
@@ -139,7 +141,7 @@ function GroupCommentItem({
             id={`comment-${comment.id}`}
             className={cn(
               "text-muted-foreground bg-muted/60 w-fit rounded-2xl px-3 py-2 text-sm italic transition-shadow",
-              highlightedId === comment.id && "ring-2 ring-blue-400"
+              highlightedId === comment.id && "ring-ring ring-2"
             )}
           >
             삭제된 댓글입니다
@@ -176,7 +178,7 @@ function GroupCommentItem({
               id={`comment-${comment.id}`}
               className={cn(
                 "bg-muted w-fit rounded-2xl px-3 py-2 transition-shadow",
-                highlightedId === comment.id && "ring-2 ring-blue-400"
+                highlightedId === comment.id && "ring-ring ring-2"
               )}
             >
               <p className="text-xs font-semibold">{name}</p>
@@ -184,7 +186,7 @@ function GroupCommentItem({
                 {parentName ? (
                   <button
                     type="button"
-                    className="mr-1 font-medium text-blue-600 hover:underline dark:text-blue-400"
+                    className="text-primary mr-1 font-medium hover:underline"
                     onClick={() => comment.parentId !== null && onNavigate(comment.parentId)}
                   >
                     @{parentName}

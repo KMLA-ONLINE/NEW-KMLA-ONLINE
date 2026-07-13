@@ -1863,6 +1863,7 @@ export type Database = {
           parent_id: number
           reaction_count: number
           top_reactions: Json
+          updated_at: string
         }[]
       }
       get_unread_message_count: { Args: never; Returns: number }
@@ -1931,6 +1932,7 @@ export type Database = {
           reaction_count: number
           title: string
           top_reactions: Json
+          updated_at: string
         }[]
       }
       purge_deleted_content: {
