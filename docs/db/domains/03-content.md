@@ -28,12 +28,12 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | `create_post_with_attachments(space_id, title, content, ...)` | `can_post_in_space`                   | O    | 글+첨부를 **한 트랜잭션**으로. 실패하면 아무것도 안 남는다                                                                                 |
 | `set_post_attachments(post_id, attachments)`                  | 작성자 본인                           | O    | 수정용. 목록 통째 교체. 이미 붙은 첨부는 스토리지 재확인(24h 신선도)을 건너뛴다                                                            |
 | `set_post_pinned(id, pinned)`                                 | `can_curate_space` (**manager 포함**) | O    | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                                                                            |
-| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | O    | soft delete + 반응/첨부 정리 + blob 삭제 큐. 댓글은 **본문을 비운다**                                                                      |
+| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | O    | soft delete + 반응/첨부 정리 + blob 삭제 큐. 최상위 댓글은 하위 트리까지 함께 숨기고, 답글은 본문만 비운다                                  |
 | `suspend_post_author_anonymity(post_id)`                      | 관리자                                | O    | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)`                                               |
 | `suspend_comment_author_anonymity(comment_id)`                | 관리자                                | O    | 위와 같음 (댓글)                                                                                                                           |
 | `undo_post_anonymity_suspension(post_id)`                     | 관리자                                | O    | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                                                                         |
 | `undo_comment_anonymity_suspension(comment_id)`               | 관리자                                | O    | 위와 같음 (댓글)                                                                                                                           |
-| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | O    | soft delete된 글·댓글 하드 정리 (기본 30일, 배치 100)                                                                                      |
+| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | O    | soft delete된 글·댓글 하드 정리 (기본 7일, 배치 100)                                                                                       |
 
 **메인 글 작성은 `can_post_in_space`가 연다** — `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 검사가 `posts_insert` 정책 **과** `create_post_with_attachments` **양쪽**에 있는 이유: 후자는 security definer라 RLS를 지나치므로 정책만 고치면 그대로 뒷문이 된다. `comments_insert`는 건드리지 않는다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
 
@@ -82,6 +82,10 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 - **살아 있는 답글이 달린 tombstone은 남는다** — 자식이 있으면 잎이 아니다. 그게 정확히 그 tombstone을 계속 보여주는 조건이기도 하다. 전부 죽은 서브트리는 잎부터 걷혀 통째로 사라진다.
 - 글을 지우면 살아 있는 댓글도 같이 간다(글이 없으면 어차피 못 보고, `post_id`가 restrict라 남기면 글을 못 지운다). `notifications`·`*_mentions`는 cascade.
 - 삭제된 space의 글은 `purge_due_spaces`(spaces 도메인)가 걷는다 — soft delete 7일 뒤, 그 공간의 blob이 Storage에서 실제로 나간 다음에.
+
+무엇이 언제 실제로 사라지는지는 [삭제·보존 정책](../deletion-policy.md)에 있다.
+
+**딸려 간 답글의 `deleted_by`는 null로 둔다.** `notify_on_comment_removed`가 `deleted_by is not null and <> author_id`로 알림을 만들기 때문에, 최상위 댓글 삭제에 휩쓸린 답글에까지 삭제자를 찍으면 그 작성자 전원이 "모더레이션으로 삭제됨" 알림을 받는다 — 스레드가 접혔을 뿐인데. null이 곧 "캐스케이드로 딸려 갔다"는 표식이고, 그게 알림을 끄는 스위치다.
 
 ## Private helper
 

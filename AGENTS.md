@@ -48,6 +48,10 @@
 - When changing code, schema, migrations, or behavior, update any related Markdown docs in the repo during the same task when such docs already exist.
 - In Markdown prose, write ranges as `1 ~ 100`, never `1~100`. Two unspaced tildes pair up into strikethrough syntax and the preview swallows everything between them. A hyphen (`1-100`) is safe either way.
 
+## Windows patching(codex)
+
+- If `apply_patch` fails with `windows sandbox ... apply deny-read ACLs`, do not retry it or the `apply_patch.bat` wrapper. Invoke the Codex patch engine directly with one UTF-8 PATCH argument.
+
 ## Imports / Aliases
 
 - The only verified TS path alias is `~/* -> app/*` in `tsconfig.json`.

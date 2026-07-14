@@ -4,6 +4,8 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 
 이 디렉토리는 그 스키마의 사람용 설명서다. `domains/*.md`가 `supabase/schemas/*.sql`과 1:1로 대응한다.
 
+현재 데이터가 언제 숨겨지고, 무엇이 언제 실제로 삭제되는지는 [삭제·보존 정책](deletion-policy.md)에 모아 둔다.
+
 ## 문서 규칙 (`domains/*.md`)
 
 - 모든 RPC와 trigger를 목록화한다. RPC는 **인증 조건 · 쓰기 여부 · 목적**, trigger는 **대상 테이블 · 이벤트 · side effect**.

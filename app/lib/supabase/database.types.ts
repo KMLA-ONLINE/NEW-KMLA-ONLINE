@@ -2007,6 +2007,10 @@ export type Database = {
           skipped: number
         }[]
       }
+      purge_read_notifications: {
+        Args: { p_limit?: number; p_older_than?: string }
+        Returns: number
+      }
       remove_group_member: {
         Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined

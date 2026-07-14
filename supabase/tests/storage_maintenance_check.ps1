@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # Exercises all three storage-maintenance paths in one shot: a queued blob, a post tombstone
-# past the 30-day cutoff, and a space soft-deleted past the 7-day cutoff. It also asserts a
+# past the 7-day cutoff, and a space soft-deleted past the 7-day cutoff. It also asserts a
 # LIVE space survives -- without that, "delete everything" would pass too.
 #
 # ASCII only, on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI, so UTF-8 Korean comments
@@ -29,7 +29,7 @@ begin
 
   live_space := public.create_space('community','live $suffix');
   insert into public.posts (space_id,author_id,title,content,deleted_at)
-  values (live_space,p,'tombstone','body', now()-interval '40 days');
+  values (live_space,p,'tombstone','body', now()-interval '8 days');
 
   doomed_space := public.create_space('community','doomed $suffix');
   insert into public.posts (space_id,author_id,title,content) values (doomed_space,p,'post','body');
@@ -48,7 +48,7 @@ $checkSql = @"
 select
   (select count(*) from private.attachment_cleanup_queue
    where storage_path='maintenance-check/$suffix' and processed_at is null)
-  + (select count(*) from public.posts where deleted_at < now()-interval '30 days')
+  + (select count(*) from public.posts where deleted_at < now()-interval '7 days')
   + (select count(*) from public.spaces where deleted_at < now()-interval '7 days')
   + (select count(*) from public.spaces where name='doomed $suffix')
   + (1 - (select count(*) from public.spaces where name='live $suffix'));

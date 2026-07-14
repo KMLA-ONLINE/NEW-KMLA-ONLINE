@@ -28,8 +28,11 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 | --------------------------------------- | -------- | ------------------------------------------------------------------- |
 | `list_notifications(before_id?, limit)` | accepted | 알림함 keyset. 익명이면 actor를 지우고, 대상을 pub_id로 풀어 내린다 |
 | `get_unread_notification_count()`       | accepted | 내비 뱃지용. 100에서 세기를 멈춘다(뱃지는 99+ 위를 구분하지 않는다) |
+| `purge_read_notifications(older_than?, limit?)` | service_role | 읽은 지 기본 60일 지난 알림을 제한된 배치 단위로 hard delete |
 
 **"모두 읽음"에 RPC는 없다** — `update notifications set read_at=now() where read_at is null` 한 줄이면 된다(RLS가 내 행으로 가두고 컬럼 grant가 `read_at`만 연다).
+
+보존 기간은 [삭제·보존 정책](../deletion-policy.md)에 있다.
 
 ## Trigger
 

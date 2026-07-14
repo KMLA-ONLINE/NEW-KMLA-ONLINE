@@ -32,4 +32,27 @@ begin
   perform public.list_notifications(null, 20);
 end $$;
 
+do $$
+declare
+  user1 uuid := '11111111-1111-4111-8111-ffffffffffff';
+  profile1 bigint;
+  space1 bigint;
+begin
+  insert into auth.users (id, email) values (user1, 'noti-retention-check@example.com');
+  select id into profile1 from public.profiles where auth_user_id=user1;
+  update public.profiles set type='teacher', status='accepted' where id=profile1;
+  insert into public.spaces (type,name) values ('group','notification retention') returning id into space1;
+  insert into public.space_members (space_id,user_id,role) values (space1,profile1,'owner');
+  insert into public.notifications (recipient_id,type,space_id,read_at)
+  values (profile1,'space_role_changed',space1,now()-interval '61 days');
+
+  perform set_config('request.jwt.claim.role','service_role',true);
+  if public.purge_read_notifications() <> 1 then
+    raise exception 'read notification retention purge failed';
+  end if;
+  if exists (select 1 from public.notifications where recipient_id=profile1) then
+    raise exception 'read notification was not removed after 60 days';
+  end if;
+end $$;
+
 rollback;

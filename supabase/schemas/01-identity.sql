@@ -310,6 +310,8 @@ for select
 to authenticated
 using (true);
 
+-- 승인된 사용자는 학교 구성원 명부로서 다른 승인 사용자의 profile 전체를 본다.
+-- 연락처·생일·기숙사 정보도 이 공개 profile 계약에 포함된다.
 create policy profiles_select
 on public.profiles
 for select
@@ -373,7 +375,16 @@ grant usage on schema public, private to authenticated;
 grant execute on function private.current_profile_id() to authenticated;
 grant execute on function private.is_accepted_user() to authenticated;
 
-grant select on table public.profile_departments, public.profiles, public.permissions, public.user_permissions to authenticated;
+grant select on table public.profile_departments, public.permissions, public.user_permissions to authenticated;
+-- profiles만 컬럼 단위다. auth_user_id(내부 auth UUID)와 status_updated_by는 뺀다. 후자는
+-- 심사에서 누가 거절/승인했는지를 담는데(review_profile), 본인 행은 status와 무관하게 보이므로
+-- (profiles_select) 테이블 전체 grant면 거절당한 학생이 자기를 거절한 관리자를 특정해 보복할 수
+-- 있다. suspended_by/deleted_by/actor_id를 컬럼 grant로 가리는 것과 같은 원칙이다.
+grant select (
+  id, name, role, type, student_number, class_no, cohort, gender, track, department,
+  phone_number, avatar_url, cover_image_url, birthday, description, status, dorm_room,
+  is_reenrolled, onboarding_completed_at, status_updated_at, created_at, updated_at, deleted_at
+) on table public.profiles to authenticated;
 grant update (name, gender, phone_number, birthday, description) on table public.profiles
 to authenticated;
 
