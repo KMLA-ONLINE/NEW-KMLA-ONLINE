@@ -33,7 +33,9 @@ export function SpaceDiscoverCard({
       <div className="flex flex-1 flex-col p-4 pt-0">
         <SpaceAvatar space={space} className="ring-card -mt-7 mb-2 size-14 text-lg ring-4" />
 
-        <h3 className="truncate text-base font-semibold">{space.name}</h3>
+        {/* 이름은 자르지 않고 두 줄까지 흘린다 -- 카드에서 가장 중요한 정보를 "민사고 사진 공유 동..."
+            으로 뭉개면 고를 수가 없다. 설명은 두 줄에서 끊는다. */}
+        <h3 className="line-clamp-2 text-base font-semibold">{space.name}</h3>
         <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">{space.description}</p>
 
         <p className="text-muted-foreground mt-2 text-xs">
@@ -43,8 +45,10 @@ export function SpaceDiscoverCard({
         </p>
 
         {/* 가입 상태는 셋이다: 멤버 / 승인 대기 / 미가입. 대기 상태를 안 그리면 요청을 넣은 사람이
-            "가입" 버튼을 계속 보고 또 누른다. */}
-        <div className="mt-4">
+            "가입" 버튼을 계속 보고 또 누른다.
+            mt-auto로 바닥에 못 박는다 -- 흐름에 두면 이름·설명이 한 줄이냐 두 줄이냐에 따라 버튼이
+            위아래로 흔들려서, 나란한 카드들의 가입 버튼 높이가 제각각이 된다. */}
+        <div className="mt-auto pt-4">
           {space.isMember ? (
             <Button asChild variant="outline" className="w-full">
               <Link to={`/groups/${space.pubId}`}>열기</Link>

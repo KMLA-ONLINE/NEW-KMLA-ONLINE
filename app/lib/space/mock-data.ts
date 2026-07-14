@@ -170,6 +170,38 @@ export const mockSpaces: SpaceSummary[] = [
     pinnedAt: null,
     hasPendingRequest: false,
   },
+  // 이름이 아주 긴 경우. 카드는 두 줄까지 흘리고(자르면 무슨 그룹인지 알 수가 없다), 목록의
+  // 줄은 한 줄로 잘라낸다. 인기 목록 맨 위에 걸리도록 멤버 수를 크게 둔다.
+  {
+    pubId: "study-archive",
+    name: "민족사관고등학교 30·31·32기 통합 스터디 자료 공유 비공식 모임방",
+    description:
+      "기수 상관없이 자료를 나눕니다. 기수 상관없이 자료를 나눕니다. 기수 상관없이 자료를 나눕니다. 기수 상관없이 자료를 나눕니다.",
+    type: "community",
+    imageUrl: null,
+    coverImageUrl: mockImage("#1e40af", "#bfdbfe"),
+    joinPolicy: "public",
+    memberCount: 412,
+    isMember: false,
+    pinnedAt: null,
+    hasPendingRequest: false,
+  },
+  // 설명이 아주 긴 경우. 카드는 두 줄에서 끊고, 가입 버튼은 mt-auto라 그래도 바닥에 붙어 있다
+  // (설명 길이에 따라 버튼이 흔들리던 게 이 mock으로 잡히는 회귀다).
+  {
+    pubId: "exam-archive",
+    name: "기출 아카이브",
+    description:
+      "시험 기간마다 흩어지는 자료를 한곳에 모읍니다. 과목별 정리본, 기출, 오답노트, 선배들이 남긴 공부법까지 쌓아둡니다. 올릴 때는 과목과 학기를 제목에 꼭 적어 주시고, 저작권이 있는 교재 스캔본은 올리지 말아 주세요. 질문은 댓글로 남기면 아는 사람이 답해 줍니다.",
+    type: "community",
+    imageUrl: mockImage("#166534", "#86efac"),
+    coverImageUrl: null,
+    joinPolicy: "request",
+    memberCount: 265,
+    isMember: false,
+    pinnedAt: null,
+    hasPendingRequest: false,
+  },
   {
     pubId: "exam-survival",
     name: "시험기간 생존방",
