@@ -1,5 +1,12 @@
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react"
-import { useState } from "react"
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ImageIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react"
+import { useRef, useState } from "react"
 
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -73,6 +80,113 @@ function SectionHeader({
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return <section className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">{children}</section>
+}
+
+// 아이콘(spaces.image_url)과 커버(spaces.cover_image_url). 세우는 것도 떼는 것도 RPC다 -- 두 컬럼
+// 모두 update grant에 없기 때문이다(열면 올린 적도 없는 경로나 남의 space 경로를 그대로 박아 넣을 수
+// 있다). 그래서 이 섹션들은 운영 권한(can_manage_space = owner/admin)에만 열린다 -- 매니저는
+// 게시판만 굴린다.
+//
+// TODO(backend): 파일을 버킷의 <space.pubId>/<uuid>에 올린 뒤 확정한다. 슬롯마다 버킷이 다르다 --
+// 아이콘은 space-images + finalize_space_image, 커버는 space-covers + finalize_space_cover(그
+// RPC들이 경로·소유·MIME을 다시 본다). 제거는 clear_space_image / clear_space_cover이고 멱등이라
+// 상태를 몰라도 안전하게 부를 수 있다.
+
+// 고른 파일을 objectURL로 미리 보여준다. 갈아끼울 때 이전 URL을 놓아주지 않으면 그 파일이 탭을
+// 닫을 때까지 메모리에 남는다. 파일 입력의 ref는 이 훅이 들지 않는다 -- 훅 밖으로 나간 ref를
+// 렌더 중에 다시 읽는 모양이 되어 react-hooks가(정당하게) 잡는다. 입력을 그리는 쪽이 직접 든다.
+function useImageDraft(initial: string | null) {
+  const [url, setUrl] = useState(initial)
+
+  const replace = (next: string | null) =>
+    setUrl((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current)
+      return next
+    })
+
+  return [url, replace] as const
+}
+
+function ImageControls({
+  url,
+  onReplace,
+}: {
+  url: string | null
+  onReplace: (next: string | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
+      {/* 버킷이 실제로 받는 것과 같은 말이어야 한다 -- 둘 다 jpeg/png/webp, 10MB까지. 화면이
+          서버보다 관대하게 말하면 거짓말이 된다. */}
+      <p className="text-muted-foreground text-xs">JPG · PNG · WebP · 10MB까지</p>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+          <ImageIcon className="size-4" aria-hidden="true" />
+          {url ? "변경" : "업로드"}
+        </Button>
+        {url ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={() => {
+              onReplace(null)
+              // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
+              if (inputRef.current) inputRef.current.value = ""
+            }}
+          >
+            제거
+          </Button>
+        ) : null}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) onReplace(URL.createObjectURL(file))
+        }}
+      />
+    </div>
+  )
+}
+
+function ImageSection({ group }: { group: GroupSpace }) {
+  const [url, replace] = useImageDraft(group.imageUrl)
+
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">그룹 아이콘</h2>
+      <div className="flex items-center gap-4">
+        <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-xl font-semibold">
+          {url ? <img src={url} alt="" className="size-full object-cover" /> : group.name.charAt(0)}
+        </div>
+        <ImageControls url={url} onReplace={replace} />
+      </div>
+    </SettingsCard>
+  )
+}
+
+function CoverSection({ group }: { group: GroupSpace }) {
+  const [url, replace] = useImageDraft(group.coverImageUrl)
+
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">그룹 커버</h2>
+      <div className="flex flex-col gap-3">
+        {/* 헤더와 같은 그라디언트를 폴백으로 써서, 올리기 전에도 결과가 어떻게 보일지 그대로 보인다. */}
+        <div className="from-primary/30 to-primary/5 h-24 w-full overflow-hidden rounded-lg border bg-linear-to-br sm:h-28">
+          {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
+        </div>
+        <ImageControls url={url} onReplace={replace} />
+      </div>
+    </SettingsCard>
+  )
 }
 
 function BasicInfoSection({ group }: { group: GroupSpace }) {
@@ -460,6 +574,8 @@ export function GroupSettings({
     <div className="flex flex-col gap-4">
       {canManage ? (
         <>
+          <ImageSection group={group} />
+          <CoverSection group={group} />
           <BasicInfoSection group={group} />
           <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
           {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}

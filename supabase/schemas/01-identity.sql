@@ -440,8 +440,35 @@ end $$;
 
 revoke execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.withdraw_profile() from public, anon, authenticated, service_role;
 grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status) to authenticated;
-grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
-revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
+-- 이미지를 뗀다. finalize_*는 세우기만 해서 한 번 올리면 영영 못 뗐다. avatar_url·cover_image_url은
+-- 클라이언트 update grant에 없으므로(name/gender/phone_number/birthday/description뿐) 떼는 것도
+-- RPC여야 한다. 뗀 blob은 청소 큐로 보낸다 -- 고아 스윕이 어차피 걷어가지만 48시간을 기다릴 이유가 없다.
+create function public.clear_avatar()
+returns void language plpgsql security definer set search_path='' as $$
+declare
+  caller_id bigint := private.require_current_profile(false);
+  previous_path text;
+begin
+  select avatar_url into previous_path from public.profiles where id = caller_id for update;
+  if previous_path is null then return; end if;
+  perform private.enqueue_storage_cleanup('avatars', previous_path, caller_id);
+  update public.profiles set avatar_url = null where id = caller_id;
+end $$;
+
+create function public.clear_cover_image()
+returns void language plpgsql security definer set search_path='' as $$
+declare
+  caller_id bigint := private.require_current_profile(false);
+  previous_path text;
+begin
+  select cover_image_url into previous_path from public.profiles where id = caller_id for update;
+  if previous_path is null then return; end if;
+  perform private.enqueue_storage_cleanup('profile-covers', previous_path, caller_id);
+  update public.profiles set cover_image_url = null where id = caller_id;
+end $$;
+
+grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text), public.clear_avatar(), public.clear_cover_image() to authenticated;
+revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text), public.clear_avatar(), public.clear_cover_image() from public, anon, service_role;
 
 -- 열쇠고리 RPC 네 개. bytea가 PostgREST를 지나면 hex 문자열(`\x00ff`)이 되어 2배로 부푸므로
 -- 경계에서는 base64로 주고받고 컬럼은 bytea로 남긴다. 클라이언트 쓰기 경로가 이 세 함수뿐인

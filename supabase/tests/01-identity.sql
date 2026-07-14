@@ -17,6 +17,7 @@ declare
   sealed bytea := decode(repeat('dd', 60), 'hex');
   resealed bytea := decode(repeat('ee', 60), 'hex');
   vault record;
+  avatar_path text;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
   values
@@ -112,6 +113,44 @@ begin
   if not exists (select 1 from public.user_keys where user_id = profile1 and identity_public_key = pubkey_new) then
     raise exception 'rotate must replace the identity key';
   end if;
+
+  -- -------------------------------------------------------------------------
+  -- 프로필 이미지: 세우는 길만 있으면 한 번 올린 사진을 영영 못 뗀다
+  -- -------------------------------------------------------------------------
+  -- avatar_url·cover_image_url은 클라이언트 update grant에 없다(name/gender/phone_number/
+  -- birthday/description뿐). 그래서 세우는 것도 떼는 것도 RPC여야 한다.
+  if has_column_privilege('authenticated', 'public.profiles', 'avatar_url', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'cover_image_url', 'UPDATE')
+    or not has_function_privilege('authenticated', 'public.clear_avatar()', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.clear_cover_image()', 'EXECUTE')
+    or has_function_privilege('anon', 'public.clear_avatar()', 'EXECUTE')
+  then
+    raise exception 'profile image contract failed';
+  end if;
+
+  avatar_path := user1::text || '/' || gen_random_uuid()::text;
+  insert into storage.objects (bucket_id, name, owner_id, metadata)
+  values ('avatars', avatar_path, user1::text, '{"mimetype":"image/png","size":1000}'::jsonb);
+
+  perform public.finalize_avatar(avatar_path);
+  if not exists (select 1 from public.profiles where id = profile1 and avatar_url = avatar_path) then
+    raise exception 'finalize_avatar must set the avatar';
+  end if;
+
+  perform public.clear_avatar();
+  if exists (select 1 from public.profiles where id = profile1 and avatar_url is not null) then
+    raise exception 'clear_avatar must remove the avatar';
+  end if;
+  -- 뗀 blob은 청소 큐로 보낸다. 안 그러면 아무도 가리키지 않는 사진이 버킷에 남는다.
+  if not exists (
+    select 1 from private.attachment_cleanup_queue
+    where storage_bucket = 'avatars' and storage_path = avatar_path and processed_at is null
+  ) then
+    raise exception 'clearing the avatar must enqueue the blob';
+  end if;
+
+  -- 없는 걸 또 떼도 조용히 끝난다(멱등) -- UI가 상태를 몰라도 안전하게 부를 수 있어야 한다.
+  perform public.clear_avatar();
 
   -- 탈퇴하면 열쇠고리도 같이 태운다. 남겨둬 봐야 아무도 열 수 없는 blob이고, 상대방 쪽
   -- 히스토리는 상대의 키로 그대로 읽힌다.

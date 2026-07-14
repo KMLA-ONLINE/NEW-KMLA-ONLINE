@@ -68,6 +68,8 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 | `revoke_space_invite(invite_id)`                              | 관리자    | 초대장 폐기                                                                    |
 | `set_space_member_role(space_id, user_id, role)`              | 관리자    | 역할 변경. **owner는 세우지도 내리지도 못한다**(위 "owner와 admin은 대등하다") |
 | `transfer_space_ownership(space_id, new_owner_id)`            | **owner** | 소유권 이양. 대상은 현재 admin이어야 한다                                      |
+| `finalize_space_image` / `finalize_space_cover(space_id, path)` | 관리자   | 올려둔 blob을 `image_url`(아이콘) / `cover_image_url`(커버)에 맨다. 슬롯마다 버킷이 다르다(`space-images` / `space-covers`). 두 컬럼이 update grant에 없는 이유이고, 갈아끼우면 이전 blob은 청소 큐로 간다 |
+| `clear_space_image` / `clear_space_cover(space_id)`            | 관리자    | 이미지를 뗀다(멱등). 뗀 blob은 청소 큐로                                        |
 
 space 생성(`create_space`)은 아직 없다 — 테이블 직접 insert는 service_role만 가능하다.
 

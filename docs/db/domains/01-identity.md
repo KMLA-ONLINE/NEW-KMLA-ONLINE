@@ -23,6 +23,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 | `withdraw_profile()`                    | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                                    |
 | `finalize_avatar(storage_path)`         | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결                             |
 | `finalize_cover_image(storage_path)`    | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결                 |
+| `clear_avatar()` / `clear_cover_image()` | 본인 profile                                            | O    | 사진을 뗀다(멱등). 뗀 blob은 청소 큐로. `avatar_url`·`cover_image_url`이 update grant에 없어 RPC여야 한다 |
 | `bootstrap_first_app_admin(profile_id)` | service_role                                             | O    | admin이 하나도 없을 때 첫 admin 지정                                        |
 | `get_my_key_vault()`                    | 본인 profile (accepted 불필요)                           | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
 | `get_identity_public_keys(user_ids[])`  | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |

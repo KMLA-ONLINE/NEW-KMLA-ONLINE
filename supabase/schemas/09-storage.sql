@@ -12,6 +12,26 @@ create table private.attachment_cleanup_queue (
 );
 create index idx_attachment_cleanup_queue_pending on private.attachment_cleanup_queue(processed_at,available_at);
 
+-- blob 하나를 청소 큐에 얹는다. 이미 큐에 있으면 되살린다 -- 같은 경로가 처리됐다가 다시 쓰일 수
+-- 있으므로 processed_at을 비우고 available_at을 가장 이른 쪽으로 당긴다.
+--
+-- 한 곳에 두는 이유: 이미지를 갈아끼울 때(finalize_*)와 뗄 때(clear_*) 똑같이 일어나는데, ON
+-- CONFLICT의 세 줄 중 하나만 빠져도 blob이 영영 안 지워지거나(processed_at이 남아서) 이미 끝난
+-- 청소가 되살아난다. 조용히 어긋나기 딱 좋은 규칙이라 복사하지 않는다.
+--
+-- 여러 blob을 한꺼번에 얹는 쪽(set_post_attachments·soft_delete_post)은 집합 insert가 더 곧고
+-- 싸므로 그대로 둔다 -- 단건 헬퍼를 행마다 부르는 건 같은 규칙의 재사용이 아니라 낭비다.
+create function private.enqueue_storage_cleanup(p_bucket text, p_path text, p_requested_by bigint default null)
+returns void language sql security definer set search_path = '' as $$
+  insert into private.attachment_cleanup_queue(storage_bucket, storage_path, requested_by)
+  values (p_bucket, p_path, p_requested_by)
+  on conflict (storage_bucket, storage_path) do update
+  set available_at = least(private.attachment_cleanup_queue.available_at, excluded.available_at),
+      processed_at = null,
+      last_error = null;
+$$;
+revoke execute on function private.enqueue_storage_cleanup(text,text,bigint) from public, anon, authenticated, service_role;
+
 create policy avatars_select on storage.objects for select to authenticated using (
   bucket_id='avatars' and exists(select 1 from public.profiles p where p.avatar_url=storage.objects.name and p.deleted_at is null)
 );
@@ -20,6 +40,9 @@ create policy profile_covers_select on storage.objects for select to authenticat
 );
 create policy space_images_select on storage.objects for select to authenticated using (
   bucket_id='space-images' and exists(select 1 from public.spaces s where s.image_url=storage.objects.name and s.deleted_at is null)
+);
+create policy space_covers_select on storage.objects for select to authenticated using (
+  bucket_id='space-covers' and exists(select 1 from public.spaces s where s.cover_image_url=storage.objects.name and s.deleted_at is null)
 );
 create policy post_files_select on storage.objects for select to authenticated using (
   bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=storage.objects.name and private.can_access_post(a.post_id))
@@ -52,6 +75,16 @@ create policy profile_covers_insert on storage.objects for insert to authenticat
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
   bucket_id='space-images' and exists(
+    select 1 from public.spaces s
+    where s.pub_id::text=split_part(storage.objects.name,'/',1)
+      and s.deleted_at is null
+      and private.can_manage_space(s.id)
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
+  )
+);
+-- 커버는 아이콘과 같은 규칙이고 버킷만 다르다(슬롯당 버킷 하나 -- avatars/profile-covers와 같은 이유).
+create policy space_covers_insert on storage.objects for insert to authenticated with check (
+  bucket_id='space-covers' and exists(
     select 1 from public.spaces s
     where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
@@ -156,12 +189,16 @@ begin
   select 'space-images',s.image_url from public.spaces s
   where s.deleted_at<now()-interval '7 days' and s.image_url is not null
   union
+  select 'space-covers',s.cover_image_url from public.spaces s
+  where s.deleted_at<now()-interval '7 days' and s.cover_image_url is not null
+  union
   select o.bucket_id,o.name from storage.objects o
   where o.created_at<now()-interval '48 hours'
-    and o.bucket_id in ('avatars','profile-covers','space-images','post-files','message-files','message-files-encrypted')
+    and o.bucket_id in ('avatars','profile-covers','space-images','space-covers','post-files','message-files','message-files-encrypted')
     and not exists(select 1 from public.profiles p where o.bucket_id='avatars' and p.avatar_url=o.name)
     and not exists(select 1 from public.profiles p where o.bucket_id='profile-covers' and p.cover_image_url=o.name)
     and not exists(select 1 from public.spaces s where o.bucket_id='space-images' and s.image_url=o.name)
+    and not exists(select 1 from public.spaces s where o.bucket_id='space-covers' and s.cover_image_url=o.name)
     and not exists(select 1 from public.post_attachments a where o.bucket_id='post-files' and a.storage_path=o.name)
     and not exists(select 1 from public.message_attachments a where o.bucket_id in ('message-files','message-files-encrypted') and a.storage_bucket=o.bucket_id and a.storage_path=o.name)
   on conflict(storage_bucket,storage_path) do update
@@ -204,6 +241,7 @@ begin
   elsif bucket='avatars' then update public.profiles set avatar_url=null where avatar_url=path;
   elsif bucket='profile-covers' then update public.profiles set cover_image_url=null where cover_image_url=path;
   elsif bucket='space-images' then update public.spaces set image_url=null where image_url=path and deleted_at is not null;
+  elsif bucket='space-covers' then update public.spaces set cover_image_url=null where cover_image_url=path and deleted_at is not null;
   else raise exception 'invalid cleanup bucket'; end if;
   update private.attachment_cleanup_queue set processed_at=now(),last_error=null where id=p_id;
 end $$;

@@ -26,6 +26,10 @@ create table public.spaces (
   name text not null,
   description text null,
   image_url text null,
+  -- 배너. image_url(아이콘)과 슬롯이 다르므로 버킷도 다르다(space-images / space-covers) --
+  -- profiles가 avatars와 profile-covers를 가르는 것과 같은 이유다. 둘 다 컬럼 grant에 없고
+  -- finalize_space_cover / clear_space_cover로만 쓴다.
+  cover_image_url text null,
   join_policy public.space_join_policy not null default 'public',
   post_policy public.space_post_policy not null default 'all',
   -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
@@ -298,7 +302,7 @@ create policy space_categories_insert on public.space_categories for insert to a
 create policy space_categories_update on public.space_categories for update to authenticated using (private.can_curate_space(space_id)) with check (private.can_curate_space(space_id));
 create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_curate_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,cover_image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
 -- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
 grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
 grant update (name,description,allow_anonymous_posts,post_policy) on public.spaces to authenticated;
@@ -485,5 +489,122 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;
+-- 아이콘(image_url)과 커버(cover_image_url)는 슬롯만 다르지 규칙이 같다: 경로가 그 space의 것이어야
+-- 하고, blob은 내가 방금 올린 실물이어야 한다. 슬롯마다 복사하면 한쪽만 고쳐진 채로 남으므로 한 곳에 둔다.
+--
+-- owner_id를 보는 것이 핵심이다. finalize_avatar는 경로 접두사가 곧 업로더의 uid라 소유가 경로에
+-- 증명되지만, 여기 접두사는 space라 그렇지 않다 -- 안 보면 그 space의 관리자가 남이 올려둔 blob을
+-- 자기 그룹에 걸 수 있다(validate_post_attachments가 owner_id를 보는 것과 같은 이유).
+create function private.require_space_upload(p_space_pub_id text, p_bucket text, p_storage_path text)
+returns void language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not private.has_uuid_object_suffix(p_storage_path, p_space_pub_id || '/')
+    or not exists(
+      select 1 from storage.objects o
+      where o.bucket_id = p_bucket
+        and o.name = p_storage_path
+        and o.owner_id = (select auth.uid())::text
+        and o.created_at >= now() - interval '24 hours'
+        and coalesce(o.metadata->>'mimetype', '') in ('image/jpeg', 'image/png', 'image/webp')
+    )
+  then raise exception 'invalid space image object'; end if;
+end $$;
+revoke execute on function private.require_space_upload(text,text,text) from public, anon, authenticated, service_role;
+
+-- 그룹 아이콘 확정. blob은 space_images_insert 정책대로 <space.pub_id>/<uuid>에 먼저 올라오고, 이
+-- 함수가 그것을 spaces.image_url에 맨다. 확정 전의 blob은 아무 space도 가리키지 않으므로 고아
+-- 스윕(enqueue_due_storage_cleanup)이 걷어간다 -- 업로드가 중간에 끊겨도 되감을 보상 트랜잭션이
+-- 필요 없는 이유다.
+--
+-- image_url·cover_image_url을 컬럼 grant로 열지 않는 이유가 이것이다: 열면 클라이언트가 올린 적도
+-- 없는 경로나 남의 space 경로를 그대로 박아 넣을 수 있다. 그래서 spaces의 update grant는
+-- name/description/allow_anonymous_posts/post_policy뿐이고, 이미지는 아래 RPC들만 쓴다.
+create function public.finalize_space_image(p_space_id bigint, p_storage_path text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  space_pub_id text;
+  previous_path text;
+begin
+  -- security definer라 spaces_update 정책이 적용되지 않는다 -- 관리자 검사를 여기서 다시 하지
+  -- 않으면 이 RPC가 그 정책을 우회하는 뒷문이 된다. 권한 조건을 SELECT에 합쳐 "없는 space"와
+  -- "권한 없는 space"를 똑같이 0행으로 만든다(soft_delete_post와 같은 이유).
+  select s.pub_id, s.image_url into space_pub_id, previous_path
+  from public.spaces s
+  where s.id = p_space_id and s.deleted_at is null and private.can_manage_space(s.id)
+  for update;
+  if not found then raise exception 'space manager required'; end if;
+
+  perform private.require_space_upload(space_pub_id, 'space-images', p_storage_path);
+
+  -- 갈아끼우는 순간 이전 blob은 고아다. 스윕이 어차피 걷어가지만 지금 큐에 넣으면 48시간을 안 기다린다.
+  if previous_path is not null and previous_path <> p_storage_path then
+    perform private.enqueue_storage_cleanup('space-images', previous_path, caller_id);
+  end if;
+
+  update public.spaces set image_url = p_storage_path where id = p_space_id;
+end $$;
+
+-- 그룹 커버 확정. 아이콘과 같은 계약이고 버킷(space-covers)과 컬럼만 다르다.
+create function public.finalize_space_cover(p_space_id bigint, p_storage_path text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  space_pub_id text;
+  previous_path text;
+begin
+  select s.pub_id, s.cover_image_url into space_pub_id, previous_path
+  from public.spaces s
+  where s.id = p_space_id and s.deleted_at is null and private.can_manage_space(s.id)
+  for update;
+  if not found then raise exception 'space manager required'; end if;
+
+  perform private.require_space_upload(space_pub_id, 'space-covers', p_storage_path);
+
+  if previous_path is not null and previous_path <> p_storage_path then
+    perform private.enqueue_storage_cleanup('space-covers', previous_path, caller_id);
+  end if;
+
+  update public.spaces set cover_image_url = p_storage_path where id = p_space_id;
+end $$;
+
+-- 이미지를 뗀다(clear_avatar와 같은 계약). 세우는 길만 있으면 한 번 올린 이미지를 영영 못 뗀다.
+-- 멱등이다 -- 이미 없으면 조용히 끝나므로 UI가 상태를 몰라도 안전하게 부를 수 있다.
+create function public.clear_space_image(p_space_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  previous_path text;
+begin
+  -- finalize와 같은 이유로 권한 조건을 SELECT에 합친다 -- "없는 space"와 "권한 없는 space"가
+  -- 똑같이 0행이 되어 존재 오라클이 없다.
+  select s.image_url into previous_path
+  from public.spaces s
+  where s.id = p_space_id and s.deleted_at is null and private.can_manage_space(s.id)
+  for update;
+  if not found then raise exception 'space manager required'; end if;
+  if previous_path is null then return; end if;
+
+  perform private.enqueue_storage_cleanup('space-images', previous_path, caller_id);
+  update public.spaces set image_url = null where id = p_space_id;
+end $$;
+
+create function public.clear_space_cover(p_space_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  previous_path text;
+begin
+  select s.cover_image_url into previous_path
+  from public.spaces s
+  where s.id = p_space_id and s.deleted_at is null and private.can_manage_space(s.id)
+  for update;
+  if not found then raise exception 'space manager required'; end if;
+  if previous_path is null then return; end if;
+
+  perform private.enqueue_storage_cleanup('space-covers', previous_path, caller_id);
+  update public.spaces set cover_image_url = null where id = p_space_id;
+end $$;
+
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint), public.finalize_space_image(bigint,text), public.clear_space_image(bigint), public.finalize_space_cover(bigint,text), public.clear_space_cover(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint), public.finalize_space_image(bigint,text), public.clear_space_image(bigint), public.finalize_space_cover(bigint,text), public.clear_space_cover(bigint) to authenticated;

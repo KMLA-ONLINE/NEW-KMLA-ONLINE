@@ -10,6 +10,17 @@ export type GroupSpace = {
   type: "group" | "community"
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
+  /**
+   * spaces.image_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백.
+   * 쓰는 길은 finalize_space_image/clear_space_image RPC뿐이다 -- 컬럼 grant에 image_url이 없다.
+   */
+  imageUrl: string | null
+  /**
+   * spaces.cover_image_url 기반 서명 URL(로더가 채움). null이면 그라디언트 폴백.
+   * 아이콘과 슬롯이 달라 버킷도 다르다(space-images / space-covers). 쓰는 길은
+   * finalize_space_cover/clear_space_cover RPC뿐 -- 컬럼 grant에 없다.
+   */
+  coverImageUrl: string | null
   joinPolicy: "public" | "request" | "invite_only"
   /**
    * spaces.post_policy. 누가 **메인 글**을 쓸 수 있는가. 'managers'면 owner/admin/manager만 쓴다
@@ -35,6 +46,12 @@ export type GroupSpace = {
   memberCount: number
   /** 현재 사용자가 이 space의 멤버인지(space_members). */
   isMember: boolean
+  /**
+   * space_members.pinned_at 중 **내 행**. 개인 고정이라 나에게만 보이고, 목록에서 이 그룹을 맨 위로
+   * 올리는 데 쓴다. posts.pinned_at(관리자가 글을 모두에게 고정)과는 다른 물건이다.
+   * 쓰기는 RPC가 아니라 컬럼 grant로 직접 update한다 -- 정책이 내 행만 열어 준다.
+   */
+  pinnedAt: string | null
   /**
    * 현재 사용자의 이 space에서의 역할(space_members.role 중 내 행). null이면 비멤버.
    * isMember처럼 컬럼이 아니라 로더가 파생한다. owner/admin이면 관리 UI가 열린다
