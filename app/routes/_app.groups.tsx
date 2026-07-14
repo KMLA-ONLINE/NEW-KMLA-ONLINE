@@ -1,234 +1,157 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "react-router"
-import { SpaceCard } from "~/components/space/space-card"
 
-// pubId는 spaces.pub_id 슬러그이고 그룹 내부 경로(/groups/:pubId)에 실린다. 로더가 붙기 전이라
-// 그룹 내부는 아직 pubId와 무관하게 같은 mock 하나를 보여준다 -- 어느 카드를 눌러도 화면은 같다.
-//
-// pinnedAt은 space_members.pinned_at 중 **내 행**이다. 개인 고정이라 나에게만 보인다.
-const officialSpaces = [
-  {
-    pubId: "student-council",
-    name: "학생회",
-    description: "학생회 공지, 행사 운영, 회의 내용을 확인하는 공식 그룹입니다.",
-    pinnedAt: null as string | null,
-  },
-  {
-    pubId: "academics",
-    name: "학사운영",
-    description: "학사 일정, 시험 안내, 수업 관련 공지를 확인하는 그룹입니다.",
-    pinnedAt: null as string | null,
-  },
-  {
-    pubId: "dormitory",
-    name: "기숙사",
-    description: "기숙사 생활, 시설 점검, 생활 규칙 관련 공지를 확인하는 그룹입니다.",
-    pinnedAt: "2026-07-13T02:00:00.000Z" as string | null,
-  },
-  {
-    pubId: "clubs",
-    name: "동아리",
-    description: "동아리 모집, 활동 일정, 행사 안내를 확인하는 그룹입니다.",
-    pinnedAt: null as string | null,
-  },
+import { SpaceDiscoverCard } from "~/components/space/space-discover-card"
+import { SpaceRow } from "~/components/space/space-row"
+import { mockSpaces } from "~/lib/space/mock-data"
+import type { SpaceSummary } from "~/lib/space/types"
+import { cn } from "~/lib/utils"
+
+type SpaceTab = "official" | "community"
+
+const TABS: { id: SpaceTab; label: string }[] = [
+  { id: "official", label: "공식" },
+  { id: "community", label: "비공식" },
 ]
 
-const joinedUnofficialSpaces = [
-  {
-    pubId: "market",
-    name: "민사고 먹9 사9 팔9",
-    description: "민사고 안에서 필요한 물건을 사고팔거나 나눔하는 비공식 그룹입니다.",
-    memberCount: "1.2K명",
-    pinnedAt: null as string | null,
-  },
-  {
-    pubId: "lost-and-found",
-    name: "민사고 떨99 줍9",
-    description: "분실물과 습득물을 공유하고 찾아주는 비공식 그룹입니다.",
-    memberCount: "856명",
-    pinnedAt: null as string | null,
-  },
-  {
-    pubId: "class-30",
-    name: "30기 민사 재학생",
-    description: "30기 재학생끼리 학교생활 정보와 일정을 공유하는 그룹입니다.",
-    memberCount: "734명",
-    pinnedAt: "2026-07-13T05:00:00.000Z" as string | null,
-  },
-  {
-    pubId: "class-30-boys",
-    name: "30남자 민재",
-    description: "30기 남학생들이 자유롭게 소통하는 비공식 그룹입니다.",
-    memberCount: "612명",
-    pinnedAt: null as string | null,
-  },
-]
+// 인기 그룹은 맛보기만. 검색이 붙은 전체 목록은 /groups/discover가 맡는다.
+const POPULAR_PREVIEW = 4
 
-const recentOfficialNotices = [
-  "7월 학생회 회의 일정 안내",
-  "기숙사 시설 점검 안내",
-  "동아리 활동 보고서 제출 안내",
-]
-
-const recentUnofficialPosts = [
-  {
-    title: "기말고사 공부법 공유해요!",
-    count: 32,
-  },
-  {
-    title: "대회팀 추천 부탁드려요",
-    count: 28,
-  },
-  {
-    title: "교재 나눔합니다",
-    count: 24,
-  },
-]
+// 고정한 그룹이 맨 위, 최근에 고정한 순. idx_space_members_user_pinned가 (user_id, pinned_at desc)로
+// 잡혀 있는 이유가 이 정렬이고, 로더가 붙으면 서버가 한다. Array.sort는 안정 정렬이라 둘 다 고정이
+// 아니면 원래 순서가 유지된다.
+function sortPinnedFirst(spaces: SpaceSummary[]) {
+  return [...spaces].sort((first, second) => {
+    if ((first.pinnedAt !== null) !== (second.pinnedAt !== null)) return first.pinnedAt ? -1 : 1
+    if (first.pinnedAt && second.pinnedAt) return second.pinnedAt.localeCompare(first.pinnedAt)
+    return 0
+  })
+}
 
 export default function GroupsPage() {
-  const [activeTab, setActiveTab] = useState<"official" | "unofficial">("official")
+  const [tab, setTab] = useState<SpaceTab>("official")
+  const [spaces, setSpaces] = useState(mockSpaces)
 
-  // TODO(backend): 고정은 space_members.pinned_at을 직접 update하면 된다 -- 정책이 내 행만 열고
-  // 컬럼 grant에 pinned_at이 있어 RPC가 필요 없다. 서버가 now()를 찍으므로 아래 new Date()는
-  // mock 전용이고 로더가 붙으면 사라진다.
-  const [pinnedAt, setPinnedAt] = useState<Record<string, string | null>>(() =>
-    Object.fromEntries(
-      [...officialSpaces, ...joinedUnofficialSpaces].map((space) => [space.pubId, space.pinnedAt])
-    )
-  )
-
+  // TODO(backend): 고정은 space_members.pinned_at을 직접 update한다 -- 정책이 내 행만 열고 컬럼
+  // grant에 pinned_at이 있어 RPC가 필요 없다. 서버가 now()를 찍으므로 이 new Date()는 mock 전용이다.
   const togglePin = (pubId: string) =>
-    setPinnedAt((current) => ({
-      ...current,
-      [pubId]: current[pubId] ? null : new Date().toISOString(),
-    }))
+    setSpaces((current) =>
+      current.map((space) =>
+        space.pubId === pubId
+          ? { ...space, pinnedAt: space.pinnedAt ? null : new Date().toISOString() }
+          : space
+      )
+    )
 
-  // 고정한 그룹이 맨 위, 최근에 고정한 순. idx_space_members_user_pinned가 (user_id, pinned_at desc)로
-  // 잡혀 있는 이유가 이 정렬이고, 로더가 붙으면 이건 서버가 한다. Array.sort는 안정 정렬이라
-  // 둘 다 고정이 아니면 원래 순서가 유지된다.
-  const sortByPin = <T extends { pubId: string }>(spaces: T[]) =>
-    [...spaces].sort((first, second) => {
-      const firstPin = pinnedAt[first.pubId]
-      const secondPin = pinnedAt[second.pubId]
-      if (Boolean(firstPin) !== Boolean(secondPin)) return firstPin ? -1 : 1
-      if (firstPin && secondPin) return secondPin.localeCompare(firstPin)
-      return 0
-    })
+  // TODO(backend): join_space(space_id)가 'joined'(공개) 또는 'requested'(승인제)를 돌려준다 --
+  // 아래 두 갈래가 정확히 그 두 응답이다. invite_only는 여기 올 수가 없다(목록에 뜨질 않는다).
+  const join = (pubId: string) =>
+    setSpaces((current) =>
+      current.map((space) => {
+        if (space.pubId !== pubId) return space
+        if (space.joinPolicy === "request") return { ...space, hasPendingRequest: true }
+        return { ...space, isMember: true, memberCount: space.memberCount + 1 }
+      })
+    )
 
-  const isOfficial = activeTab === "official"
+  const official = sortPinnedFirst(spaces.filter((space) => space.type === "group"))
+  const joined = sortPinnedFirst(
+    spaces.filter((space) => space.type === "community" && space.isMember)
+  )
+  // 디렉터리 정렬은 멤버 많은 순이다 -- idx_spaces_active_directory가 (join_policy, member_count)로
+  // 잡혀 있다. 개인화할 근거가 스키마에 없으므로 "추천"이라 부르지 않고 인기순이라고 말한다.
+  const popular = spaces
+    .filter((space) => space.type === "community" && !space.isMember)
+    .sort((first, second) => second.memberCount - first.memberCount)
+    .slice(0, POPULAR_PREVIEW)
 
   return (
-    <div className="mx-auto grid w-full max-w-7xl gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <section className="flex min-w-0 flex-col gap-4">
-        <section className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold">그룹</h1>
-          <p className="text-muted-foreground text-sm">
-            공식 그룹과 비공식 커뮤니티를 한 곳에서 확인해요.
-          </p>
-        </section>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+      <h1 className="text-2xl font-semibold">그룹</h1>
 
-        <div className="bg-card flex w-fit rounded-xl border p-1">
+      <nav className="flex items-center gap-1 border-b" aria-label="그룹 종류">
+        {TABS.map((item) => (
           <button
-            onClick={() => setActiveTab("official")}
-            className={
-              isOfficial
-                ? "bg-primary/10 text-primary rounded-lg px-4 py-2 text-sm font-medium"
-                : "text-muted-foreground rounded-lg px-4 py-2 text-sm font-medium"
-            }
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            aria-current={tab === item.id ? "page" : undefined}
+            className={cn(
+              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+              tab === item.id
+                ? "border-foreground text-foreground"
+                : "text-muted-foreground hover:text-foreground border-transparent"
+            )}
           >
-            공식
+            {item.label}
           </button>
+        ))}
+      </nav>
 
-          <button
-            onClick={() => setActiveTab("unofficial")}
-            className={
-              !isOfficial
-                ? "bg-primary/10 text-primary rounded-lg px-4 py-2 text-sm font-medium"
-                : "text-muted-foreground rounded-lg px-4 py-2 text-sm font-medium"
-            }
-          >
-            비공식
-          </button>
-        </div>
-
-        {isOfficial ? (
-          <section className="flex flex-col gap-1.5 sm:gap-2">
-            {sortByPin(officialSpaces).map((space) => (
-              <SpaceCard
+      {tab === "official" ? (
+        <section className="flex flex-col gap-3">
+          {/* 공식 그룹엔 가입 버튼도 찾기도 없다 -- 전교생이 이미 속해 있어서 고를 게 없다.
+              남는 결정은 "어느 걸 자주 보나"뿐이고, 그게 핀이다. */}
+          <p className="text-muted-foreground text-sm">학교가 운영하는 그룹입니다.</p>
+          <ul className="flex flex-col gap-1.5">
+            {official.map((space) => (
+              <SpaceRow
                 key={space.pubId}
                 space={space}
-                variant="group"
-                to={`/groups/${space.pubId}`}
-                isPinned={Boolean(pinnedAt[space.pubId])}
                 onTogglePin={() => togglePin(space.pubId)}
               />
             ))}
+          </ul>
+        </section>
+      ) : (
+        <div className="flex flex-col gap-7">
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-semibold">
+              내 그룹 <span className="text-muted-foreground font-normal">{joined.length}</span>
+            </h2>
+            {joined.length > 0 ? (
+              <ul className="flex flex-col gap-1.5">
+                {joined.map((space) => (
+                  <SpaceRow
+                    key={space.pubId}
+                    space={space}
+                    onTogglePin={() => togglePin(space.pubId)}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground bg-card rounded-xl border px-4 py-6 text-center text-sm">
+                아직 들어간 비공식 그룹이 없습니다. 아래에서 둘러보세요.
+              </p>
+            )}
           </section>
-        ) : (
-          <section className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold">가입한 그룹</h2>
-                <p className="text-muted-foreground text-sm">내가 참여 중인 비공식 그룹</p>
-              </div>
 
+          <section className="flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold">인기 그룹</h2>
               <Link
                 to="/groups/discover"
-                className="rounded-md border px-4 py-2 text-sm font-medium"
+                className="text-muted-foreground hover:text-foreground text-sm transition-colors"
               >
-                그룹 찾기
+                전체 보기 →
               </Link>
             </div>
-
-            <section className="flex flex-col gap-1.5 sm:gap-2">
-              {sortByPin(joinedUnofficialSpaces).map((space) => (
-                <SpaceCard
-                  key={space.pubId}
-                  space={space}
-                  variant="community"
-                  to={`/groups/${space.pubId}`}
-                  isPinned={Boolean(pinnedAt[space.pubId])}
-                  onTogglePin={() => togglePin(space.pubId)}
-                />
-              ))}
-            </section>
+            {popular.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {popular.map((space) => (
+                  <SpaceDiscoverCard
+                    key={space.pubId}
+                    space={space}
+                    onJoin={() => join(space.pubId)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">더 들어갈 그룹이 없습니다.</p>
+            )}
           </section>
-        )}
-      </section>
-
-      <aside className="hidden flex-col gap-3 xl:flex">
-        {isOfficial ? (
-          <SidePanel title="최근 공지">
-            <ul className="space-y-2 text-sm">
-              {recentOfficialNotices.map((notice) => (
-                <li key={notice} className="truncate">
-                  {notice}
-                </li>
-              ))}
-            </ul>
-          </SidePanel>
-        ) : (
-          <SidePanel title="최근 댓글 많은 글">
-            <ul className="space-y-2 text-sm">
-              {recentUnofficialPosts.map((post) => (
-                <li key={post.title} className="flex justify-between gap-3">
-                  <span className="truncate">{post.title}</span>
-                  <span className="text-muted-foreground shrink-0">{post.count}</span>
-                </li>
-              ))}
-            </ul>
-          </SidePanel>
-        )}
-      </aside>
+        </div>
+      )}
     </div>
-  )
-}
-
-function SidePanel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="bg-card rounded-2xl border p-4">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      {children}
-    </section>
   )
 }
