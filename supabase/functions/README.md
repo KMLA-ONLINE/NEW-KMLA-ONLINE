@@ -21,4 +21,16 @@ npx supabase functions deploy storage-maintenance --no-verify-jwt
 
 Schedule an HTTPS `POST` to `storage-maintenance` at least daily with the project secret key in the `apikey` header. Store the key only in the scheduler's secret store.
 
-The maintenance function enqueues due and orphaned Storage objects, claims them, deletes each blob through the Storage API, and finalizes or fails the queue row. It then calls `purge_due_spaces`, which permanently removes spaces soft-deleted more than 7 days ago. That call comes last on purpose: a space is only safe to purge once its blobs are actually gone from Storage, and `purge_space` skips (rather than forces) any space whose attachment rows or `image_url` are still set. Skipped spaces are retried on the next run. The response summary reports `purgedSpaces` and `skippedSpaces` alongside the blob counters.
+## What `storage-maintenance` does
+
+Three steps, and **the order is part of the contract: blobs go out first.**
+
+1. **Blobs.** `enqueue_due_storage_cleanup` queues due and orphaned objects; then claim → delete through the Storage API → `complete_storage_cleanup` (or `fail_storage_cleanup`, which backs off exponentially). It loops until the queue is dry, capped at 20 rounds of 100 — a single round would drain only 100 objects per daily run, so a busy queue would never shrink. Objects are removed per bucket in one call, not one call each. A `remove` on an object that is already gone is not an error; Storage delete is idempotent, so success just means "the file is not there", which is the state we wanted.
+2. **`purge_deleted_content`** — hard-deletes posts and comments soft-deleted more than 30 days ago. Rows piling up is the smaller problem; the real one is that **a deleted anonymous post keeps its `author_id` forever**, and anonymous has to stay anonymous over time.
+3. **`purge_due_spaces`** — permanently removes spaces soft-deleted more than 7 days ago.
+
+Steps 2 and 3 come after step 1 because both **skip** (rather than force) any target whose attachment rows or `spaces.image_url` are still set. Those rows still existing means the file is still in Storage, and deleting the DB reference first would orphan the blob forever. Skipped work is retried on the next run.
+
+The response summary reports `enqueued`, `claimed`, `deleted`, `failed`, `purgedPosts`, `purgedComments`, `purgedSpaces`, `skippedSpaces`. On error it returns the summary alongside the message — partial work is already committed, so you need to know how far it got.
+
+`cleanup_conversation` (chat) is service_role too but is **not** called here: it takes one conversation id and there is no "due" criterion for conversations. It is a manual operation.
