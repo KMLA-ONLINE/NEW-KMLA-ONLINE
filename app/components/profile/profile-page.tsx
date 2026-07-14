@@ -7,35 +7,7 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent } from "~/components/ui/card"
 import { Separator } from "~/components/ui/separator"
-
-const profile = {
-  name: "김민족",
-  cohort: 30,
-  initials: "김",
-  description: "소개글입니다. 소개글입니다. 소개글입니다.",
-  grade: 10,
-  track: "국제반",
-  classNo: 1,
-  major: "생명공학, 유전공학",
-  studentNumber: "251000",
-  phoneNumber: "010-0000-0000",
-  email: "minjok.kim@kmlaonline.kr",
-  birthday: "2009-03-01",
-  dormRoom: 305,
-  dormSide: "좌방",
-  department: "과기부",
-  gender: "남자",
-  info: [
-    { label: "전공", value: "생명공학, 유전공학" },
-    { label: "학번", value: "251000" },
-    { label: "전화번호", value: "010-0000-0000" },
-    { label: "이메일", value: "minjok.kim@kmlaonline.kr" },
-    { label: "방", value: "305호 좌방" },
-    { label: "부서", value: "과기부" },
-    { label: "생일", value: "2009-03-01" },
-    { label: "성별", value: "남자" },
-  ],
-}
+import { mockProfile as profile } from "~/lib/profile/mock-data"
 
 const tabs = ["정보", "그룹", "게시물", "활동"]
 

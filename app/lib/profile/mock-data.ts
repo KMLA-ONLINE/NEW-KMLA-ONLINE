@@ -1,0 +1,30 @@
+// 프로필 화면과 메뉴의 계정 블록이 같은 사람을 보여준다. 두 곳에 각자 두면 이름 하나 고칠 때
+// 한쪽이 낡은 채로 남으므로, 로더가 붙을 때까지 그 한 사람은 여기 산다.
+export const mockProfile = {
+  name: "김민족",
+  cohort: 30,
+  initials: "김",
+  description: "소개글입니다. 소개글입니다. 소개글입니다.",
+  grade: 10,
+  track: "국제반",
+  classNo: 1,
+  major: "생명공학, 유전공학",
+  studentNumber: "251000",
+  phoneNumber: "010-0000-0000",
+  email: "minjok.kim@kmlaonline.kr",
+  birthday: "2009-03-01",
+  dormRoom: 305,
+  dormSide: "좌방",
+  department: "과학기술부",
+  gender: "남자",
+  info: [
+    { label: "전공", value: "생명공학, 유전공학" },
+    { label: "학번", value: "251000" },
+    { label: "전화번호", value: "010-0000-0000" },
+    { label: "이메일", value: "minjok.kim@kmlaonline.kr" },
+    { label: "방", value: "305호 좌방" },
+    { label: "부서", value: "과학기술부" },
+    { label: "생일", value: "2009-03-01" },
+    { label: "성별", value: "남자" },
+  ],
+}

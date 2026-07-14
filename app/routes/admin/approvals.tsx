@@ -2,6 +2,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { PendingProfileCard } from "~/components/admin/pending-profile-card"
+import { MenuSubHeader } from "~/components/menu/menu-sub-header"
 import { Button } from "~/components/ui/button"
 import { Checkbox } from "~/components/ui/checkbox"
 import { mockPendingProfiles } from "~/lib/admin/mock-data"
@@ -59,14 +60,23 @@ export default function AdminApprovalsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">가입 승인</h1>
+      {/* /admin은 탭바가 모르는 경로라 하단 탭이 아무것도 켜지 않는다(/profile도 같다). 이 화면에
+          들어오는 문은 메뉴 하나뿐이니, 돌아갈 곳은 화면 안에서 말해 준다. */}
+      <div className="flex flex-col gap-2">
+        <MenuSubHeader
+          title="가입 승인"
+          aside={
+            queue.length > 0 ? (
+              <span className="text-muted-foreground shrink-0 text-sm">{queue.length}명 대기</span>
+            ) : undefined
+          }
+        />
         <p className="text-muted-foreground text-sm">
           {queue.length > 0
-            ? `${queue.length}명이 승인을 기다리고 있습니다. 오래 기다린 신청이 위에 있습니다.`
+            ? "오래 기다린 신청이 위에 있습니다."
             : "새로 가입한 사람의 학교 정보를 확인하고 승인합니다."}
         </p>
-      </section>
+      </div>
 
       {queue.length === 0 ? (
         <p className="text-muted-foreground bg-card rounded-xl border px-4 py-12 text-center text-sm">
