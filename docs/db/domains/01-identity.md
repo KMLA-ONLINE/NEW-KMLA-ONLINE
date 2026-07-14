@@ -16,19 +16,24 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 ## RPC
 
-| 함수                                    | 인증                                                     | 쓰기 | 목적                                                                        |
-| --------------------------------------- | -------------------------------------------------------- | ---- | --------------------------------------------------------------------------- |
-| `submit_onboarding(...)`                | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                                     |
-| `review_profile(profile_id, status)`    | app admin                                                | O    | pending profile을`accepted`/`rejected`로 심사                               |
-| `withdraw_profile()`                    | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                                    |
-| `finalize_avatar(storage_path)`         | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결                             |
-| `finalize_cover_image(storage_path)`    | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결                 |
-| `bootstrap_first_app_admin(profile_id)` | service_role                                             | O    | admin이 하나도 없을 때 첫 admin 지정                                        |
-| `get_my_key_vault()`                    | 본인 profile (accepted 불필요)                           | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
-| `get_identity_public_keys(user_ids[])`  | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
-| `create_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
-| `reseal_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 비밀번호 변경. **신원키를 건드릴 수 없다** — 그래서 히스토리가 살아남는다   |
-| `rotate_user_keys(...)`                 | 본인 profile (accepted 불필요)                           | O    | 비밀번호를 잊었을 때. 신원키까지 새로 발급, 지난 DM은 영영 닫힌다                       |
+| 함수                                     | 인증                                                     | 쓰기 | 목적                                                                        |
+| ---------------------------------------- | -------------------------------------------------------- | ---- | --------------------------------------------------------------------------- |
+| `submit_onboarding(...)`                 | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                                     |
+| `list_pending_profiles(after_id, limit)` | app admin                                                | X    | 승인 대기 큐. **오래 기다린 순서**(오름차순) — 커서도 반대라 `after_id`     |
+| `count_pending_profiles()`               | app admin                                                | X    | 대기 인원 수                                                                |
+| `review_profiles(profile_ids[], status)` | app admin                                                | O    | 배치 심사. 실제로 옮긴 행 수를 반환 (이미 심사된 id는 세지 않는다)          |
+| `review_profile(profile_id, status)`     | app admin                                                | O    | 단건 심사. `review_profiles`를 감싼다 — 심사 규칙은 한 곳에만 산다          |
+| `withdraw_profile()`                     | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                                    |
+| `finalize_avatar(storage_path)`          | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결                             |
+| `finalize_cover_image(storage_path)`     | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결                 |
+| `bootstrap_first_app_admin(profile_id)`  | service_role                                             | O    | admin이 하나도 없을 때 첫 admin 지정                                        |
+| `get_my_key_vault()`                     | 본인 profile (accepted 불필요)                           | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
+| `get_identity_public_keys(user_ids[])`   | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
+| `create_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
+| `reseal_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 비밀번호 변경. **신원키를 건드릴 수 없다** — 그래서 히스토리가 살아남는다   |
+| `rotate_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 비밀번호를 잊었을 때. 신원키까지 새로 발급, 지난 DM은 영영 닫힌다           |
+
+승인 큐를 RPC로 읽는 이유: `profiles_select`에는 admin 분기가 없어 **관리자에게도 pending 행은 보이지 않는다**. RLS에 `or private.is_app_admin()`을 더하면 한 줄로 풀리지만 그 한 줄은 컬럼이 아니라 _행_ 을 연다 — rejected·withdrawn·soft-delete된 행까지, 아무 쿼리에서나, 영구히. `list_pending_profiles`는 pending으로 잠긴 창만 낸다.
 
 열쇠고리 RPC가 `accepted`를 요구하지 않는 이유: 열쇠고리는 **가입 직후, 브라우저가 아직 비밀번호를 들고 있는 그 순간**에 만들어야 한다. 승인까지 미루면 그때는 세션만 있고 비밀번호가 없어 `encKey`를 만들 방법이 없다.
 
@@ -66,5 +71,6 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 ## 주의
 
 - profile 생성 경로는 Auth trigger뿐이다. user metadata는 이름 외에 role/status 판정에 쓰지 않는다.
+- **두 번째 app admin을 만들 경로가 없다.** `bootstrap_first_app_admin`은 admin이 0명일 때만 통하고(service_role + advisory lock), admin이 admin을 임명하거나 강등하는 RPC는 없다. `profiles.role`은 update grant에도 없다. 승인자가 한 명뿐이면 그 사람이 졸업하는 날 가입이 멈춘다.
 - `user_keys`는 행 전체가 accepted 사용자에게 보이지만 **컬럼 grant가 `identity_public_key` 하나만 남기고 봉인된 blob을 전부 회수한다.** 행 단위로는 이 구분을 표현할 수 없어서다. 회수하지 않으면 같은 학교 아무나 반 친구들의 `wrapped_user_key`를 긁어갈 수 있는데, 그건 _비밀번호에서 유도된_ 키로 봉인돼 있어서 약한 비밀번호를 오프라인에서 때릴 수 있다.
 - `anonymize_profile`이 탈퇴 시 `user_keys`를 지운다. 남겨봐야 아무도 열 수 없는 blob이고, 상대방 쪽 히스토리는 상대의 키로 그대로 읽힌다.

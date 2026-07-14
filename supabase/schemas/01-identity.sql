@@ -397,13 +397,115 @@ begin
 end;
 $$;
 
-create function public.review_profile(p_profile_id bigint,p_status public.profile_status)
-returns void language plpgsql security definer set search_path = '' as $$
-declare caller_id bigint := private.require_app_admin();
+-- 승인 큐. profiles_select에 admin 분기가 없어서 관리자에게도 pending 행은 보이지 않는다 --
+-- review_profile은 호출할 수 있는데 넘길 id를 알 방법이 없었다. 그 구멍을 이 함수가 메운다.
+--
+-- RLS에 `or private.is_app_admin()` 한 줄을 더하는 쪽이 짧지만 그러면 안 된다. 그 한 줄은
+-- 컬럼이 아니라 *행*을 연다: rejected도 withdrawn도 soft-delete된 행도 영구히, 아무 쿼리에서나.
+-- 여기서는 pending으로 잠긴다.
+--
+-- 이 코드베이스에서 유일하게 오름차순인 목록 RPC다. 심사 큐라서 그렇다 -- 최신순이면 밀린
+-- 사람이 영영 아래에 깔린다. 커서도 반대 방향이라 p_after_id다.
+--
+-- id 단독 커서로는 안 된다: 거절당한 사람이 재제출하면(submit_onboarding은 'rejected'에서
+-- 다시 들어온다) 낡은 id에 새 onboarding_completed_at이 붙어 정렬 키와 id의 순서가 갈린다.
+create function public.list_pending_profiles(p_after_id bigint default null, p_limit int4 default 20)
+returns table(
+  id bigint,
+  name text,
+  type public.profile_type,
+  student_number char(6),
+  class_no int2,
+  cohort int2,
+  gender public.profile_gender,
+  track public.profile_track,
+  department text,
+  is_reenrolled boolean,
+  phone_number text,
+  birthday date,
+  dorm_room int2,
+  description text,
+  avatar_url text,
+  onboarding_completed_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  after_completed_at timestamptz;
+begin
+  -- caller_id를 안 쓰므로 perform이다. 결과를 변수에 받아 두면 쓰지 않는 변수로 보여서, 언젠가
+  -- 누가 "죽은 코드"라며 지운다 -- 그 줄이 이 함수의 유일한 권한 가드다.
+  perform private.require_app_admin();
+  if p_limit is null or p_limit not between 1 and 50 then raise exception 'limit must be between 1 and 50'; end if;
+
+  -- 커서 행이 아직 pending일 것을 요구하면 안 된다. 관리자가 한 페이지의 마지막 사람을 승인한
+  -- 직후 다음 페이지를 부르면 그 행은 이미 accepted고, 그러면 남은 큐가 통째로 사라진다.
+  -- 필요한 건 그 행의 제출 시각뿐이고, 심사해도 그 값은 그대로 남는다.
+  if p_after_id is not null then
+    select p.onboarding_completed_at into after_completed_at
+    from public.profiles p
+    where p.id=p_after_id and p.deleted_at is null;
+    if after_completed_at is null then raise exception 'invalid cursor'; end if;
+  end if;
+
+  return query
+  select
+    p.id,
+    p.name,
+    p.type,
+    p.student_number,
+    p.class_no,
+    p.cohort,
+    p.gender,
+    p.track,
+    p.department,
+    p.is_reenrolled,
+    p.phone_number,
+    p.birthday,
+    p.dorm_room,
+    p.description,
+    p.avatar_url,
+    p.onboarding_completed_at
+  from public.profiles p
+  where p.status='pending'
+    and p.deleted_at is null
+    and (p_after_id is null or (p.onboarding_completed_at,p.id) > (after_completed_at,p_after_id))
+  order by p.onboarding_completed_at, p.id
+  limit p_limit;
+end;
+$$;
+
+create function public.count_pending_profiles()
+returns int4 language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_app_admin();
+  return (select count(*) from public.profiles where status='pending' and deleted_at is null);
+end;
+$$;
+
+-- 심사 규칙(accepted/rejected만, pending만)이 사는 유일한 곳. 단건 review_profile은 이걸
+-- 감싸기만 한다 -- 규칙을 두 벌 두면 한쪽만 고쳐지는 날이 온다.
+-- 신입 기수가 한꺼번에 들어오면 단건 RPC로는 180번을 왕복해야 해서 배치가 본체다.
+create function public.review_profiles(p_profile_ids bigint[],p_status public.profile_status)
+returns int4 language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_app_admin(); reviewed int4;
 begin
   if p_status not in ('accepted','rejected') then raise exception 'invalid review status'; end if;
-  update public.profiles set status=p_status,status_updated_at=now(),status_updated_by=caller_id where id=p_profile_id and status='pending';
-  if not found then raise exception 'pending profile not found'; end if;
+  if p_profile_ids is null or cardinality(p_profile_ids) not between 1 and 200 then raise exception 'review 1 to 200 profiles at a time'; end if;
+  update public.profiles set status=p_status,status_updated_at=now(),status_updated_by=caller_id
+  where id=any(p_profile_ids) and status='pending' and deleted_at is null;
+  get diagnostics reviewed = row_count;
+  return reviewed;
+end;
+$$;
+
+create function public.review_profile(p_profile_id bigint,p_status public.profile_status)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if public.review_profiles(array[p_profile_id],p_status) = 0 then raise exception 'pending profile not found'; end if;
 end;
 $$;
 
@@ -438,8 +540,8 @@ begin
   update public.profiles set cover_image_url=p_storage_path where id=caller_id;
 end $$;
 
-revoke execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.withdraw_profile() from public, anon, authenticated, service_role;
-grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status) to authenticated;
+revoke execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.review_profiles(bigint[],public.profile_status), public.list_pending_profiles(bigint,int4), public.count_pending_profiles(), public.withdraw_profile() from public, anon, authenticated, service_role;
+grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.review_profiles(bigint[],public.profile_status), public.list_pending_profiles(bigint,int4), public.count_pending_profiles() to authenticated;
 grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
 revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
 

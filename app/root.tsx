@@ -1,3 +1,4 @@
+import { ThemeProvider } from "next-themes"
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router"
 
 import type { Route } from "./+types/root"
@@ -9,7 +10,8 @@ export const links: Route.LinksFunction = () => []
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko-KR" className="light">
+    // next-themes가 하이드레이션 전에 <html>의 class를 바꾸므로 서버 마크업과 어긋나는 게 정상이다.
+    <html lang="ko-KR" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,10 +19,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        <TooltipProvider>
-          {children}
-          <Toaster />
-        </TooltipProvider>
+        {/* app.css의 dark 변형이 `.dark` 클래스 기준이라(@custom-variant dark (&:is(.dark *)))
+            attribute는 class여야 한다. */}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider>
+            {children}
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

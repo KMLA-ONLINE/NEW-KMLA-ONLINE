@@ -126,4 +126,167 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 가입 승인 큐
+--
+-- 앞 블록이 profile1을 app admin으로 만들어 뒀고, 같은 트랜잭션이라 아직 admin이다.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_user uuid := '11111111-1111-4111-8111-111111111111';
+  outsider uuid := '66666666-6666-4666-8666-666666666666';
+  applicant_a uuid := '33333333-3333-4333-8333-333333333333';
+  applicant_b uuid := '44444444-4444-4444-8444-444444444444';
+  applicant_c uuid := '55555555-5555-4555-8555-555555555555';
+  admin_id bigint;
+  outsider_id bigint;
+  a bigint;
+  b bigint;
+  c bigint;
+  queued bigint;
+  reviewed int4;
+begin
+  select id into admin_id from public.profiles where auth_user_id = admin_user;
+
+  insert into auth.users (id, email, raw_user_meta_data)
+  values
+    (outsider, 'queue-outsider@example.com', '{"name":"Queue Outsider"}'::jsonb),
+    (applicant_a, 'queue-a@example.com', '{"name":"Queue A"}'::jsonb),
+    (applicant_b, 'queue-b@example.com', '{"name":"Queue B"}'::jsonb),
+    (applicant_c, 'queue-c@example.com', '{"name":"Queue C"}'::jsonb);
+
+  select id into outsider_id from public.profiles where auth_user_id = outsider;
+  update public.profiles set type = 'teacher', status = 'accepted' where id = outsider_id;
+
+  -- 세 명이 온보딩을 낸다. 셋 다 pending.
+  perform set_config('request.jwt.claim.sub', applicant_a::text, true);
+  perform public.submit_onboarding('신청자 A','student','300301'::char(6),1::int2,30::int2,'male','domestic',null,false,'01011112222','2008-03-01','잘 부탁드립니다',412::int2);
+  perform set_config('request.jwt.claim.sub', applicant_b::text, true);
+  perform public.submit_onboarding('신청자 B','student','300302'::char(6),2::int2,30::int2,'female','international',null,false,'01033334444','2008-05-02',null,318::int2);
+  perform set_config('request.jwt.claim.sub', applicant_c::text, true);
+  perform public.submit_onboarding('신청자 C','teacher',null,null,null,null,null,null,false,'01055556666','1985-09-03',null,null);
+
+  select id into a from public.profiles where auth_user_id = applicant_a;
+  select id into b from public.profiles where auth_user_id = applicant_b;
+  select id into c from public.profiles where auth_user_id = applicant_c;
+
+  -- now()는 트랜잭션 안에서 움직이지 않아 셋의 제출 시각이 같다. 손으로 벌리되 **id 순서와
+  -- 반대로** 벌린다: 큐가 id가 아니라 제출 시각으로 정렬한다는 것이 요점이다. 거절당한 사람이
+  -- 재제출하면 실제로 이 모양이 된다 -- 낡은 id에 새 제출 시각이 붙는다.
+  update public.profiles set onboarding_completed_at = now() - interval '1 hour' where id = a;
+  update public.profiles set onboarding_completed_at = now() - interval '3 hours' where id = b;
+  update public.profiles set onboarding_completed_at = now() - interval '2 hours' where id = c;
+
+  -- 관리자가 아니면 큐 자체가 안 열린다. 큐를 못 열면 review_profile에 넘길 id도 알 수 없다.
+  perform set_config('request.jwt.claim.sub', outsider::text, true);
+  begin
+    perform public.list_pending_profiles();
+    raise exception 'a non-admin must not open the review queue';
+  exception when others then
+    if sqlerrm <> 'app admin required' then raise; end if;
+  end;
+  begin
+    perform public.review_profiles(array[a], 'accepted');
+    raise exception 'a non-admin must not review profiles';
+  exception when others then
+    if sqlerrm <> 'app admin required' then raise; end if;
+  end;
+
+  perform set_config('request.jwt.claim.sub', admin_user::text, true);
+
+  -- 큐는 pending만 담는다. 관리자에게도 profiles_select는 그대로라, 이 함수가 pending을 보는
+  -- 유일한 창이고 그 창은 pending 밖으로 열리지 않는다.
+  if (select count(*) from public.list_pending_profiles()) <> 3
+    or public.count_pending_profiles() <> 3
+    or exists (select 1 from public.list_pending_profiles() where id in (admin_id, outsider_id))
+  then
+    raise exception 'the queue must hold exactly the pending profiles';
+  end if;
+
+  -- 심사에 필요한 필드가 실제로 나온다.
+  if (select phone_number from public.list_pending_profiles() where id = a) <> '01011112222'
+    or (select cohort from public.list_pending_profiles() where id = a) <> 30
+  then
+    raise exception 'the queue must carry the fields a reviewer decides on';
+  end if;
+
+  -- 오래 기다린 순서. 최신순이면 밀린 사람이 영영 아래에 깔린다.
+  -- b(-3h) -> c(-2h) -> a(-1h)이고, id 순서는 a < b < c다.
+  select id into queued from public.list_pending_profiles(p_limit => 1);
+  if queued <> b then raise exception 'the review queue must be oldest-first'; end if;
+  select id into queued from public.list_pending_profiles(p_after_id => b, p_limit => 1);
+  if queued <> c then raise exception 'the cursor must walk the queue in submit order'; end if;
+  select id into queued from public.list_pending_profiles(p_after_id => c, p_limit => 1);
+  if queued <> a then raise exception 'the cursor must walk the queue in submit order'; end if;
+
+  -- p_limit이 null이면 `limit null`이 되어 상한이 통째로 사라진다. 03-content/05-chat/06-notifications의
+  -- 읽기 RPC가 같은 이유로 `p_limit is null`을 함께 본다.
+  begin
+    perform public.list_pending_profiles(p_limit => null);
+    raise exception 'a null limit must not become an unlimited read';
+  exception when others then
+    if sqlerrm <> 'limit must be between 1 and 50' then raise; end if;
+  end;
+
+  -- pending은 심사 결과가 아니다. 큐에서 사람을 꺼내지 않고 상태만 흔들 수 있으면 안 된다.
+  begin
+    perform public.review_profiles(array[a], 'pending');
+    raise exception 'pending must not be a review outcome';
+  exception when others then
+    if sqlerrm <> 'invalid review status' then raise; end if;
+  end;
+
+  -- 배치 승인. 이미 심사된 사람이 배열에 섞여 있어도 그 사람은 건드리지 않고 세지도 않는다.
+  reviewed := public.review_profiles(array[b, c, outsider_id], 'accepted');
+  if reviewed <> 2 then raise exception 'a batch review must count only the profiles it moved'; end if;
+  if not exists (select 1 from public.profiles where id = b and status = 'accepted' and status_updated_by = admin_id)
+    or not exists (select 1 from public.profiles where id = c and status = 'accepted' and status_updated_by = admin_id)
+  then
+    raise exception 'a batch review must record who reviewed';
+  end if;
+  if exists (select 1 from public.profiles where id = outsider_id and status_updated_by is not null) then
+    raise exception 'a batch review must not touch an already-reviewed profile';
+  end if;
+
+  -- 방금 b를 승인했으니 b는 더 이상 pending이 아니다. 그래도 b를 커서로 쓴 다음 페이지는 나와야
+  -- 한다 -- 한 페이지의 마지막 사람을 승인하고 "더 보기"를 누르는 것이 정확히 이 모양이고,
+  -- 커서가 pending을 요구하면 그 순간 남은 큐가 통째로 사라진다.
+  select id into queued from public.list_pending_profiles(p_after_id => b, p_limit => 1);
+  if queued <> a then raise exception 'reviewing a profile must not invalidate it as a cursor'; end if;
+
+  -- 단건은 배치를 감싸기만 한다. 규칙이 한 곳에 살고, 실패 문구는 그대로다.
+  perform public.review_profile(a, 'rejected');
+  if not exists (select 1 from public.profiles where id = a and status = 'rejected') then
+    raise exception 'review_profile must reject through the batch';
+  end if;
+  begin
+    perform public.review_profile(a, 'accepted');
+    raise exception 'a reviewed profile must not be reviewable again';
+  exception when others then
+    if sqlerrm <> 'pending profile not found' then raise; end if;
+  end;
+
+  -- 거절은 차단이 아니다. submit_onboarding이 'rejected'에서 다시 들어오고, 그 사람은 큐로 돌아온다.
+  perform set_config('request.jwt.claim.sub', applicant_a::text, true);
+  perform public.submit_onboarding('신청자 A','student','300301'::char(6),1::int2,30::int2,'male','domestic',null,false,'01011112222','2008-03-01','다시 제출합니다',412::int2);
+  perform set_config('request.jwt.claim.sub', admin_user::text, true);
+  if public.count_pending_profiles() <> 1
+    or (select id from public.list_pending_profiles()) <> a
+  then
+    raise exception 'a rejected applicant must be able to reapply';
+  end if;
+
+  -- db diff는 GRANT를 뱉지 않는다. 손으로 닫지 않으면 새 함수는 PUBLIC(=anon)에게 열린 채 태어난다.
+  if has_function_privilege('anon', 'public.list_pending_profiles(bigint,int4)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.count_pending_profiles()', 'EXECUTE')
+    or has_function_privilege('anon', 'public.review_profiles(bigint[],public.profile_status)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.list_pending_profiles(bigint,int4)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.review_profiles(bigint[],public.profile_status)', 'EXECUTE')
+  then
+    raise exception 'the review queue must be closed to anon and open to authenticated';
+  end if;
+end
+$$;
+
 rollback;

@@ -22,7 +22,7 @@ const mockProfile = {
   birthday: "2009-03-01",
   dormRoom: "305",
   dormSide: "left",
-  department: "과기부",
+  department: "과학기술부",
   gender: "male",
 }
 
