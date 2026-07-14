@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -1724,6 +1724,7 @@ export type Database = {
         Returns: undefined
       }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
+      count_pending_profiles: { Args: never; Returns: number }
       create_direct_conversation: {
         Args: { p_peer_id: number }
         Returns: number
@@ -1929,6 +1930,27 @@ export type Database = {
           type: Database["public"]["Enums"]["notification_type"]
         }[]
       }
+      list_pending_profiles: {
+        Args: { p_after_id?: number; p_limit?: number }
+        Returns: {
+          avatar_url: string
+          birthday: string
+          class_no: number
+          cohort: number
+          department: string
+          description: string
+          dorm_room: number
+          gender: Database["public"]["Enums"]["profile_gender"]
+          id: number
+          is_reenrolled: boolean
+          name: string
+          onboarding_completed_at: string
+          phone_number: string
+          student_number: string
+          track: Database["public"]["Enums"]["profile_track"]
+          type: Database["public"]["Enums"]["profile_type"]
+        }[]
+      }
       list_space_posts: {
         Args: {
           p_before_id?: number
@@ -1980,6 +2002,13 @@ export type Database = {
           p_status: Database["public"]["Enums"]["profile_status"]
         }
         Returns: undefined
+      }
+      review_profiles: {
+        Args: {
+          p_profile_ids: number[]
+          p_status: Database["public"]["Enums"]["profile_status"]
+        }
+        Returns: number
       }
       revoke_space_invite: { Args: { p_invite_id: number }; Returns: undefined }
       rotate_user_keys: {

@@ -25,6 +25,7 @@ export default [
       ]),
     ]),
     route("menu", "./routes/_app.menu.tsx"),
+    route("admin/approvals", "./routes/admin/approvals.tsx"),
     route("profile", "./routes/profile/profile.tsx"),
     route("profile/edit", "./routes/profile/edit.tsx"),
     route("profile/password", "./routes/profile/password.tsx"),
