@@ -8,8 +8,16 @@ export type GroupSpace = {
   description: string
   /** spaces.space_type. group=공식, community=비공식. 이 화면은 둘 다 담는다. */
   type: "group" | "community"
-  /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
+  /**
+   * spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다.
+   * **만들 때 정해지고 그 뒤로는 불변이다** -- storage 경로가 이 값으로 짜여 있다.
+   */
   pubId: string
+  /**
+   * spaces.image_url 기반 서명 URL(로더가 채움). null이면 이름 첫 글자 폴백.
+   * 쓰기는 finalize_space_image RPC로만 간다 -- image_url은 update 컬럼 grant에 없다.
+   */
+  imageUrl: string | null
   joinPolicy: "public" | "request" | "invite_only"
   /**
    * spaces.post_policy. 누가 **메인 글**을 쓸 수 있는가. 'managers'면 owner/admin/manager만 쓴다
@@ -54,79 +62,62 @@ export type GroupPostAuthor = {
  * spaces를 조인해 내려준다(author를 조인하듯). 목록 표시에 필요한 것만 담는다.
  */
 export type GroupPostSpace = {
-  /** spaces.name */
   name: string
-  /** spaces.space_type. group=공식, community=비공식. 출처 아이콘을 가른다. */
+  /** group=공식, community=비공식. 출처 아이콘을 가른다. */
   type: "group" | "community"
-  /** spaces.pub_id 슬러그. 출처를 누르면 /groups/:pubId 로 간다. */
   pubId: string
 }
 
-/** space_categories 한 행. 그룹이 정의하는 게시판/말머리(정보·공식·잡담 등). */
+/** 그룹이 정의하는 게시판/말머리(정보·공식·잡담 등). */
 export type GroupCategory = {
-  /** space_categories.id */
   id: number
-  /** space_categories.name */
   name: string
-  /** space_categories.sort_order (탭·칩 표시 순서) */
+  /** 탭·칩 표시 순서. */
   sortOrder: number
 }
 
-/** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
+/** 한 space에 owner는 정확히 1명이다(space_members_one_owner_key). */
 export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
 
-/** space_join_requests 한 행 + 표시용 profiles 필드. request 정책 그룹의 승인 대기 가입 요청. */
+/** request 정책 그룹의 승인 대기 가입 요청. */
 export type GroupJoinRequest = {
-  /** profiles.id (= space_join_requests.user_id) */
   id: number
-  /** profiles.name */
   name: string
   /**
-   * profiles.cohort (기수). 멤버 목록보다 여기가 더 중요하다 -- 목록은 잘못 읽어도 다시 보면
-   * 되지만, 동명이인 중 엉뚱한 사람을 승인하면 그 사람이 그룹에 들어와 있다.
+   * 기수. 멤버 목록보다 여기가 더 중요하다 -- 목록은 잘못 읽어도 다시 보면 되지만, 동명이인 중
+   * 엉뚱한 사람을 승인하면 그 사람이 이미 그룹 안에 있다.
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
-  /** space_join_requests.created_at (ISO 8601). */
   createdAt: string
 }
 
-/** space_members 한 행 + 표시에 필요한 profiles 필드. */
 export type GroupMember = {
-  /** profiles.id */
   id: number
-  /** profiles.name */
   name: string
   /**
-   * profiles.cohort (기수). 이름만으로는 사람을 못 가른다 -- 동명이인이 흔하고 profiles.name엔
-   * 유니크 제약이 없다(그래서 @멘션도 handle 파싱이 아니라 id를 저장한다).
-   * 교사 등 학생이 아닌 프로필은 기수가 없어서 null이다(profiles_student_identity_check는
-   * type='student'일 때만 cohort를 요구한다).
+   * 기수. 이름만으로는 사람을 못 가른다 -- 동명이인이 흔하고 profiles.name엔 유니크 제약이 없다
+   * (그래서 @멘션도 handle 파싱이 아니라 id를 저장한다). 학생이 아닌 프로필은 null이다.
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
   role: GroupMemberRole
-  /** space_members.joined_at (ISO 8601). */
   joinedAt: string
-  /** 현재 사용자 본인인지(표시 강조용). */
   isMe?: boolean
 }
 
-/** post_attachments의 이미지 한 장. 서명 URL은 로더가 채운다. */
+/** post_attachments 중 kind='image'. 서명 URL은 로더가 채운다. */
 export type GroupPostImage = {
   src: string
   alt: string
 }
 
-/** 이미지가 아닌 첨부(post_attachments 중 kind가 image가 아닌 것). 이미지는 images로 나눈다. */
+/** 이미지가 아닌 첨부(post_attachments 중 kind≠image). 이미지는 images로 나눈다. */
 export type GroupPostFile = {
-  /** file_name */
   name: string
-  /** content_type */
   contentType: string
-  /** size_bytes */
   sizeBytes: number
   /** storage_path 기반 서명 URL. 로더가 채운다. */
   url: string
@@ -162,7 +153,6 @@ export type GroupPost = {
    */
   space?: GroupPostSpace | null
   images: GroupPostImage[]
-  /** 이미지 외 첨부 파일(post_attachments 중 kind≠image). */
   files?: GroupPostFile[]
   /**
    * 댓글 수. reactionCount와 같이 count(*)로 읽는 파생 스칼라(캐시 컬럼 아님, 03-content.sql).

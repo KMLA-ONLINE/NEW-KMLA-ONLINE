@@ -27,10 +27,15 @@ Source: [`supabase/schemas/00-foundation.sql`](../../../supabase/schemas/00-foun
 
 ## Private helper
 
+
 | 함수                                           | 용도                                                                                                                                         |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `private.require_service_role()`               | 호출 컨텍스트가 service_role(또는 postgres 세션)이 아니면 예외. service 전용 RPC의 공통 가드                                                 |
 | `private.has_uuid_object_suffix(name, prefix)` | storage object 이름이`prefix + v4 uuid` 형태와 정확히 일치하는지 검사. identity/storage/chat 경로 검증에서 공통 사용 (uuid 정규식 단일 정의) |
+| `private.escape_like(text)`                    | 사용자 입력의 LIKE 메타문자(`% _ \`)를 무력화. `search_posts`/`search_messages`가 통과한다                                                   |
+| `private.normalize_search(text)`               | **검색 정규화의 유일한 정의**: NFC → 소문자 → 공백 전부 제거. `immutable`이라 생성 컬럼에서도 쓴다                                         |
+
+`normalize_search`가 여기 있는 이유: `posts.title_normalized`·`content_normalized`, `messages.content_normalized` 같은 **생성 컬럼**과 그 위의 trgm 인덱스, 그리고 `search_posts`/`search_messages`의 검색어가 전부 같은 규칙을 통과해야 한다. 규칙이 도메인마다 복붙되면 조금씩 어긋나고, 그 순간 인덱스와 검색어가 다른 문자열을 보게 된다. 클라이언트 쪽 짝은 `app/lib/crypto/message-search.ts`와 `app/lib/group/format.ts`이고, **이 함수와 같아야 한다** — 1:1 대화는 서버가 평문을 못 보므로 검색이 브라우저에서 돈다.
 
 ## Trigger
 

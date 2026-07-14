@@ -8,7 +8,6 @@ export type AppNavItem = {
   end?: boolean
 }
 
-// 사이드바(데스크톱)와 하단 탭바(모바일)가 같은 목록을 쓴다 -- 순서를 여기서 한 번만 바꾸면 둘 다 따라온다.
 export const appNavItems: AppNavItem[] = [
   { to: "/", label: "홈", icon: HomeIcon, end: true },
   { to: "/messenger", label: "메시지", icon: MessagesSquareIcon },

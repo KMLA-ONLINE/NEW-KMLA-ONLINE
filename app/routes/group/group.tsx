@@ -1,6 +1,7 @@
 import { Globe2Icon, LandmarkIcon, LockIcon, SearchIcon, UsersIcon } from "lucide-react"
 import { useState } from "react"
 import { Link, Outlet, useSearchParams } from "react-router"
+import { toast } from "sonner"
 
 import { GroupCategoryChips } from "~/components/group/group-category-chips"
 import { GroupHeader } from "~/components/group/group-header"
@@ -24,7 +25,6 @@ import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
-// 피드도 한 번에 다 렌더하지 않고 페이지 단위로만(스크롤이 바닥에 닿으면 다음 페이지).
 const FEED_PAGE_SIZE = 6
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
@@ -67,7 +67,6 @@ export default function GroupPage() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
-  // 카테고리 필터를 바꾸면 페이지를 처음부터 다시 센다.
   const selectCategory = (id: number | null) => {
     setCategoryId(id)
     setFeedVisible(FEED_PAGE_SIZE)
@@ -82,6 +81,9 @@ export default function GroupPage() {
   // spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(서버 트리거가 강제).
   // 기존 익명 글은 그대로 익명이다 -- is_anonymous는 불변이라 소급해서 까이지 않는다.
   const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
+  // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
+  // 로컬 object URL이라 새로고침하면 사라진다.
+  const [imageUrl, setImageUrl] = useState(mockGroup.imageUrl)
   const [members, setMembers] = useState(mockGroupMembers)
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
@@ -103,13 +105,13 @@ export default function GroupPage() {
 
   const liveGroup = {
     ...mockGroup,
+    imageUrl,
     joinPolicy,
     postPolicy,
     canPost,
     memberCount,
     allowAnonymous,
     viewerRole,
-    // 내가 익명 정지 중이 아니고 그룹이 익명을 허용해야 익명으로 쓸 수 있다.
     canPostAnonymously: allowAnonymous && mockGroup.anonymitySuspendedUntil === null,
   }
 
@@ -126,7 +128,6 @@ export default function GroupPage() {
     feedHasMore
   )
 
-  // 관리자 & request 정책일 때만 가입 요청을 관리한다(다른 정책은 요청이 쌓이지 않음).
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
   const visibleTabs = TABS.filter((item) => !item.curateOnly || canCurate)
@@ -157,10 +158,16 @@ export default function GroupPage() {
     setPendingRequests((prev) => prev.filter((request) => !ids.has(request.id)))
   }
 
-  // 정책 전환 시 대기 요청 정리: 비공개=전부 거절, 공개(즉시가입)=전부 수락. request 유지는 그대로.
+  // request에서 벗어나려면 대기 요청이 먼저 비어 있어야 한다(서버 set_space_join_policy와 같은
+  // 규칙). 남겨두면 그 요청들은 아무도 승인할 수 없는 유령이 된다 -- 정책이 바뀌는 순간 이 그룹의
+  // 요청함이 화면에서 사라지기 때문이다. 서버가 대신 일괄 수락/거절하지 않는 것도 같은 이유다:
+  // 그건 관리자가 내릴 판단이지 정책 전환의 부수 효과일 수 없다.
   const changeJoinPolicy = (next: typeof joinPolicy) => {
-    if (next === "public") approveRequests(pendingRequests)
-    else if (next === "invite_only") rejectRequests(pendingRequests)
+    if (next === joinPolicy) return
+    if (joinPolicy === "request" && pendingRequests.length > 0) {
+      toast.error(`대기 중인 가입 요청 ${pendingRequests.length}건을 먼저 처리해주세요`)
+      return
+    }
     setJoinPolicy(next)
   }
 
@@ -297,8 +304,11 @@ export default function GroupPage() {
               group={liveGroup}
               categories={mockGroupCategories}
               canManage={canManage}
+              imageUrl={imageUrl}
+              onImageChange={setImageUrl}
               joinPolicy={joinPolicy}
               onJoinPolicyChange={changeJoinPolicy}
+              pendingRequestCount={pendingRequests.length}
               postPolicy={postPolicy}
               onPostPolicyChange={setPostPolicy}
               allowAnonymous={allowAnonymous}

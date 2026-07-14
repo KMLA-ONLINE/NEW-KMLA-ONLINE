@@ -2,7 +2,6 @@ import { VenetianMaskIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 
-// 아바타 크기에 맞춘 아이콘 크기. Avatar는 기본 size-8, lg는 size-10, sm은 size-6이다.
 const ICON_SIZE = {
   default: "size-4",
   lg: "size-5",

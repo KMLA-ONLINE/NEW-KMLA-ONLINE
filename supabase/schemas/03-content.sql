@@ -90,8 +90,17 @@ create index idx_posts_active_space_category on public.posts (space_id, category
 where deleted_at is null;
 create index idx_posts_pinned on public.posts (space_id, pinned_at desc)
 where pinned_at is not null and deleted_at is null;
+create index idx_posts_deleted_at on public.posts (deleted_at)
+where deleted_at is not null;
 
 create index idx_comments_tree on public.comments (post_id, parent_id, created_at);
+create index idx_comments_deleted_at on public.comments (deleted_at)
+where deleted_at is not null;
+-- idx_comments_tree는 post_id가 선두라 "이 댓글의 자식"(parent_id 단독)에 못 쓴다. 그 조회는
+-- has_active_descendant가 comments_select 안에서 tombstone마다, soft_delete_comment와
+-- purge_deleted_content가 재귀/잎벗기기마다 돈다 -- 없으면 매 레벨이 comments 전체 스캔이다.
+create index idx_comments_parent on public.comments (parent_id)
+where parent_id is not null;
 -- 멘션은 (owner, user)가 PK라 "이 글의 멘션"은 이미 빠르다. 역방향("나를 언급한 것들")만 인덱스가 없다.
 create index idx_post_mentions_user on public.post_mentions (user_id);
 create index idx_comment_mentions_user on public.comment_mentions (user_id);
@@ -148,15 +157,14 @@ $$;
 -- while any descendant at any depth is still active, otherwise the reply chain to it would orphan.
 create function private.has_active_descendant(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
-  with recursive descendants as (
-    select c.id, c.deleted_at, 1 as depth
+  with recursive descendants(id,deleted_at) as (
+    select c.id, c.deleted_at
     from public.comments c
     where c.parent_id = p_comment_id
-    union all
-    select child.id, child.deleted_at, d.depth + 1
+    union
+    select child.id, child.deleted_at
     from public.comments child
     join descendants d on child.parent_id = d.id
-    where d.depth < 50
   )
   select exists (select 1 from descendants where deleted_at is null)
 $$;
@@ -222,14 +230,34 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.parent_id is not null and not exists (
-    select 1
-    from public.comments as parent
-    where parent.id = new.parent_id
-      and parent.post_id = new.post_id
-      and parent.deleted_at is null
-  ) then
-    raise exception 'comment parent must be an active comment on the same post';
+  if new.parent_id is not null then
+    if not exists (
+      select 1
+      from public.comments as parent
+      where parent.id = new.parent_id
+        and parent.post_id = new.post_id
+        and parent.deleted_at is null
+    ) then
+      raise exception 'comment parent must be an active comment on the same post';
+    end if;
+    -- 중첩 깊이를 30으로 막는다. 이 캡이 없으면 임의로 깊은 답글 사슬을 만들 수 있고, 그러면
+    -- comments_select가 tombstone마다 부르는 has_active_descendant(사슬 끝까지 재귀)가 사슬 하나에
+    -- O(N^2)로 폭발해 조회 한 번으로 DB를 태울 수 있다. 깊이를 여기서 막으면 그 재귀가 자연히
+    -- 30단계로 유계가 된다 -- 함수 쪽에 깊이 캡을 두면 정확성이 깨지므로(깊은 tombstone이 조용히
+    -- 사라져 트리가 끊긴다) 캡은 생성 시점인 여기 있어야 한다. 부모까지의 조상 수는 곧 부모의
+    -- 깊이이고, 새 댓글은 그보다 한 단 깊다 -- 부모가 이미 30단계면 거절한다.
+    if (
+      with recursive ancestors(id, parent_id, depth) as (
+        select c.id, c.parent_id, 1 from public.comments c where c.id = new.parent_id
+        union all
+        select c.id, c.parent_id, a.depth + 1
+        from public.comments c join ancestors a on c.id = a.parent_id
+        where a.depth < 30
+      )
+      select max(depth) from ancestors
+    ) >= 30 then
+      raise exception 'comment nesting too deep';
+    end if;
   end if;
   return new;
 end;
@@ -340,6 +368,7 @@ create policy posts_update on public.posts for update to authenticated using (de
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
 create policy comments_select on public.comments for select to authenticated using (private.can_access_post(post_id) and (deleted_at is null or private.has_active_descendant(id)));
+-- 부모 생존은 여기서 안 본다 -- trg_validate_comment_parent가 모든 insert 경로에서 본다.
 create policy comments_insert on public.comments for insert to authenticated with check (author_id=private.current_profile_id() and private.can_access_post(post_id));
 create policy comments_update on public.comments for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_access_post(post_id));
 
@@ -1069,10 +1098,12 @@ returns void language plpgsql security definer set search_path = '' as $$
 declare
   caller_id bigint := private.require_current_profile(true);
   target_space_id bigint;
+  target_parent_id bigint;
+  targets bigint[];
 begin
   -- soft_delete_post와 같은 이유로 권한 조건을 SELECT에 합친다: "없는 댓글"과 "권한 없는 댓글"이
   -- 똑같이 0행이 되어 존재 여부 오라클을 없앤다.
-  select p.space_id into target_space_id
+  select p.space_id,c.parent_id into target_space_id,target_parent_id
   from public.comments c
   join public.posts p on p.id=c.post_id
   where c.id=p_id and c.deleted_at is null
@@ -1080,13 +1111,35 @@ begin
   for update of c;
   if not found then return; end if;
 
-  delete from public.comment_reactions where comment_id=p_id;
+  -- 최상위 댓글은 스레드 전체를 데리고 간다(글을 지우면 댓글이 딸려 가는 것과 같다). 답글은 자기
+  -- 자신만 -- 그 아래 답글은 남의 대화고, 여기서 끊으면 사슬이 orphan이 된다.
+  if target_parent_id is null then
+    with recursive subtree(id) as (
+      select p_id
+      union
+      select child.id from public.comments child join subtree parent on child.parent_id=parent.id
+    )
+    select array_agg(id) into targets from subtree;
+  else
+    targets := array[p_id];
+  end if;
 
-  -- 행을 지우지 않고 본문만 비운다. 답글이 달려 있으면 tombstone으로 남아야 트리가 끊기지 않는데
-  -- (comments_select의 has_active_descendant), 그때 원문이 딸려 나가면 안 된다.
-  update public.comments
-  set content=null, deleted_at=now(), deleted_by=caller_id
-  where id=p_id;
+  delete from public.comment_reactions where comment_id=any(targets);
+
+  -- 행을 지우지 않고 본문만 비운다. 살아 있는 답글이 남으면 tombstone으로 버텨야 트리가 끊기지
+  -- 않는데(comments_select의 has_active_descendant), 그때 원문이 딸려 나가면 안 된다.
+  -- 이미 tombstone인 행은 건드리지 않는다 -- 원래 삭제 시각과 삭제자를 덮어쓸 이유가 없다.
+  --
+  -- deleted_by는 **직접 지목한 행에만** 남긴다. 딸려 간 답글에까지 caller_id를 찍으면
+  -- notify_on_comment_removed(deleted_by is not null and <> author_id)가 답글 작성자 전원에게
+  -- comment_removed를 쏜다 -- "당신 댓글이 모더레이션으로 삭제됐다"는 뜻인데 실제로는 스레드가
+  -- 접혔을 뿐이다. 여기서 null은 "몰라서 비운 것"이 아니라 **"캐스케이드로 딸려 갔다"는 표식**이고,
+  -- 그 표식이 곧 알림을 끄는 스위치다. 누가 지웠는지는 조상 tombstone의 deleted_by가 갖고 있다.
+  update public.comments c
+  set content=null,
+      deleted_at=now(),
+      deleted_by=case when c.id=p_id then caller_id else null end
+  where c.id=any(targets) and c.deleted_at is null;
 end;
 $$;
 
@@ -1256,7 +1309,7 @@ for each row execute function private.enforce_anonymous_allowed();
 -- 그래서 첨부 행이 아직 남아 있는 글은 **건너뛴다**. cleanup_conversation은 같은 상황에서 예외를
 -- 던지지만, 여기는 배치라 그러면 글 하나 때문에 배치 전체가 죽는다 -- 다음 실행에 다시 만난다.
 create function public.purge_deleted_content(
-  p_older_than interval default interval '30 days',
+  p_older_than interval default interval '7 days',
   p_limit int4 default 100
 )
 returns table(purged_posts bigint, purged_comments bigint)
@@ -1267,6 +1320,7 @@ declare
   target_comments bigint[];
   post_total bigint := 0;
   comment_total bigint := 0;
+  orphan_total bigint := 0;
   removed bigint;
 begin
   perform private.require_service_role();
@@ -1289,7 +1343,6 @@ begin
     delete from public.comment_reactions cr using public.comments c
     where cr.comment_id=c.id and c.post_id=any(target_posts);
     delete from public.post_reactions where post_id=any(target_posts);
-
     -- parent_id가 restrict라 잎부터 벗겨야 한다. 답글->루트 2단계로는 임의 깊이를 못 지운다
     -- (cleanup_conversation이 messages에 같은 루프를 도는 것과 같은 이유).
     loop
@@ -1300,7 +1353,6 @@ begin
       comment_total := comment_total + removed;
       exit when removed = 0;
     end loop;
-
     -- notifications / post_mentions / comment_mentions는 cascade라 알아서 따라간다.
     delete from public.posts where id=any(target_posts);
     get diagnostics post_total = row_count;
@@ -1310,26 +1362,30 @@ begin
   -- 때문에 못 지운다 -- 그래서 잎만 걷는다. 자식이 전부 죽은 서브트리는 잎부터 차례로 걷혀 결국
   -- 통째로 사라지고, 살아 있는 답글이 하나라도 달린 tombstone은 계속 남는다(답글 사슬이 끊기면
   -- 안 되니 comments_select가 has_active_descendant로 그걸 계속 보여준다).
-  select array_agg(t.id) into target_comments
-  from (
-    select c.id from public.comments c
-    where c.deleted_at < cutoff
-    order by c.deleted_at
-    limit p_limit
-  ) t;
+  --
+  -- 배치를 id 배열로 **한 번** 고정하고 그 안에서만 벗기면 안 된다: 최상위 댓글 삭제가 서브트리를
+  -- 통째로 같은 deleted_at으로 만들기 때문에 큰 트리는 배치 경계에서 잘리고, 뽑힌 p_limit개가 전부
+  -- "자식이 배치 밖에 있는" 중간 노드이면 한 행도 못 지운 채 다음 실행이 같은 집합을 다시 고른다
+  -- -- 영영 안 줄어든다. 매 라운드 잎을 다시 찾으면 한 겹씩 확실히 벗겨진다.
+  loop
+    select array_agg(t.id) into target_comments
+    from (
+      select c.id from public.comments c
+      where c.deleted_at < cutoff
+        and not exists(select 1 from public.comments child where child.parent_id=c.id)
+      order by c.deleted_at
+      limit p_limit - orphan_total
+    ) t;
+    exit when target_comments is null;
 
-  if target_comments is not null then
     -- soft_delete_comment가 이미 지웠지만, service_role이 직접 소프트 삭제한 행도 있을 수 있다.
     delete from public.comment_reactions where comment_id=any(target_comments);
-    loop
-      delete from public.comments c
-      where c.id=any(target_comments)
-        and not exists(select 1 from public.comments child where child.parent_id=c.id);
-      get diagnostics removed = row_count;
-      comment_total := comment_total + removed;
-      exit when removed = 0;
-    end loop;
-  end if;
+    delete from public.comments where id=any(target_comments);
+    get diagnostics removed = row_count;
+    comment_total := comment_total + removed;
+    orphan_total := orphan_total + removed;
+    exit when orphan_total >= p_limit;
+  end loop;
 
   return query select post_total, comment_total;
 end;

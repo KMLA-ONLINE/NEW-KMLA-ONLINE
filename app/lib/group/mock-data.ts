@@ -19,6 +19,7 @@ export const mockGroup: GroupSpace = {
   description: "학생 자치 활동, 행사 공지, 건의사항을 나누는 공간입니다.",
   type: "group",
   pubId: "student-council",
+  imageUrl: null,
   joinPolicy: "request",
   // 기본은 멤버 전원이 글을 쓴다. 'managers'로 바꾸면 owner/admin/manager만 메인 글을 쓰고
   // 나머지는 댓글만 단다(공지형 그룹). 그룹 설정에서 관리자가 켠다.

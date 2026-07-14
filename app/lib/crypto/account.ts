@@ -144,7 +144,6 @@ export async function createAccountFromKeys({
   }
 }
 
-/** Signup. */
 export async function createAccount(password: string, email: string): Promise<NewAccount> {
   return createAccountFromKeys(derivePasswordKeys(password, email))
 }

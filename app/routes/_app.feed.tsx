@@ -9,8 +9,7 @@ import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import { mockFeedPosts, mockMealPlan } from "~/lib/feed/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
-// 피드도 한 번에 다 렌더하지 않고 페이지 단위로(스크롤이 바닥에 닿으면 다음 페이지). 그룹 피드와
-// 같은 규칙 -- 로더가 붙으면 이 슬라이스가 list_feed_posts의 keyset 페이지네이션으로 바뀐다.
+// TODO(backend): 이 슬라이스가 list_feed_posts의 keyset 페이지네이션(before_id)으로 바뀐다.
 const FEED_PAGE_SIZE = 6
 
 // 여러 그룹의 글을 한 흐름으로 모아 순수 최신순으로 보여준다(created_at 내림차순). 고정은 그룹

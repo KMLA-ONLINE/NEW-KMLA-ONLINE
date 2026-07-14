@@ -136,6 +136,23 @@ begin
   end if;
 end $$;
 
+-- spaces.image_url은 컬럼 grant에 없다(관리자도 직접 못 쓴다). finalize_avatar와 같은 계약이다:
+-- 업로드 policy가 이미 경로와 권한을 봤지만, 그건 클라이언트가 **업로드했다**는 것만 말해준다.
+-- 실제로 그 object가 있고, 24시간 안에 올라왔고, 이미지 MIME인지는 여기서 다시 본다.
+create function public.finalize_space_image(p_space_id bigint,p_storage_path text)
+returns void language plpgsql security definer set search_path='' as $$
+declare expected_prefix text;
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  select s.pub_id||'/' into expected_prefix from public.spaces s where s.id=p_space_id and s.deleted_at is null;
+  if expected_prefix is null then raise exception 'space not found'; end if;
+  if not private.has_uuid_object_suffix(p_storage_path,expected_prefix)
+    or not exists(select 1 from storage.objects where bucket_id='space-images' and name=p_storage_path and created_at>=now()-interval '24 hours' and coalesce(metadata->>'mimetype','') in ('image/jpeg','image/png','image/webp'))
+    then raise exception 'invalid space image object'; end if;
+  update public.spaces set image_url=p_storage_path where id=p_space_id;
+end $$;
+
 create function public.enqueue_due_storage_cleanup()
 returns bigint language plpgsql security definer set search_path='' as $$
 declare result bigint;
@@ -223,7 +240,7 @@ revoke all on table private.attachment_cleanup_queue from public,anon,authentica
 revoke all on sequence private.attachment_cleanup_queue_id_seq from public,anon,authenticated;
 grant select,insert,update,delete on private.attachment_cleanup_queue to service_role;
 grant usage,select on sequence private.attachment_cleanup_queue_id_seq to service_role;
-grant execute on function public.request_attachment_removal(text,bigint) to authenticated;
-revoke execute on function public.request_attachment_removal(text,bigint) from public, anon, service_role;
+grant execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text) to authenticated;
+revoke execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text) from public, anon, service_role;
 grant execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) to service_role;
 revoke execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) from public,anon,authenticated;

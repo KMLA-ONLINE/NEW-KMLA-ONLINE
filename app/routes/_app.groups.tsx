@@ -133,12 +133,22 @@ export default function GroupsPage() {
                 <p className="text-muted-foreground text-sm">내가 참여 중인 비공식 그룹</p>
               </div>
 
-              <Link
-                to="/groups/discover"
-                className="rounded-md border px-4 py-2 text-sm font-medium"
-              >
-                그룹 찾기
-              </Link>
+              <div className="flex gap-2">
+                <Link
+                  to="/groups/discover"
+                  className="rounded-md border px-4 py-2 text-sm font-medium"
+                >
+                  그룹 찾기
+                </Link>
+                {/* 비공식 그룹(community)은 accepted면 누구나 만든다. 공식 그룹은 app admin만
+                    만들 수 있어서 생성 화면 안에서 갈린다. */}
+                <Link
+                  to="/groups/create"
+                  className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium"
+                >
+                  그룹 만들기
+                </Link>
+              </div>
             </div>
 
             <section className="flex flex-col gap-1.5 sm:gap-2">

@@ -14,7 +14,6 @@ export type MessageAttachment = {
   name: string
   contentType?: string
   sizeBytes?: number
-  /** Images and video. */
   width?: number
   height?: number
   /** Audio and video. Persisted as message_attachments.duration_ms. */

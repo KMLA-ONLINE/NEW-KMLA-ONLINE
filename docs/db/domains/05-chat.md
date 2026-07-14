@@ -66,6 +66,8 @@ Source: [`supabase/schemas/05-chat.sql`](../../../supabase/schemas/05-chat.sql)
 | `trg_mark_sender_chat_read`                   | `messages`                   | AFTER INSERT                                                             | 메시지 작성자의 `chat_read_states`를 자동 전진                                                                                                                                                                                                                                                                                |
 | `trg_enforce_message_attachment_shape`        | `message_attachments`        | AFTER INSERT (statement, transition table)                               | 한 메시지의 첨부가 상한을 넘거나, 2개 이상인데 image가 아닌 것이 섞이면 예외. `send_message_with_attachments`도 같은 규칙을 검사하지만, service_role 직접 insert는 RPC를 거치지 않으므로 테이블에서 다시 못을 박는다                                                                                                          |
 
+메시지 삭제가 무엇을 지우고 무엇을 남기는지는 [삭제·보존 정책](../deletion-policy.md)에 있다.
+
 ## 주의
 
 - **1:1 대화의 쓰기는 구조적으로 RPC만 가능하다.** `messages_insert`/`messages_update` 정책이 둘 다 `content is not null`을 요구하는데 암호화된 대화의 `content`는 언제나 null이고, `content_ciphertext`에는 authenticated 컬럼 grant가 아예 없다. `message_keys`도 마찬가지다. 즉 정책을 고치는 것만으로 평문이 새어 들어올 수 없다.

@@ -34,11 +34,9 @@ export type NotificationType =
 
 /** 행위자. 익명이거나 시스템/모더레이션 알림이면 서버가 통째로 null로 지워서 내린다. */
 export type NotificationActor = {
-  /** profiles.id */
   id: number
-  /** profiles.name */
   name: string
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 이니셜 폴백. */
   avatarUrl: string | null
 }
 

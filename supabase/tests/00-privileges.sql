@@ -13,6 +13,8 @@
 begin;
 
 do $$
+declare
+  missing_helper text;
 begin
   -- authenticated에게 열린 insert/update 정책인데 그 테이블의 단 한 컬럼도 쓸 수 없다면,
   -- 그 정책은 영원히 발화하지 않는다. 잃어버린 컬럼 grant의 모습이 정확히 이렇다.
@@ -113,28 +115,60 @@ begin
     raise exception 'a public function is executable by no role: a grant was probably lost';
   end if;
 
-  -- private 스키마의 헬퍼는 위 검사가 보지 못한다(public만 본다). 그런데 RLS 정책 표현식과
-  -- security invoker 함수는 **호출자 권한으로** 실행되므로, 거기서 쓰이는 헬퍼가 grant를
-  -- 잃으면 그 정책이 걸린 모든 읽기·쓰기가 "permission denied for function"으로 죽는다.
-  -- RLS 정책이 실제로 참조하는 헬퍼를 전부 못박아 둔다 -- 하나라도 빠지면 그게 grant를 잃어도
-  -- 안 잡힌다(감사에서 6개가 빠져 있었다). 새 RLS 헬퍼를 만들면 여기에도 반드시 추가할 것.
-  if not has_function_privilege('authenticated', 'private.current_profile_id()', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.is_accepted_user()', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.is_conversation_member(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_access_message(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.is_direct_conversation(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.has_active_message_reply(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.is_valid_message_parent(bigint, bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_post_in_space(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_curate_space(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_participate_space(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_manage_space(bigint, member_role[])', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.is_space_member(bigint, member_role[])', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_access_post(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.can_access_comment(bigint)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'private.has_active_descendant(bigint)', 'EXECUTE')
-  then
-    raise exception 'a private helper used by an RLS policy has lost its execute grant';
+  -- private 스키마의 헬퍼는 위 검사가 보지 못한다(public만 본다). 그런데 RLS 정책 표현식은
+  -- **호출자 권한으로** 실행되므로, 거기서 쓰이는 헬퍼가 grant를 잃으면 그 정책이 걸린 모든
+  -- 읽기·쓰기가 "permission denied for function"으로 죽는다.
+  --
+  -- 목록을 손으로 들고 있으면 안 된다. 그 목록에서 빠지는 것이 정확히 이 검사가 잡으려는 실수와
+  -- 같은 종류이기 때문이다 -- 실제로 has_permission(gongang/karaoke)과 is_club_round_open이
+  -- 빠져 있었고, 둘 다 grant를 잃어도 이 파일은 녹색을 보고했다. 그래서 목록을 손으로 적는 대신
+  -- **정책 본문에서 직접 캐낸다.** 새 헬퍼를 쓰는 정책을 추가하면 자동으로 따라온다.
+  for missing_helper in
+    select distinct m[1]
+    from pg_policy pol
+    cross join lateral regexp_matches(
+      coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' ||
+      coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''),
+      'private\.([a-z_]+)\(', 'g'
+    ) m
+  loop
+    -- 이름만 뽑았으므로 오버로드가 있으면 전부 확인한다.
+    if exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'private' and p.proname = missing_helper
+        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    ) then
+      raise exception 'private.% is used by an RLS policy but authenticated cannot execute it', missing_helper;
+    end if;
+  end loop;
+
+  -- security definer는 호출자가 아니라 **함수 소유자**의 권한으로 돈다. search_path를 고정하지
+  -- 않으면 호출자가 자기 스키마를 search_path 앞에 끼워 넣어 `profiles`라는 이름의 가짜 테이블을
+  -- 보게 만들 수 있다 -- 그 함수는 소유자 권한이므로, 그 순간 권한 상승이다.
+  -- 스키마 파일들은 전부 `set search_path = ''`를 달고 있다. 하나라도 빠지는 날 잡는다.
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and p.prosecdef
+      and not exists (
+        select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%'
+      )
+  ) then
+    raise exception 'a security definer function does not pin its search_path';
+  end if;
+
+  -- RLS를 켜지 않은 테이블에는 정책이 몇 개 붙어 있든 아무 효력이 없다. 조용히, 전부 열린다.
+  -- 새 테이블을 만들며 `alter table ... enable row level security` 한 줄을 빠뜨리는 것이
+  -- 이 스키마에서 가장 값비싼 오타다.
+  if exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+  ) then
+    raise exception 'a public table has row level security disabled';
   end if;
 
   -- private 스키마 자체는 클라이언트의 것이 아니다. usage는 위 헬퍼를 부르기 위해 필요하지만,

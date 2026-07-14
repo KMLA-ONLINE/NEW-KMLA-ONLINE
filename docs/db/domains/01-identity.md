@@ -27,6 +27,8 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 | `finalize_avatar(storage_path)`          | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결                             |
 | `finalize_cover_image(storage_path)`     | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결                 |
 | `bootstrap_first_app_admin(profile_id)`  | service_role                                             | O    | admin이 하나도 없을 때 첫 admin 지정                                        |
+| `set_app_admin(profile_id)`              | app admin                                                | O    | 두 번째 이후의 admin 임명 (accepted만)                                      |
+| `unset_app_admin(profile_id)`            | app admin                                                | O    | admin 강등. **마지막 한 명은 못 내린다**                                    |
 | `get_my_key_vault()`                     | 본인 profile (accepted 불필요)                           | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
 | `get_identity_public_keys(user_ids[])`   | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
 | `create_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
@@ -71,6 +73,8 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 ## 주의
 
 - profile 생성 경로는 Auth trigger뿐이다. user metadata는 이름 외에 role/status 판정에 쓰지 않는다.
-- **두 번째 app admin을 만들 경로가 없다.** `bootstrap_first_app_admin`은 admin이 0명일 때만 통하고(service_role + advisory lock), admin이 admin을 임명하거나 강등하는 RPC는 없다. `profiles.role`은 update grant에도 없다. 승인자가 한 명뿐이면 그 사람이 졸업하는 날 가입이 멈춘다.
+- **app admin은 admin끼리 늘리고 줄인다.** `profiles.role`은 update grant에 없어서 `set_app_admin`/`unset_app_admin`이 유일한 문이다. 첫 한 명만 예외로 `bootstrap_first_app_admin`(service_role, admin이 0명일 때만)이 세운다.
+- **마지막 admin은 강등되지 않는다.** 0명이 되는 순간 다시 세우는 길이 service_role뿐이라 앱 안에서 복구할 수 없다. 동시에 서로를 내리는 경합도 같은 구멍으로 새므로 `unset_app_admin`은 bootstrap과 **같은 키**의 advisory lock으로 직렬화한다 — 둘이 각자 "나 말고 한 명 더 있네"를 보고 통과하면 결과는 0명이다.
+- 강등은 임명의 짝이면서 **탈퇴의 전제**이기도 하다. `withdraw_profile`이 admin의 탈퇴를 거부하므로, 강등이 없으면 한번 admin이 된 사람은 계정을 지울 수 없다.
 - `user_keys`는 행 전체가 accepted 사용자에게 보이지만 **컬럼 grant가 `identity_public_key` 하나만 남기고 봉인된 blob을 전부 회수한다.** 행 단위로는 이 구분을 표현할 수 없어서다. 회수하지 않으면 같은 학교 아무나 반 친구들의 `wrapped_user_key`를 긁어갈 수 있는데, 그건 _비밀번호에서 유도된_ 키로 봉인돼 있어서 약한 비밀번호를 오프라인에서 때릴 수 있다.
 - `anonymize_profile`이 탈퇴 시 `user_keys`를 지운다. 남겨봐야 아무도 열 수 없는 blob이고, 상대방 쪽 히스토리는 상대의 키로 그대로 읽힌다.

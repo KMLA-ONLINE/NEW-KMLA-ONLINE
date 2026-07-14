@@ -211,4 +211,130 @@ begin
   end;
 end $$;
 
+do $$
+declare
+  user1 uuid := '11111111-1111-4111-8111-eeeeeeeeeeee';
+  user2 uuid := '22222222-2222-4222-8222-eeeeeeeeeeee';
+  profile1 bigint;
+  profile2 bigint;
+  space1 bigint;
+  post1 bigint;
+  root_comment bigint;
+  child_comment bigint;
+  grandchild_comment bigint;
+begin
+  insert into auth.users (id,email) values
+    (user1,'comment-delete-root@example.com'),
+    (user2,'comment-delete-child@example.com');
+  select id into profile1 from public.profiles where auth_user_id=user1;
+  select id into profile2 from public.profiles where auth_user_id=user2;
+  update public.profiles set type='teacher',status='accepted' where id in (profile1,profile2);
+  insert into public.spaces (type,name) values ('group','comment delete tree') returning id into space1;
+  insert into public.space_members (space_id,user_id,role) values
+    (space1,profile1,'owner'),(space1,profile2,'member');
+  insert into public.posts (space_id,author_id,title,content)
+  values (space1,profile1,'comment tree','body') returning id into post1;
+  insert into public.comments (post_id,author_id,content)
+  values (post1,profile1,'root') returning id into root_comment;
+  insert into public.comments (post_id,author_id,parent_id,content)
+  values (post1,profile2,root_comment,'child') returning id into child_comment;
+  insert into public.comments (post_id,author_id,parent_id,content)
+  values (post1,profile1,child_comment,'grandchild') returning id into grandchild_comment;
+
+  perform set_config('request.jwt.claim.sub',user1::text,true);
+  perform public.soft_delete_comment(root_comment);
+  if exists (
+    select 1 from public.comments
+    where id in (root_comment,child_comment,grandchild_comment)
+      and (deleted_at is null or content is not null)
+  ) then
+    raise exception 'deleting a root comment must hide its whole subtree';
+  end if;
+
+  -- 딸려 간 답글의 deleted_by는 null이어야 한다. caller_id를 찍으면 notify_on_comment_removed가
+  -- 답글 작성자 전원에게 comment_removed("모더레이션으로 삭제됨")를 쏜다 -- 스레드가 접혔을 뿐인데.
+  -- 알림이 더 가는 것은 화면상 에러가 아니라 아무도 모르고, 받은 사람만 억울하다.
+  if exists (
+    select 1 from public.comments
+    where id in (child_comment,grandchild_comment) and deleted_by is not null
+  ) then
+    raise exception 'cascaded replies must not carry deleted_by (it fires comment_removed)';
+  end if;
+  if exists (
+    select 1 from public.notifications
+    where type='comment_removed' and comment_id in (child_comment,grandchild_comment)
+  ) then
+    raise exception 'a cascaded reply author was told their comment was moderated';
+  end if;
+
+  -- 죽은 서브트리는 되살아나지 않는다. 여기에 답글이 하나라도 꽂히면 has_active_descendant가 조상
+  -- 전부를 true로 만들어 방금 지운 트리가 tombstone으로 다시 뜨고, purge는 잎만 걷으므로 그
+  -- 조상들은 영영 안 지워진다. trg_validate_comment_parent가 막는데, 그게 없어도 화면엔 에러가
+  -- 안 뜬다 -- 스레드가 조용히 돌아올 뿐이다.
+  begin
+    insert into public.comments (post_id,author_id,parent_id,content)
+    values (post1,profile2,child_comment,'zombie');
+    raise exception 'replying under a soft-deleted comment must be rejected';
+  exception when raise_exception then
+    if sqlerrm <> 'comment parent must be an active comment on the same post' then raise; end if;
+  end;
+  if private.has_active_descendant(root_comment) then
+    raise exception 'a deleted comment subtree came back to life';
+  end if;
+
+  update public.comments
+  set deleted_at=now()-interval '8 days'
+  where id in (root_comment,child_comment,grandchild_comment);
+  perform set_config('request.jwt.claim.role','service_role',true);
+  perform public.purge_deleted_content();
+  if exists (select 1 from public.comments where id in (root_comment,child_comment,grandchild_comment)) then
+    raise exception 'deleted root comment subtree was not purged after seven days';
+  end if;
+end $$;
+
+-- 배치보다 깊은 사슬도 한 겹씩 벗겨진다. 배치를 id 배열로 한 번 고정하면 뽑힌 p_limit개가 전부
+-- "자식이 배치 밖에 있는" 중간 노드일 수 있고(최상위 댓글 삭제가 서브트리를 통째로 같은
+-- deleted_at으로 만드니 큰 트리는 늘 경계에서 잘린다), 그러면 한 행도 못 지운 채 다음 실행이 같은
+-- 집합을 다시 골라 영영 안 줄어든다. 아래 5단 사슬의 잎은 언제나 하나뿐이라 그 교착을 정확히 찌른다.
+do $$
+declare
+  user1 uuid := '55555555-5555-4555-8555-eeeeeeeeeeee';
+  profile1 bigint;
+  space1 bigint;
+  post1 bigint;
+  chain bigint[] := '{}';
+  parent bigint;
+  current bigint;
+  purged bigint;
+begin
+  insert into auth.users (id,email) values (user1,'comment-chain-purge@example.com');
+  select id into profile1 from public.profiles where auth_user_id=user1;
+  update public.profiles set type='teacher',status='accepted' where id=profile1;
+  insert into public.spaces (type,name) values ('group','comment chain purge') returning id into space1;
+  insert into public.space_members (space_id,user_id,role) values (space1,profile1,'owner');
+  insert into public.posts (space_id,author_id,title,content)
+  values (space1,profile1,'chain','body') returning id into post1;
+
+  for i in 1..5 loop
+    insert into public.comments (post_id,author_id,parent_id,content)
+    values (post1,profile1,parent,'depth '||i) returning id into current;
+    chain := chain || current;
+    parent := current;
+  end loop;
+  update public.comments set content=null,deleted_at=now()-interval '8 days' where id=any(chain);
+
+  perform set_config('request.jwt.claim.role','service_role',true);
+
+  -- 배치 2 = 잎 하나 벗기고, 새로 생긴 잎 하나 더. 배열 고정 방식이면 여기서 0이 나온다.
+  select purged_comments into purged from public.purge_deleted_content(interval '7 days',2);
+  if purged <> 2 then
+    raise exception 'leaf peeling stalled on a chain deeper than the batch (purged %)', purged;
+  end if;
+
+  select purged_comments into purged from public.purge_deleted_content(interval '7 days',100);
+  if purged <> 3 or exists (select 1 from public.comments where id=any(chain)) then
+    raise exception 'the rest of the deleted chain was not purged (purged %)', purged;
+  end if;
+end $$;
+
 rollback;

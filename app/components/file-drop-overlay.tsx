@@ -1,6 +1,5 @@
 import { ImagePlusIcon } from "lucide-react"
 
-// 파일을 드래그 중일 때 대상 영역 위에 덮이는 안내 오버레이(작성 모달·메신저 공용).
 // pointer-events-none이라 드래그·드롭 이벤트는 아래 드롭 존으로 그대로 통과한다.
 // 감싸는 컨테이너는 position이 있어야 한다(fixed/relative 등).
 export function FileDropOverlay({ label = "여기에 놓아 첨부하기" }: { label?: string }) {

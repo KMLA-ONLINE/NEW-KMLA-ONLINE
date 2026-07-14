@@ -21,6 +21,10 @@ create type public.space_post_policy as enum ('all', 'managers');
 
 create table public.spaces (
   id bigserial primary key,
+  -- 만들 때 정해지고 그 뒤로는 불변이다(update 컬럼 grant에 없고, 바꾸는 RPC도 없다).
+  -- storage 경로가 이 값으로 짜여 있어서다: post-files/{pub_id}/{uuid},
+  -- space-images/{pub_id}/{uuid}. 슬러그를 바꾸면 이미 올라간 모든 첨부의 경로 검사가 어긋나고,
+  -- 그걸 따라가려면 object를 새 경로로 옮기고 storage_path를 다시 쓰는 배치가 필요하다.
   pub_id text not null default left(replace(gen_random_uuid()::text, '-', ''), 12),
   type public.space_type not null,
   name text not null,
@@ -279,8 +283,8 @@ create policy spaces_select on public.spaces for select to authenticated using (
 );
 -- 관리자(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description,
 -- allow_anonymous_posts, post_policy.
--- join_policy는 전환 시 대기 중인 가입 요청을 정리해야 해서 여기 없다(RPC가 갈 자리).
--- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 storage finalize RPC가 필요하다.
+-- join_policy는 전환 시 대기 중인 가입 요청을 먼저 처리해야 해서 set_space_join_policy가 맡는다.
+-- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 finalize_space_image가 맡는다.
 create policy spaces_update on public.spaces for update to authenticated
   using (deleted_at is null and private.can_manage_space(id))
   with check (deleted_at is null and private.can_manage_space(id));
@@ -322,9 +326,13 @@ declare caller_id bigint := private.require_current_profile(true); space_policy 
 begin
   select join_policy into space_policy from public.spaces where id=p_space_id and deleted_at is null;
   if space_policy is null then raise exception 'space not found'; end if;
-  if space_policy='invite_only' then raise exception 'invite required to join this space'; end if;
+  -- 멤버십·밴 확인을 invite_only 분기보다 **먼저** 한다. 그래야 invite_only를 "없는 공간"과
+  -- 똑같이 응답할 수 있다 -- 순차 id를 훑어 비공개 공간의 존재를 열거하는 오라클을 막는다.
+  -- 이미 멤버/밴인 사람은 어차피 그 공간을 아는 사람이라 여기서 갈라도 새어 나갈 게 없다.
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id and banned_at is not null) then raise exception 'banned from this space'; end if;
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id) then return 'joined'; end if;
+  -- 비멤버에게 invite_only는 존재 자체를 숨긴다(spaces_select가 숨기는 것과 같은 응답).
+  if space_policy='invite_only' then raise exception 'space not found'; end if;
   if space_policy='request' then
     insert into public.space_join_requests(space_id,user_id) values(p_space_id,caller_id) on conflict do nothing;
     return 'requested';
@@ -342,7 +350,9 @@ begin
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id and role='owner') then
     raise exception 'transfer ownership before leaving';
   end if;
-  delete from public.space_members where space_id=p_space_id and user_id=caller_id;
+  -- banned_at is null: 밴당한 사람이 leave로 자기 밴 기록(space_members 행)을 지우고 join_space로
+  -- 재가입해 밴을 무효화하는 걸 막는다. 밴은 탈퇴로 풀리지 않는다.
+  delete from public.space_members where space_id=p_space_id and user_id=caller_id and banned_at is null;
   if found then update public.spaces set member_count=greatest(member_count-1,0) where id=p_space_id; end if;
 end;
 $$;
@@ -485,5 +495,145 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;
+-- spaces에는 insert grant가 없다(service_role만). 그래서 공간을 만드는 유일한 길이 이 RPC다.
+--
+-- group은 app admin만 만든다. 공식 그룹은 학교 조직을 그대로 옮긴 것이라 이름이 곧 권위이고
+-- (spaces_active_group_name_key가 이름을 유일하게 잡는다), 아무나 '학생회'를 선점하면 안 된다.
+-- community는 accepted면 누구나 만든다.
+--
+-- 생성자는 owner다. 안 그러면 owner가 0명인 공간이 태어나 trg_validate_space_owner가 커밋을
+-- 거부한다 -- 즉 '멤버 없는 빈 공간'은 표현할 수조차 없다.
+create function public.create_space(
+  p_type public.space_type,
+  p_name text,
+  p_description text default null,
+  p_pub_id text default null,
+  p_join_policy public.space_join_policy default 'public',
+  p_post_policy public.space_post_policy default 'all',
+  p_allow_anonymous_posts boolean default true
+)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true); new_space_id bigint;
+begin
+  if p_type='group' then perform private.require_app_admin(); end if;
+  if p_pub_id is not null and exists(select 1 from public.spaces where pub_id=p_pub_id) then
+    raise exception 'pub id already taken';
+  end if;
+
+  insert into public.spaces(type,name,description,join_policy,post_policy,allow_anonymous_posts,created_by)
+  values(p_type,btrim(p_name),nullif(btrim(coalesce(p_description,'')),''),p_join_policy,p_post_policy,p_allow_anonymous_posts,caller_id)
+  returning id into new_space_id;
+
+  insert into public.space_members(space_id,user_id,role) values(new_space_id,caller_id,'owner');
+  -- pub_id를 안 넘기면 컬럼 default(랜덤 12자)를 그대로 둔다. coalesce가 그 값을 자기 자신으로
+  -- 되쓰므로 슬러그 생성 규칙이 스키마 한 곳에만 산다.
+  update public.spaces set pub_id=coalesce(p_pub_id,pub_id), member_count=1 where id=new_space_id;
+  return new_space_id;
+end;
+$$;
+
+-- join_policy만 컬럼 grant에서 빠져 있는 이유가 이 함수다. request에서 벗어나는 순간 대기 중인
+-- 가입 요청은 아무도 승인할 수 없는 유령이 된다 -- approve_join_request는 여전히 돌지만 그 공간의
+-- 요청함을 띄울 화면이 사라지기 때문이다. 서버가 대신 일괄 수락/거절해 주지도 않는다: 그건 관리자가
+-- 내려야 할 판단이지 정책 전환의 부수 효과일 수 없다. 그래서 먼저 비우게 하고 막는다.
+create function public.set_space_join_policy(p_space_id bigint, p_join_policy public.space_join_policy)
+returns void language plpgsql security definer set search_path = '' as $$
+declare current_policy public.space_join_policy;
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  select join_policy into current_policy from public.spaces
+  where id=p_space_id and deleted_at is null
+  for update;
+  if current_policy is null then raise exception 'space not found'; end if;
+  if current_policy=p_join_policy then return; end if;
+
+  if current_policy='request' and exists(select 1 from public.space_join_requests where space_id=p_space_id) then
+    raise exception 'resolve pending join requests first';
+  end if;
+
+  update public.spaces set join_policy=p_join_policy where id=p_space_id;
+end;
+$$;
+
+-- 공간 삭제에 owner의 문이 없는 건 의도다. 그룹 하나에는 남의 글이 수백 개 실려 있어서, 지우는
+-- 일은 owner 한 사람의 것이 아니다. 지금은 운영자가 service_role로 연다.
+create function public.soft_delete_space(p_space_id bigint)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.require_service_role();
+  update public.spaces set deleted_at=now() where id=p_space_id and deleted_at is null;
+  if not found then raise exception 'space not found'; end if;
+end;
+$$;
+
+-- soft delete된 공간을 흔적까지 지운다. **blob이 먼저 나가야 한다.**
+--
+-- enqueue_due_storage_cleanup이 삭제 7일이 지난 공간의 첨부와 이미지를 큐에 넣고, 파일이 Storage
+-- 에서 실제로 지워진 뒤에야 complete_storage_cleanup이 post_attachments 행을 지우고 image_url을
+-- 비운다. 그러니 그 둘이 아직 남아 있다는 건 곧 파일이 아직 살아 있다는 뜻이다. 그때 이 함수가
+-- 강제로 밀면 큐가 가리키던 행이 먼저 사라져 blob이 영영 고아로 남는다 -- 다음 실행에서 다시 본다.
+create function private.purge_space(p_space_id bigint)
+returns boolean language plpgsql security definer set search_path = '' as $$
+begin
+  if exists(
+    select 1 from public.post_attachments a join public.posts p on p.id=a.post_id
+    where p.space_id=p_space_id
+  ) or exists(select 1 from public.spaces where id=p_space_id and image_url is not null) then
+    return false;
+  end if;
+
+  delete from public.comment_reactions r using public.comments c join public.posts p on p.id=c.post_id
+  where r.comment_id=c.id and p.space_id=p_space_id;
+  delete from public.post_reactions r using public.posts p
+  where r.post_id=p.id and p.space_id=p_space_id;
+  delete from public.notifications where space_id=p_space_id;
+
+  -- comments.parent_id가 on delete restrict라 부모와 자식을 한 DELETE에 함께 담을 수 없다.
+  -- 잎부터 벗겨 내려간다. 멘션은 comments/posts에 cascade로 매달려 같이 떨어진다.
+  loop
+    delete from public.comments c using public.posts p
+    where c.post_id=p.id and p.space_id=p_space_id
+      and not exists(select 1 from public.comments child where child.parent_id=c.id);
+    exit when not found;
+  end loop;
+
+  delete from public.posts where space_id=p_space_id;
+  delete from public.space_join_requests where space_id=p_space_id;
+  delete from public.space_invites where space_id=p_space_id;
+  delete from public.space_anonymity_suspensions where space_id=p_space_id;
+  delete from public.space_categories where space_id=p_space_id;
+  -- trg_validate_space_owner는 deferred라 커밋 시점에 센다. 그때는 spaces 행도 없어서 통과한다.
+  delete from public.space_members where space_id=p_space_id;
+  delete from public.spaces where id=p_space_id;
+  return true;
+end;
+$$;
+
+create function public.purge_due_spaces(p_limit int4 default 20)
+returns table(purged int4, skipped int4)
+language plpgsql security definer set search_path = '' as $$
+declare target_id bigint;
+begin
+  perform private.require_service_role();
+  if p_limit is null or p_limit not between 1 and 100 then raise exception 'limit must be between 1 and 100'; end if;
+  purged := 0;
+  skipped := 0;
+  for target_id in
+    select id from public.spaces
+    where deleted_at < now() - interval '7 days'
+    order by deleted_at, id
+    limit p_limit
+  loop
+    if private.purge_space(target_id) then purged := purged + 1; else skipped := skipped + 1; end if;
+  end loop;
+  return next;
+end;
+$$;
+
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;
+revoke execute on function private.purge_space(bigint) from public, anon, authenticated, service_role;
+revoke execute on function public.soft_delete_space(bigint), public.purge_due_spaces(int4) from public, anon, authenticated, service_role;
+grant execute on function public.soft_delete_space(bigint), public.purge_due_spaces(int4) to service_role;

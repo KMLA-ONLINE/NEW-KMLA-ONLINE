@@ -7,6 +7,7 @@ import {
   PaletteIcon,
   ShieldCheckIcon,
   UserRoundIcon,
+  UsersRoundIcon,
   UtensilsCrossedIcon,
 } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
@@ -15,7 +16,7 @@ import { Link, useSearchParams } from "react-router"
 import { ThemeSelect } from "~/components/menu/theme-select"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
-import { mockPendingProfiles } from "~/lib/admin/mock-data"
+import { mockAppAdmins, mockPendingProfiles } from "~/lib/admin/mock-data"
 import { mockProfile } from "~/lib/profile/mock-data"
 import { cn } from "~/lib/utils"
 
@@ -140,6 +141,18 @@ export default function MenuPage() {
                   <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
                 </span>
               ) : undefined
+            }
+          />
+          <MenuRow
+            icon={UsersRoundIcon}
+            label="관리자"
+            hint="가입 승인을 할 사람을 정합니다"
+            to="/admin/admins"
+            trailing={
+              <span className="flex items-center gap-2">
+                <Badge variant="secondary">{mockAppAdmins.length}</Badge>
+                <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+              </span>
             }
           />
         </MenuSection>

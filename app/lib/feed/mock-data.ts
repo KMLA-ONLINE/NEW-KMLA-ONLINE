@@ -175,9 +175,7 @@ export const mockFeedPosts: GroupPost[] = [
 // 오른쪽 사이드바의 급식 카드. 지금은 레이아웃용 mock -- 나중에 cron이 급식 API에서 받아 채운다.
 // 표시에 필요한 것만 담는다: 날짜 한 줄, 끼니별 메뉴 목록.
 export type MealMenu = {
-  /** 끼니 이름(조식·중식·석식). */
   label: string
-  /** 메뉴 항목들. */
   items: string[]
 }
 

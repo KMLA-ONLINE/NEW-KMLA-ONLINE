@@ -10,8 +10,6 @@ import { cn } from "~/lib/utils"
 const ACTION_CLASS =
   "hover:bg-muted hover:text-foreground flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors"
 
-// 페북식 게시물 footer: 좋아요(롱프레스 반응)·댓글·공유를 아이콘+개수로 왼쪽에,
-// 반응 요약 이모지를 오른쪽에. 카드와 상세가 이걸 공유해 항상 동일하게 보인다.
 export function GroupPostActionBar({
   reactionCount,
   commentCount,

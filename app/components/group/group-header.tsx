@@ -46,8 +46,12 @@ export function GroupHeader({
     <section className={cn("bg-card overflow-hidden", className)}>
       <div className="from-primary/30 to-primary/5 h-32 w-full bg-linear-to-br sm:h-44" />
       <div className="flex items-start gap-3 p-4">
-        <div className="bg-muted ring-card -mt-12 hidden size-16 shrink-0 items-center justify-center rounded-xl text-2xl font-semibold ring-4 sm:-mt-14 sm:flex sm:size-20">
-          {group.name.charAt(0)}
+        <div className="bg-muted ring-card -mt-12 hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-2xl font-semibold ring-4 sm:-mt-14 sm:flex sm:size-20">
+          {group.imageUrl ? (
+            <img src={group.imageUrl} alt="" className="size-full object-cover" />
+          ) : (
+            group.name.charAt(0)
+          )}
         </div>
         <div className="min-w-0 flex-1 pt-1">
           <div className="flex items-center gap-1.5">
