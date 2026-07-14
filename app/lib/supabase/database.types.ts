@@ -1740,6 +1740,18 @@ export type Database = {
         }
         Returns: string
       }
+      create_space: {
+        Args: {
+          p_allow_anonymous_posts?: boolean
+          p_description?: string
+          p_join_policy?: Database["public"]["Enums"]["space_join_policy"]
+          p_name: string
+          p_post_policy?: Database["public"]["Enums"]["space_post_policy"]
+          p_pub_id?: string
+          p_type: Database["public"]["Enums"]["space_type"]
+        }
+        Returns: number
+      }
       create_space_invite: {
         Args: {
           p_expires_at?: string
@@ -1768,6 +1780,10 @@ export type Database = {
       finalize_avatar: { Args: { p_storage_path: string }; Returns: undefined }
       finalize_cover_image: {
         Args: { p_storage_path: string }
+        Returns: undefined
+      }
+      finalize_space_image: {
+        Args: { p_space_id: number; p_storage_path: string }
         Returns: undefined
       }
       get_chat_messages: {
@@ -1984,6 +2000,13 @@ export type Database = {
           purged_posts: number
         }[]
       }
+      purge_due_spaces: {
+        Args: { p_limit?: number }
+        Returns: {
+          purged: number
+          skipped: number
+        }[]
+      }
       remove_group_member: {
         Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined
@@ -2058,12 +2081,20 @@ export type Database = {
         }
         Returns: number
       }
+      set_app_admin: { Args: { p_profile_id: number }; Returns: undefined }
       set_post_attachments: {
         Args: { p_attachments: Json; p_post_id: number }
         Returns: undefined
       }
       set_post_pinned: {
         Args: { p_id: number; p_pinned: boolean }
+        Returns: undefined
+      }
+      set_space_join_policy: {
+        Args: {
+          p_join_policy: Database["public"]["Enums"]["space_join_policy"]
+          p_space_id: number
+        }
         Returns: undefined
       }
       set_space_member_role: {
@@ -2077,6 +2108,7 @@ export type Database = {
       soft_delete_comment: { Args: { p_id: number }; Returns: undefined }
       soft_delete_message: { Args: { p_id: number }; Returns: undefined }
       soft_delete_post: { Args: { p_id: number }; Returns: undefined }
+      soft_delete_space: { Args: { p_space_id: number }; Returns: undefined }
       submit_onboarding: {
         Args: {
           p_birthday: string
@@ -2123,6 +2155,7 @@ export type Database = {
         Args: { p_post_id: number }
         Returns: undefined
       }
+      unset_app_admin: { Args: { p_profile_id: number }; Returns: undefined }
       withdraw_profile: { Args: never; Returns: undefined }
     }
     Enums: {

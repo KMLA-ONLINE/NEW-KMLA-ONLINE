@@ -1,8 +1,6 @@
 import type { GroupCategory } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
-// 그룹 피드 상단의 카테고리 필터 칩. "전체" + 각 카테고리(sort_order 순). 선택은 부모가
-// categoryId로 들고 필터한다(null=전체). 카테고리 0개면 렌더하지 않는다.
 export function GroupCategoryChips({
   categories,
   selected,

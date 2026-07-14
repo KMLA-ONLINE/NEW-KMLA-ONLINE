@@ -7,7 +7,6 @@ import { Badge } from "~/components/ui/badge"
 import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupPost } from "~/lib/group/types"
 
-// 레딧식 "목록" 렌즈: 본문 없이 제목을 훑고 눌러 게시물 상세로 들어가는 촘촘한 행.
 export function GroupPostRow({ post }: { post: GroupPost }) {
   const authorName = post.author?.name ?? "익명"
   // 카드와 같은 규칙: 피드(space 있음)에선 그룹을 명시한 절대 경로, 그룹 안에선 라우트 기준 상대 경로.

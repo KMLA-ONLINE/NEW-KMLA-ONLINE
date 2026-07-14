@@ -4,8 +4,6 @@ import { ImageViewer, type ViewerImage } from "~/components/media/image-viewer"
 import type { GroupPostImage } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
-// 페북식 콜라주: 1장 와이드, 2장 2열, 3~4장 2x2, 5장+는 마지막 타일에 +N.
-// 타일을 누르면 풀스크린 ImageViewer로 전체를 넘겨본다.
 function containerClass(count: number) {
   if (count === 1) return "aspect-video"
   if (count === 2) return "grid aspect-[2/1] grid-cols-2 gap-1"

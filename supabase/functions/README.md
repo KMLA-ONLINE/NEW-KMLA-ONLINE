@@ -21,4 +21,4 @@ npx supabase functions deploy storage-maintenance --no-verify-jwt
 
 Schedule an HTTPS `POST` to `storage-maintenance` at least daily with the project secret key in the `apikey` header. Store the key only in the scheduler's secret store.
 
-The maintenance function enqueues due and orphaned Storage objects, deletes claimed objects through the Storage API, finalizes queue rows, removes read notifications older than 30 days, purges soft-deleted posts after 7 days, and reconciles cached counts.
+The maintenance function enqueues due and orphaned Storage objects, claims them, deletes each blob through the Storage API, and finalizes or fails the queue row. It then calls `purge_due_spaces`, which permanently removes spaces soft-deleted more than 7 days ago. That call comes last on purpose: a space is only safe to purge once its blobs are actually gone from Storage, and `purge_space` skips (rather than forces) any space whose attachment rows or `image_url` are still set. Skipped spaces are retried on the next run. The response summary reports `purgedSpaces` and `skippedSpaces` alongside the blob counters.

@@ -36,7 +36,6 @@ const JOIN_POLICY_OPTIONS: {
   },
 ]
 
-// 카드 헤더: 제목 + 편집/저장·취소. 읽기 모드에선 "편집"만, 편집 모드에선 취소·저장.
 function SectionHeader({
   title,
   editing,
@@ -79,7 +78,6 @@ function BasicInfoSection({ group }: { group: GroupSpace }) {
   const [name, setName] = useState(group.name)
   const [description, setDescription] = useState(group.description)
   const [editing, setEditing] = useState(false)
-  // 편집 중 초안. 취소하면 버리고, 저장할 때만 커밋한다.
   const [draftName, setDraftName] = useState(name)
   const [draftDescription, setDraftDescription] = useState(description)
 
@@ -130,23 +128,130 @@ function BasicInfoSection({ group }: { group: GroupSpace }) {
   )
 }
 
+// spaces.pub_id. 만들 때 정하고 그 뒤로는 바꾸지 못한다 -- 편집 버튼이 없는 게 이 섹션의 요점이다.
+//
+// pub_id는 storage 경로에 박혀 있다(post-files/{pub_id}/{uuid}, space-images/{pub_id}/{uuid}).
+// 슬러그를 바꾸면 이 그룹에 이미 올라간 모든 첨부의 경로 검사가 어긋나고, 그걸 따라가려면 object를
+// 새 경로로 옮기고 storage_path를 다시 쓰는 배치가 필요하다. 서버도 같은 이유로 닫혀 있다 --
+// pub_id는 spaces의 update 컬럼 grant에 없고 바꾸는 RPC도 없다.
+function SlugSection({ pubId }: { pubId: string }) {
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">주소</h2>
+      <p className="text-sm font-medium">/groups/{pubId}</p>
+      <p className="text-muted-foreground mt-1 text-xs">
+        그룹을 만들 때 정해지며 나중에 바꿀 수 없습니다.
+      </p>
+    </SettingsCard>
+  )
+}
+
+// spaces.image_url. 업로드가 2단계인 게 이 섹션의 전부다.
+//
+// TODO(backend): (1) Storage SDK로 `space-images/{group.pubId}/{crypto.randomUUID()}`에 직접
+// 올린다 -- space_images_insert 정책이 경로와 can_manage_space를 본다. (2) finalize_space_image(
+// space_id, storage_path)가 object 존재·24시간 신선도·MIME(jpeg/png/webp)을 **다시** 보고
+// spaces.image_url에 연결한다. image_url은 update 컬럼 grant에 없어서 이 RPC 말고는 쓸 길이 없다.
+// 확정되지 않은 blob은 48시간 뒤 고아 청소(enqueue_due_storage_cleanup)가 걷어간다 -- 그래서
+// 업로드만 하고 finalize를 못 해도 쓰레기가 쌓이지 않는다.
+//
+// 지금은 로컬 object URL로 미리보기만 만든다. 저장되지 않는다.
+const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+function ImageSection({
+  imageUrl,
+  groupName,
+  onChange,
+}: {
+  imageUrl: string | null
+  groupName: string
+  onChange: (next: string | null) => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+
+  const pick = (file: File | undefined) => {
+    if (!file) return
+    // 서버(finalize_space_image)가 보는 화이트리스트와 같다. 여기서 막는 건 왕복 한 번을 아끼는 것뿐.
+    if (!IMAGE_MIME_TYPES.includes(file.type)) {
+      setError("JPEG, PNG, WebP 이미지만 올릴 수 있습니다.")
+      return
+    }
+    setError(null)
+    onChange(URL.createObjectURL(file))
+  }
+
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">그룹 이미지</h2>
+      <div className="flex items-center gap-4">
+        <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-2xl font-semibold">
+          {imageUrl ? (
+            <img src={imageUrl} alt="" className="size-full object-cover" />
+          ) : (
+            groupName.charAt(0)
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" asChild>
+              <label>
+                이미지 선택
+                <input
+                  type="file"
+                  accept={IMAGE_MIME_TYPES.join(",")}
+                  className="sr-only"
+                  onChange={(event) => pick(event.target.files?.[0])}
+                />
+              </label>
+            </Button>
+            {imageUrl ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setError(null)
+                  onChange(null)
+                }}
+              >
+                제거
+              </Button>
+            ) : null}
+          </div>
+          <p className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
+            {error ?? "JPEG, PNG, WebP를 올릴 수 있습니다."}
+          </p>
+        </div>
+      </div>
+    </SettingsCard>
+  )
+}
+
 function JoinPolicySection({
   policy,
   onChange,
+  pendingRequestCount,
 }: {
   policy: GroupSpace["joinPolicy"]
   onChange: (next: GroupSpace["joinPolicy"]) => void
+  /** 대기 중인 가입 요청 수. request에서 벗어나려면 먼저 0이어야 한다. */
+  pendingRequestCount: number
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(policy)
   const current = JOIN_POLICY_OPTIONS.find((option) => option.value === policy)
+
+  // 서버(set_space_join_policy)가 'resolve pending join requests first'로 거절하는 조건 그대로다.
+  // request에서 벗어나면 남은 요청은 아무도 승인할 수 없는 유령이 된다 -- 그 공간의 요청함을
+  // 띄울 화면이 사라지기 때문이다. 서버가 대신 일괄 수락/거절해 주지도 않는다: 그건 관리자가
+  // 내릴 판단이지 정책 전환의 부수 효과일 수 없다.
+  const blocked = policy === "request" && pendingRequestCount > 0
 
   const edit = () => {
     setDraft(policy)
     setEditing(true)
   }
   const save = () => {
-    // 전환 side effect(request에서 벗어날 때 대기 요청 정리 -- 비공개=거절/공개=수락)는 부모가 처리.
     onChange(draft)
     setEditing(false)
   }
@@ -161,28 +266,38 @@ function JoinPolicySection({
         onSave={save}
       />
       {editing ? (
-        <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
-          {JOIN_POLICY_OPTIONS.map((option) => {
-            const selected = option.value === draft
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setDraft(option.value)}
-                className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{option.label}</p>
-                  <p className="text-muted-foreground text-xs">{option.description}</p>
-                </div>
-                {selected ? (
-                  <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
-                ) : null}
-              </button>
-            )
-          })}
+        <div className="flex flex-col gap-2">
+          <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
+            {JOIN_POLICY_OPTIONS.map((option) => {
+              const selected = option.value === draft
+              const disabled = blocked && option.value !== policy
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  onClick={() => setDraft(option.value)}
+                  className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors disabled:opacity-50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{option.label}</p>
+                    <p className="text-muted-foreground text-xs">{option.description}</p>
+                  </div>
+                  {selected ? (
+                    <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+          {blocked ? (
+            <p className="text-muted-foreground text-xs">
+              대기 중인 가입 요청 {pendingRequestCount}건을 먼저 처리해야 정책을 바꿀 수 있습니다.
+              멤버 탭에서 승인하거나 거절해주세요.
+            </p>
+          ) : null}
         </div>
       ) : (
         <div>
@@ -438,8 +553,11 @@ export function GroupSettings({
   group,
   categories,
   canManage,
+  imageUrl,
+  onImageChange,
   joinPolicy,
   onJoinPolicyChange,
+  pendingRequestCount,
   postPolicy,
   onPostPolicyChange,
   allowAnonymous,
@@ -449,8 +567,11 @@ export function GroupSettings({
   categories: GroupCategory[]
   /** owner/admin. false면(= 매니저) 카테고리 섹션만 보인다. */
   canManage: boolean
+  imageUrl: string | null
+  onImageChange: (next: string | null) => void
   joinPolicy: GroupSpace["joinPolicy"]
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
+  pendingRequestCount: number
   postPolicy: GroupSpace["postPolicy"]
   onPostPolicyChange: (next: GroupSpace["postPolicy"]) => void
   allowAnonymous: boolean
@@ -461,13 +582,19 @@ export function GroupSettings({
       {canManage ? (
         <>
           <BasicInfoSection group={group} />
-          <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
+          <ImageSection imageUrl={imageUrl} groupName={group.name} onChange={onImageChange} />
+          <JoinPolicySection
+            policy={joinPolicy}
+            onChange={onJoinPolicyChange}
+            pendingRequestCount={pendingRequestCount}
+          />
           {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
           <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
           <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
         </>
       ) : null}
       <CategorySection initial={categories} />
+      <SlugSection pubId={group.pubId} />
     </div>
   )
 }

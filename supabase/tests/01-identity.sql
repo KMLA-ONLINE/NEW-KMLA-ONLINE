@@ -277,8 +277,61 @@ begin
     raise exception 'a rejected applicant must be able to reapply';
   end if;
 
+  -- 두 번째 관리자. bootstrap은 admin이 0명일 때만 통해서 이 문이 없으면 승인자가 한 명으로
+  -- 굳고, 그 사람이 졸업하는 날 가입 승인이 멈춘다. 대상은 accepted여야 하고, 강등은 없다.
+  perform set_config('request.jwt.claim.sub', outsider::text, true);
+  begin
+    perform public.set_app_admin(outsider_id);
+    raise exception 'a non-admin must not appoint an app admin';
+  exception when others then
+    if sqlerrm <> 'app admin required' then raise; end if;
+  end;
+
+  perform set_config('request.jwt.claim.sub', admin_user::text, true);
+  begin
+    perform public.set_app_admin(a);
+    raise exception 'a pending profile must not become an app admin';
+  exception when others then
+    if sqlerrm <> 'accepted profile required' then raise; end if;
+  end;
+
+  perform public.set_app_admin(outsider_id);
+  -- 두 번 불러도 같은 결과다. 그리고 새 관리자는 이제 스스로 큐를 연다.
+  perform public.set_app_admin(outsider_id);
+  perform set_config('request.jwt.claim.sub', outsider::text, true);
+  perform public.count_pending_profiles();
+
+  -- 강등. 새 관리자가 첫 관리자를 내릴 수 있다 -- app admin끼리는 대등하다.
+  perform public.unset_app_admin(admin_id);
+  if exists (select 1 from public.profiles where id = admin_id and role = 'admin') then
+    raise exception 'demotion failed';
+  end if;
+
+  -- 마지막 한 명은 못 내린다. 0명이 되면 다시 세우는 길이 service_role뿐이라 앱 안에서
+  -- 복구할 수 없는 상태가 된다.
+  begin
+    perform public.unset_app_admin(outsider_id);
+    raise exception 'the last app admin must not be demotable';
+  exception when others then
+    if sqlerrm <> 'the last app admin cannot be demoted' then raise; end if;
+  end;
+
+  -- 내려간 사람은 큐도 닫힌다.
+  perform set_config('request.jwt.claim.sub', admin_user::text, true);
+  begin
+    perform public.count_pending_profiles();
+    raise exception 'a demoted admin must lose the queue';
+  exception when others then
+    if sqlerrm <> 'app admin required' then raise; end if;
+  end;
+  perform set_config('request.jwt.claim.sub', outsider::text, true);
+
   -- db diff는 GRANT를 뱉지 않는다. 손으로 닫지 않으면 새 함수는 PUBLIC(=anon)에게 열린 채 태어난다.
-  if has_function_privilege('anon', 'public.list_pending_profiles(bigint,int4)', 'EXECUTE')
+  if has_function_privilege('anon', 'public.set_app_admin(bigint)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.unset_app_admin(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.set_app_admin(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.unset_app_admin(bigint)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.list_pending_profiles(bigint,int4)', 'EXECUTE')
     or has_function_privilege('anon', 'public.count_pending_profiles()', 'EXECUTE')
     or has_function_privilege('anon', 'public.review_profiles(bigint[],public.profile_status)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.list_pending_profiles(bigint,int4)', 'EXECUTE')

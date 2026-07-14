@@ -10,8 +10,6 @@ import {
 } from "~/components/ui/dropdown-menu"
 import type { GroupCategory } from "~/lib/group/types"
 
-// 작성/수정 모달의 카테고리 선택(단일). "없음"(미분류) + 각 카테고리. 카테고리 0개면 안 뜬다.
-// 값은 부모가 categoryId(null=미분류)로 들고 저장 시 posts.category_id로 내려간다.
 export function GroupCategorySelect({
   categories,
   selected,

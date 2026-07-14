@@ -18,20 +18,22 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 **읽기가 RPC인 이유**: `author_id`의 select grant를 회수했으므로(아래 "익명") 작성자를 붙여줄 수 있는 건 security definer 함수뿐이고, 그 함수가 익명이면 `author`를 null로 지운다. 덤으로 댓글/반응 수와 첨부를 한 번에 묶어 N+1을 없앤다.
 
-| 함수                                                          | 인증                                  | 쓰기 | 목적                                                                                         |
-| ------------------------------------------------------------- | ------------------------------------- | ---- | -------------------------------------------------------------------------------------------- |
-| `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버                            | X | 피드. `created_at`·`updated_at`을 함께 내려 수정 표기를 지원하며, 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다 |
-| `list_feed_posts(before_id?, limit?)`                         | 멤버인 모든 space                     | X | 홈 피드. 고정 글 우선 없이 모든 멤버 space의 글을 `(created_at, id)` 내림차순으로 합치며, 출처 `space{name,type,pub_id}`를 함께 반환한다 |
-| `get_post(pub_id)`                                            | post 접근 권한                        | X | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                 |
-| `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한                        | X | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래) |
-| `search_posts(query, space_id)`                               | space 멤버                            | X | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다             |
-| `create_post_with_attachments(space_id, title, content, ...)` | `can_post_in_space`                   | O | 글+첨부를 **한 트랜잭션**으로. 실패하면 아무것도 안 남는다                                   |
-| `set_post_attachments(post_id, attachments)`                  | 작성자 본인                           | O | 수정용. 목록 통째 교체. 이미 붙은 첨부는 스토리지 재확인(24h 신선도)을 건너뛴다              |
-| `set_post_pinned(id, pinned)`                                 | `can_curate_space` (**manager 포함**) | O | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                              |
-| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | O | soft delete + 반응/첨부 정리 + blob 삭제 큐. 댓글은 **본문을 비운다**                        |
-| `suspend_post_author_anonymity(post_id)` / `..._comment_...`  | 관리자                                | O | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)` |
-| `undo_post_anonymity_suspension(post_id)` / `..._comment_...` | 관리자                                | O | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                           |
-| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | O | soft delete된 글·댓글 하드 정리 (기본 30일, 배치 100)                                        |
+| 함수                                                          | 인증                                  | 쓰기 | 목적                                                                                                                                       |
+| ------------------------------------------------------------- | ------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_space_posts(space_id, category_id?, before_id?, limit)` | space 멤버                            | X    | 피드. `created_at`·`updated_at`을 함께 내려 수정 표기를 지원하며, 고정 글은 첫 페이지에만 얹고 시간순 스트림에선 빼 두 번 나오지 않게 한다 |
+| `list_feed_posts(before_id?, limit?)`                         | 멤버인 모든 space                     | X    | 홈 피드. 고정 글 우선 없이 모든 멤버 space의 글을 `(created_at, id)` 내림차순으로 합치며, 출처 `space{name,type,pub_id}`를 함께 반환한다   |
+| `get_post(pub_id)`                                            | post 접근 권한                        | X    | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                                                              |
+| `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한                        | X    | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래)                       |
+| `search_posts(query, space_id)`                               | space 멤버                            | X    | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다                                                           |
+| `create_post_with_attachments(space_id, title, content, ...)` | `can_post_in_space`                   | O    | 글+첨부를 **한 트랜잭션**으로. 실패하면 아무것도 안 남는다                                                                                 |
+| `set_post_attachments(post_id, attachments)`                  | 작성자 본인                           | O    | 수정용. 목록 통째 교체. 이미 붙은 첨부는 스토리지 재확인(24h 신선도)을 건너뛴다                                                            |
+| `set_post_pinned(id, pinned)`                                 | `can_curate_space` (**manager 포함**) | O    | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                                                                            |
+| `soft_delete_post(id)` / `soft_delete_comment(id)`            | 작성자 **또는** 관리자                | O    | soft delete + 반응/첨부 정리 + blob 삭제 큐. 댓글은 **본문을 비운다**                                                                      |
+| `suspend_post_author_anonymity(post_id)`                      | 관리자                                | O    | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)`                                               |
+| `suspend_comment_author_anonymity(comment_id)`                | 관리자                                | O    | 위와 같음 (댓글)                                                                                                                           |
+| `undo_post_anonymity_suspension(post_id)`                     | 관리자                                | O    | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                                                                         |
+| `undo_comment_anonymity_suspension(comment_id)`               | 관리자                                | O    | 위와 같음 (댓글)                                                                                                                           |
+| `purge_deleted_content(older_than?, limit?)`                  | service_role                          | O    | soft delete된 글·댓글 하드 정리 (기본 30일, 배치 100)                                                                                      |
 
 **메인 글 작성은 `can_post_in_space`가 연다** — `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 검사가 `posts_insert` 정책 **과** `create_post_with_attachments` **양쪽**에 있는 이유: 후자는 security definer라 RLS를 지나치므로 정책만 고치면 그대로 뒷문이 된다. `comments_insert`는 건드리지 않는다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
 
@@ -63,7 +65,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 ## 첨부
 
-blob은 `post-files/{space.pub_id}/{auth_uid}/{uuid}`에 **글보다 먼저** 올라가고, `create_post_with_attachments`가 글+첨부를 한 트랜잭션으로 만든다.
+blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고, `create_post_with_attachments`가 글+첨부를 한 트랜잭션으로 만든다. 경로에 업로더 uid가 없는 이유는 익명이다 — [09-storage](09-storage.md) 참고.
 
 **경로를 post가 아니라 space에 매단 이유**: 경로에 `post.pub_id`를 박으면 글이 먼저 존재해야 업로드가 되고, 작성 → 업로드 → 확정 **3단계**가 된다. 중간에 실패하면 첨부 없는 글이 게시된 채 남아 보상 트랜잭션이 필요해지는데, **그 보상도 실패할 수 있어 유령 글이 영구히 남는다.** space에 매달면 실패 시 아무것도 안 생기고 올려둔 blob은 고아 청소가 걷어간다.
 
@@ -79,7 +81,7 @@ blob은 `post-files/{space.pub_id}/{auth_uid}/{uuid}`에 **글보다 먼저** �
 - **댓글은 잎부터 벗긴다.** `parent_id`가 restrict라 2단계로는 임의 깊이를 못 지운다. 자식 없는 것만 지우는 루프를 반복한다.
 - **살아 있는 답글이 달린 tombstone은 남는다** — 자식이 있으면 잎이 아니다. 그게 정확히 그 tombstone을 계속 보여주는 조건이기도 하다. 전부 죽은 서브트리는 잎부터 걷혀 통째로 사라진다.
 - 글을 지우면 살아 있는 댓글도 같이 간다(글이 없으면 어차피 못 보고, `post_id`가 restrict라 남기면 글을 못 지운다). `notifications`·`*_mentions`는 cascade.
-- **삭제된 space의 글은 아직 안 걷는다** — `cleanup_space`(spaces 도메인)가 할 일이다.
+- 삭제된 space의 글은 `purge_due_spaces`(spaces 도메인)가 걷는다 — soft delete 7일 뒤, 그 공간의 blob이 Storage에서 실제로 나간 다음에.
 
 ## Private helper
 
@@ -96,16 +98,17 @@ blob은 `post-files/{space.pub_id}/{auth_uid}/{uuid}`에 **글보다 먼저** �
 
 ## Trigger
 
-| 트리거                              | 테이블             | 이벤트                                           | side effect                                                                |
-| ----------------------------------- | ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------- |
-| `trg_validate_comment_parent`       | `comments`         | BEFORE I/U of `post_id`,`parent_id`              | 부모가 같은 post의 활성 comment가 아니면 예외 (깊이 무제한)                |
-| `trg_validate_post_category`        | `posts`            | BEFORE I/U of `space_id`,`category_id`           | 다른 space의 카테고리면 예외                                               |
-| `trg_enforce_anonymous_allowed_*`   | `posts`,`comments` | BEFORE INSERT                                    | 익명 금지 공간이거나 작성자가 정지 중이면 예외 ([02-spaces](02-spaces.md)) |
-| `trg_enforce_post_attachment_shape` | `post_attachments` | AFTER INSERT (statement)                         | 첨부 10개 초과 시 예외                                                     |
-| `trg_enforce_post_mention_limit`    | `post_mentions`    | BEFORE INSERT                                    | 멘션 20개 초과 시 예외                                                     |
-| `trg_enforce_comment_mention_limit` | `comment_mentions` | BEFORE INSERT                                    | 위와 같음                                                                  |
-| `trg_mark_post_edited`              | `posts`            | BEFORE UPDATE of `title`,`content`,`category_id` | trim + `updated_at` 스탬프 (아래)                                          |
-| `trg_mark_comment_edited`           | `comments`         | BEFORE UPDATE of `content`                       | trim + `updated_at` 스탬프. **삭제엔 안 찍는다** (아래)                    |
+| 트리거                                   | 테이블             | 이벤트                                           | side effect                                                                                                                      |
+| ---------------------------------------- | ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `trg_validate_comment_parent`            | `comments`         | BEFORE I/U of `post_id`,`parent_id`              | 부모가 같은 post의 활성 comment가 아니면 예외 (깊이 무제한)                                                                      |
+| `trg_validate_post_category`             | `posts`            | BEFORE I/U of `space_id`,`category_id`           | 다른 space의 카테고리면 예외                                                                                                     |
+| `trg_enforce_anonymous_allowed_posts`    | `posts`            | BEFORE INSERT                                    | 익명 금지 공간이거나 작성자가 정지 중이면 예외. 트리거 **함수**는 `private.enforce_anonymous_allowed`([02-spaces](02-spaces.md)) |
+| `trg_enforce_anonymous_allowed_comments` | `comments`         | BEFORE INSERT                                    | 위와 같음                                                                                                                        |
+| `trg_enforce_post_attachment_shape`      | `post_attachments` | AFTER INSERT (statement)                         | 첨부 10개 초과 시 예외                                                                                                           |
+| `trg_enforce_post_mention_limit`         | `post_mentions`    | BEFORE INSERT                                    | 멘션 20개 초과 시 예외                                                                                                           |
+| `trg_enforce_comment_mention_limit`      | `comment_mentions` | BEFORE INSERT                                    | 위와 같음                                                                                                                        |
+| `trg_mark_post_edited`                   | `posts`            | BEFORE UPDATE of `title`,`content`,`category_id` | trim + `updated_at` 스탬프 (아래)                                                                                                |
+| `trg_mark_comment_edited`                | `comments`         | BEFORE UPDATE of `content`                       | trim + `updated_at` 스탬프. **삭제엔 안 찍는다** (아래)                                                                          |
 
 알림 트리거(`trg_notify_on_*`)도 이 테이블들에 걸려 있지만 정의는 [06-notifications](06-notifications.md)에 있다.
 

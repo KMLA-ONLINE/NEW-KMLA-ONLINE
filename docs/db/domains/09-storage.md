@@ -19,13 +19,16 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 ## RPC
 
-| 함수                                              | 인증                                               | 쓰기 | 목적                                                                              |
-| ------------------------------------------------- | -------------------------------------------------- | ---- | --------------------------------------------------------------------------------- |
-| `request_attachment_removal(kind, attachment_id)` | 첨부 소유자 (post 작성자 / message 발신자+방 멤버) | O    | 첨부 metadata 제거 + blob 삭제 큐 등록. 첨부만 남은 메시지는 soft delete까지 처리 |
-| `enqueue_due_storage_cleanup()`                   | service_role                                       | O    | 삭제 7일 경과한 첨부/space 이미지, 48시간 경과 고아 object를 큐에 적재            |
-| `claim_storage_cleanup(limit)`                    | service_role                                       | O    | 큐 항목 클레임 (skip locked, 10분 리스, 시도 횟수 증가)                           |
-| `complete_storage_cleanup(id)`                    | service_role                                       | O    | blob 삭제 완료 후 관련 DB 참조(row/URL) 정리 + 큐 완료 처리                       |
-| `fail_storage_cleanup(id, error)`                 | service_role                                       | O    | 실패 기록 + 지수 백오프로 재시도 예약 (최대 24시간)                               |
+| 함수                                                    | 인증                                               | 쓰기 | 목적                                                                              |
+| ------------------------------------------------------- | -------------------------------------------------- | ---- | --------------------------------------------------------------------------------- |
+| `finalize_space_image(space_id, storage_path)`          | space 관리자 (owner/admin)                         | O    | 업로드된 space 이미지 검증 후`spaces.image_url` 연결                              |
+| `request_attachment_removal(owner_type, attachment_id)` | 첨부 소유자 (post 작성자 / message 발신자+방 멤버) | O    | 첨부 metadata 제거 + blob 삭제 큐 등록. 첨부만 남은 메시지는 soft delete까지 처리 |
+| `enqueue_due_storage_cleanup()`                         | service_role                                       | O    | 삭제 7일 경과한 첨부/space 이미지, 48시간 경과 고아 object를 큐에 적재            |
+| `claim_storage_cleanup(limit)`                          | service_role                                       | O    | 큐 항목 클레임 (skip locked, 10분 리스, 시도 횟수 증가)                           |
+| `complete_storage_cleanup(id)`                          | service_role                                       | O    | blob 삭제 완료 후 관련 DB 참조(row/URL) 정리 + 큐 완료 처리                       |
+| `fail_storage_cleanup(id, error)`                       | service_role                                       | O    | 실패 기록 + 지수 백오프로 재시도 예약 (최대 24시간)                               |
+
+`request_attachment_removal`의 첫 인자는 `p_owner_type`이고 값은 `'post'` 또는 `'message'` — **어느 테이블이 그 첨부를 소유하는가**다. 첨부가 *무엇인가*를 말하는 `public.attachment_kind`(`image`/`audio`/`video`/`file`)와는 다른 축이다. 이름이 비슷해 헷갈리기 쉬워 SQL에도 같은 주석이 붙어 있다.
 
 ## Private helper
 
@@ -37,12 +40,12 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 ## 주의
 
-- 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프.
-- profile 이미지는 `{auth_uid}/{uuid}`, space 이미지는 `{space.pub_id}/{uuid}`(pub_id는 슬래시 없는 text 슬러그), 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}`(direct/room 구분 없음), **post 첨부는 `{space.pub_id}/{auth_uid}/{uuid}`** 경로를 사용한다.
-- post 첨부 경로가 post가 아니라 **space**에 매달린 건 blob을 글보다 먼저 올릴 수 있게 하려는 것이다(그래야 글+첨부가 한 트랜잭션이 된다). 근거는 [03-content](03-content.md)의 "첨부". 보안 성질은 message 첨부와 같다 — 내가 참여하는 공간의, 내 uid 경로에만 올린다.
-- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat, `create_post_with_attachments()`/`set_post_attachments()`는 content 문서에 있다.
+- 실제 blob 삭제는 SQL이 아니라 `supabase/functions/storage-maintenance` edge function이 수행한다: enqueue → claim → Storage remove → complete/fail 루프. 그 루프가 끝난 뒤 같은 실행이 `purge_due_spaces`(spaces 도메인)를 부른다 — 삭제된 공간의 행을 걷는 일은 그 공간의 blob이 실제로 나간 뒤에만 안전하기 때문이다.
+- profile 이미지는 `{auth_uid}/{uuid}`, 메시지 첨부는 `{conversation_id}/{auth_uid}/{uuid}`(direct/room 구분 없음), **space 이미지와 post 첨부는 둘 다 `{space.pub_id}/{uuid}`**(pub_id는 슬래시 없는 text 슬러그).
+- post 첨부 경로가 post가 아니라 **space**에 매달린 건 blob을 글보다 먼저 올릴 수 있게 하려는 것이다(그래야 글+첨부가 한 트랜잭션이 된다). 근거는 [03-content](03-content.md)의 "첨부".
+- **post 첨부 경로에는 업로더 uid가 없다.** 넣으면 같은 사람의 익명 글과 실명 글이 같은 uid를 경로에 달게 되어 익명이 깨진다(`get_post` 응답만 봐도 두 글이 같은 작성자임이 드러난다). 소유권은 경로가 아니라 `owner_id`로 강제한다 — storage가 JWT에서 채우므로 위조할 수 없고 경로에는 신원이 남지 않는다. 메시지 첨부가 경로에 uid를 그대로 두는 건 대화 참여자가 서로를 이미 알기 때문이다(익명 개념이 없다).
+- `finalize_avatar()`/`finalize_cover_image()`는 identity, `send_message_with_attachments()`는 chat, `create_post_with_attachments()`/`set_post_attachments()`는 content 문서에 있다. `finalize_space_image()`만 여기 있는데, 다른 space RPC와 달리 `storage.objects`를 읽어야 해서다.
 - `message-files` bucket의 `allowed_mime_types`/`file_size_limit`는 손으로 유지하지 않는다 — `public.message_attachment_mime_types` 행에서 생성한다. registry를 바꾸면 같은 migration에서 bucket도 다시 만들 것. `tests/09-storage.sql`이 둘의 drift를 잡는다.
 - **메시지 첨부 bucket이 둘인 이유**: 1:1 대화의 blob은 암호문이라 storage 입장에서 전부 `application/octet-stream`이다. 그걸 `message-files`에 허용하면 octet-stream이 위의 registry에 들어가야 하고, 그러면 **그룹** 첨부도 octet-stream으로 신고할 수 있게 되어 그쪽의 MIME 보호가 무너진다. 그래서 octet-stream만 받는 `message-files-encrypted`를 따로 두고 그룹 채팅의 화이트리스트는 손대지 않는다. 크기 상한은 평문 상한 + AEAD 오버헤드(nonce 12 + GCM 태그 16).
 - **버킷은 클라이언트가 고르지 않는다** — `message_files_insert` 정책이 대화 타입에서 유도한다. 그래서 1:1 경로에 평문 파일을 올리는 것은 나중에 RPC나 트리거에서 걸러지는 게 아니라 **업로드 자체가 통과하지 못한다.**
 - 암호화되어도 `message_attachments.content_type`은 여전히 registry에 FK로 묶여 있다 — 발신자가 `image/svg+xml`을 신고할 수는 없다. 바뀐 것은 그 신고가 **브라우저에 어디서 전달되느냐**다: 평문은 Storage가 `Content-Type` 헤더로 주지만, 암호문은 헤더가 없어 **클라이언트가 Blob을 만들며 직접 세운다.** 그 한 줄이 `app/lib/crypto/attachment.ts`의 `decryptedAttachmentUrl()`이고, 거기서 바이트를 sniff하거나 octet-stream을 쓰면 보호가 그 자리에서 사라진다. 전체 논증은 [docs/e2ee.md](../../e2ee.md).
-- space 이미지는 finalize RPC가 없어 `space-images` bucket에 신규 사용 경로가 없다 (큐/policy는 잔여 object 정리를 위해 유지).

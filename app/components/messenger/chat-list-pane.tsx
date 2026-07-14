@@ -11,7 +11,6 @@ import { getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { RoomSummary } from "~/lib/messenger/types"
 
-// 대화 목록도 한 번에 다 그리지 않고 페이지 단위로만(스크롤이 바닥에 닿으면 다음 페이지).
 const ROOM_PAGE_SIZE = 15
 
 export function ChatListPane({

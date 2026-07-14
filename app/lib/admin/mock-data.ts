@@ -1,4 +1,4 @@
-import type { PendingProfile } from "~/lib/admin/types"
+import type { AppAdminProfile, PendingProfile } from "~/lib/admin/types"
 
 // list_pending_profiles가 내려주는 순서 그대로다: onboarding_completed_at 오름차순 --
 // 오래 기다린 신청이 위. 최신순이면 밀린 사람이 영영 아래에 깔린다.
@@ -114,4 +114,42 @@ export const mockPendingProfiles: PendingProfile[] = [
     avatarUrl: null,
     submittedAt: "2026-07-13T23:47:00.000Z",
   },
+]
+
+// 현재 앱 관리자. profiles where role='admin' and deleted_at is null.
+export const mockAppAdmins: AppAdminProfile[] = [
+  {
+    id: 1,
+    name: "김민족",
+    type: "student",
+    cohort: 30,
+    department: "과학기술부",
+    avatarUrl: null,
+    isMe: true,
+  },
+  {
+    id: 12,
+    name: "정하윤",
+    type: "teacher",
+    cohort: null,
+    department: "학습부",
+    avatarUrl: null,
+  },
+]
+
+// 관리자로 세울 수 있는 사람. profiles where status='accepted' and role='user'.
+// set_app_admin이 accepted가 아니면 거절하므로(accepted profile required) pending은 여기 없다 --
+// 가입 승인이 먼저다.
+export const mockAdminCandidates: AppAdminProfile[] = [
+  { id: 7, name: "이서준", type: "student", cohort: 29, department: null, avatarUrl: null },
+  {
+    id: 18,
+    name: "박지우",
+    type: "student",
+    cohort: 30,
+    department: "문화기획부",
+    avatarUrl: null,
+  },
+  { id: 23, name: "최윤서", type: "teacher", cohort: null, department: "학습부", avatarUrl: null },
+  { id: 41, name: "한도윤", type: "alumni", cohort: 26, department: null, avatarUrl: null },
 ]

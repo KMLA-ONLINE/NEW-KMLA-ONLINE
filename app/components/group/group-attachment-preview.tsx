@@ -7,8 +7,6 @@ import { cn } from "~/lib/utils"
 export type PreviewImage = { key: string; src: string; onRemove: () => void }
 export type PreviewFile = { key: string; name: string; sizeBytes: number; onRemove: () => void }
 
-// 작성/수정 화면의 첨부 미리보기. 이미지는 크게(1장이면 와이드, 여러 장이면 2열) 본문
-// 아래에, 그 외 파일은 칩으로. 각 항목의 삭제는 호출부가 onRemove로 넘긴다.
 export function GroupAttachmentPreview({
   images,
   files,

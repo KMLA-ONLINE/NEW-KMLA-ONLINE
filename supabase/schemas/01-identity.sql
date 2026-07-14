@@ -665,3 +665,39 @@ returns void language plpgsql security definer set search_path='' as $$
 begin perform private.require_service_role(); perform pg_advisory_xact_lock(hashtextextended('public.app_admin_set',0)); if exists(select 1 from public.profiles where role='admin') then raise exception 'app admin already exists'; end if; update public.profiles set role='admin' where id=p_profile_id and status='accepted' and deleted_at is null; if not found then raise exception 'accepted profile required'; end if; end $$;
 grant execute on function public.bootstrap_first_app_admin(bigint) to service_role;
 revoke execute on function public.bootstrap_first_app_admin(bigint) from public, anon, authenticated;
+
+-- bootstrap은 admin이 0명일 때 한 번만 통한다. 그래서 admin을 늘릴 두 번째 문이 없으면 승인자가
+-- 한 명뿐인 상태로 굳고, 그 사람이 졸업하는 날 가입 승인이 통째로 멈춘다.
+create function public.set_app_admin(p_profile_id bigint)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  perform private.require_app_admin();
+  if exists(select 1 from public.profiles where id=p_profile_id and role='admin' and deleted_at is null) then return; end if;
+  update public.profiles set role='admin' where id=p_profile_id and status='accepted' and deleted_at is null;
+  if not found then raise exception 'accepted profile required'; end if;
+end $$;
+
+-- 강등. 임명의 짝이기도 하지만 **탈퇴의 전제**이기도 하다 -- withdraw_profile이 admin의 탈퇴를
+-- 거부하므로(transfer owner/admin responsibilities first), 이 함수가 없으면 한번 admin이 된 사람은
+-- 계정을 지울 수 없다.
+--
+-- 마지막 한 명은 내리지 못한다. admin이 0명이 되면 다시 세우는 유일한 길이 service_role
+-- (bootstrap_first_app_admin)이라, 앱 안에서는 복구 불가능한 상태가 된다. 동시에 서로를 내리는
+-- 경합도 그 구멍으로 새므로 bootstrap과 **같은 키**의 advisory lock으로 직렬화한다 -- 둘이 각자
+-- "나 말고 한 명 더 있네"를 보고 통과하면 결과는 0명이다.
+create function public.unset_app_admin(p_profile_id bigint)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  perform private.require_app_admin();
+  perform pg_advisory_xact_lock(hashtextextended('public.app_admin_set',0));
+  if not exists(select 1 from public.profiles where id=p_profile_id and role='admin' and deleted_at is null) then
+    raise exception 'app admin not found';
+  end if;
+  if (select count(*) from public.profiles where role='admin' and deleted_at is null) <= 1 then
+    raise exception 'the last app admin cannot be demoted';
+  end if;
+  update public.profiles set role='user' where id=p_profile_id;
+end $$;
+
+revoke execute on function public.set_app_admin(bigint), public.unset_app_admin(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.set_app_admin(bigint), public.unset_app_admin(bigint) to authenticated;

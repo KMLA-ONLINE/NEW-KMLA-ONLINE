@@ -8,7 +8,6 @@ function fileIcon(contentType: string) {
   return FileIcon
 }
 
-// 이미지가 아닌 첨부를 다운로드 가능한 파일 칩 목록으로. 이미지는 GroupPostImageGrid가 맡는다.
 export function GroupPostFiles({ files }: { files?: GroupPostFile[] }) {
   if (!files || files.length === 0) return null
 
