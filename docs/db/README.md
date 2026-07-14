@@ -67,17 +67,38 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 
 **`supabase/` 아래를 건드린 커밋은 pre-commit 훅이 이걸 강제한다** (`.husky/pre-commit`): 먼저 `db diff`가 "No schema changes found"여야 하고(아니면 아래 테스트가 *옛 스키마*를 검사하고 통과한다 — 그 초록은 거짓말이다), 그다음 `test:db`가 통과해야 한다. 로컬 Supabase가 안 떠 있으면 조용히 건너뛰지 않고 **커밋을 막는다.** 스키마를 안 건드린 커밋은 지금까지와 똑같이 빠르다 — 느린 훅은 `--no-verify`를 습관으로 만들고, 그러면 검사가 아예 없는 것보다 나쁘다(있다고 믿게 되니까).
 
-| 파일                | 픽스처 | 내용                                                        |
-| ------------------- | ------ | ----------------------------------------------------------- |
-| `00-privileges.sql` | 없음   | public 스키마 전체의 권한 불변식                            |
-| `01-identity.sql`   | 있음   | Auth trigger, 프로필 생애주기, 열쇠고리(`user_keys`)        |
-| `02-spaces.sql`     | 없음   | 가입 정책 enum, 멤버십·역할 RPC의 존재 계약                 |
-| `05-chat.sql`       | 있음   | 그룹 평문 계약 + 1:1 종단간 암호화 계약                     |
-| `09-storage.sql`    | 없음   | 정리 큐, 버킷 allowlist가 MIME 레지스트리와 어긋나지 않는지 |
+테스트는 **모든 것을 덮으려 하지 않는다.** 틀렸을 때 **아무 소리도 나지 않는 것**만 고른다 — 익명 작성자가 새는 것, 봉인된 키가 새는 것, 심사 대기 프로필이 보이는 것, owner가 0명인 공간이 만들어지는 것. 이런 건 화면도 멀쩡하고 에러도 없어서 아무도 모른 채 몇 달이 간다. 반대로 깨지면 즉시 시끄러운 것(RPC가 없다, 컬럼이 없다)은 테스트가 없어도 된다.
 
-`00-privileges.sql`이 도메인 파일이 아닌 이유: 그 검사들은 채팅 얘기도 공간 얘기도 아니라 **`supabase db diff`가 권한을 보지 못한다**는 하나의 실패 유형을 잡는다(위 워크플로 3번). 도메인 픽스처 사이에 묻어두면 정작 도메인 하나를 손볼 때 눈에 들어오지 않는다.
+| 파일                   | 픽스처 | 내용                                                        |
+| ---------------------- | ------ | ----------------------------------------------------------- |
+| `00-privileges.sql`    | 없음   | public 스키마 전체의 권한 불변식 (아래)                     |
+| `01-identity.sql`      | 있음   | Auth trigger, 프로필 생애주기, 승인 큐, 열쇠고리            |
+| `02-spaces.sql`        | 있음   | 공간 생성·가입 정책·영구 삭제, **owner 불변식**(아래)       |
+| `03-content.sql`       | 있음   | 글·댓글 읽기 RPC, 익명 라벨, tombstone                      |
+| `05-chat.sql`          | 있음   | 그룹 평문 계약 + 1:1 종단간 암호화 계약                     |
+| `06-notifications.sql` | 있음   | 읽기 RPC의 상한 계약                                        |
+| `09-storage.sql`       | 없음   | 정리 큐, 버킷 allowlist가 MIME 레지스트리와 어긋나지 않는지 |
+| `10-rls.sql`           | 있음   | **RLS를 실제로 태운다** (아래)                              |
 
-이 파일들은 대체로 grant와 policy가 **존재하는지**를 확인한다. 정책이 실제로 **어떻게 동작하는지**(예: `author_id` 위조가 막히는지, 탈퇴한 멤버가 읽지 못하는지)를 찔러보는 테스트는 아직 드물다. 예외는 종단간 암호화로, `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다 — `npm test`에 포함되며 로컬 Supabase가 없으면 알아서 skip한다.
+`04-reactions.sql`·`07-utilities.sql`·`08-clubs.sql`에는 테스트가 없다. 다만 `00-privileges.sql`의 전수 검사는 이 도메인들도 함께 훑는다 — RLS가 꺼지거나 정책이 쓰는 헬퍼가 grant를 잃으면 거기서 걸린다.
+
+### `00-privileges.sql` — 카탈로그 불변식
+
+도메인 파일이 아닌 이유: 그 검사들은 채팅 얘기도 공간 얘기도 아니라 **`supabase db diff`가 권한을 보지 못한다**는 하나의 실패 유형을 잡는다(위 워크플로 3번). 도메인 픽스처 사이에 묻어두면 정작 도메인 하나를 손볼 때 눈에 들어오지 않는다.
+
+여기 있는 검사는 전부 **전수 검사**다 — 목록을 손으로 들고 있지 않는다. RLS 정책이 참조하는 `private` 헬퍼는 `pg_policy`의 정책 본문에서 직접 캐낸다. 손 목록을 쓰면 그 목록에서 빠지는 것이 정확히 이 파일이 잡으려는 실수와 같은 종류가 되기 때문이다(실제로 `has_permission`과 `is_club_round_open`이 빠져 있었고, 둘 다 grant를 잃어도 녹색이었다). 같은 이유로 "security definer인데 `search_path`를 고정하지 않은 함수", "RLS가 꺼진 public 테이블"도 카탈로그를 훑어서 본다.
+
+### `10-rls.sql` — RLS를 실제로 태우는 유일한 파일
+
+나머지 테스트는 전부 `postgres`로 도는데, `postgres`는 이 테이블들의 **소유자**라 RLS를 통째로 건너뛴다(`FORCE ROW LEVEL SECURITY`를 켠 테이블이 없다). 그래서 `set local role authenticated`로 갈아타지 않으면 스키마의 정책은 **단 한 번도 평가되지 않는다** — `spaces_select`를 `using (true)`로 바꿔도 전 테스트가 녹색이다.
+
+`00-privileges.sql`은 카탈로그를 읽어 "grant 엔트리가 없다"까지 말하고, 이 파일은 실제로 그 롤이 되어 쿼리를 쏴서 "정말로 못 읽는다"를 말한다. 익명성과 열쇠고리를 지키는 것은 후자다.
+
+### 하네스의 한계
+
+`private.require_service_role()`은 `session_user`가 `postgres`면 통과시킨다. 테스트가 `psql -U postgres`로 돌고 `set session authorization`은 소유자 권한으로 불가능하므로, **service_role 게이트가 거절하는 것을 확인할 방법이 없다.** 그 게이트를 쓰는 RPC(`purge_due_spaces`, `soft_delete_space`, storage cleanup 등)는 "호출되면 동작한다"까지만 검증된다.
+
+종단간 암호화는 `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다 — `npm test`에 포함되며 로컬 Supabase가 없으면 알아서 skip한다.
 
 ## Production 배포
 
@@ -95,6 +116,6 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 
 | 항목                                               | 어디                     | 안 하면                                                                                                                                       |
 | -------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Redirect URL** — 운영 도메인의 `/reset-password` | Auth → URL Configuration | 재설정 메일 링크가 `site_url`로 되돌아가 **비밀번호 재설정이 통째로 죽는다**. 비밀번호 재설정 흐름 전체가 여기 걸려 있다                            |
+| **Redirect URL** — 운영 도메인의 `/reset-password` | Auth → URL Configuration | 재설정 메일 링크가 `site_url`로 되돌아가 **비밀번호 재설정이 통째로 죽는다**. 비밀번호 재설정 흐름 전체가 여기 걸려 있다                      |
 | **SMTP**                                           | Auth → SMTP Settings     | 재설정 메일이 아예 안 나간다                                                                                                                  |
 | **`password_requirements`를 건드리지 말 것**       | Auth → Policies          | `authHash`가 소문자 hex라 문자 클래스 제약을 걸면 **가입·비밀번호 변경이 전부 거부된다**. 근거는 `app/lib/crypto/account.ts`의 `PasswordKeys` |

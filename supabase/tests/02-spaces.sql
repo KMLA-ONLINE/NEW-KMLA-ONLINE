@@ -220,4 +220,84 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- owner 불변식 (deferred 트리거)
+--
+-- trg_validate_space_owner는 `deferrable initially deferred`라 **COMMIT 시점에** 발화한다.
+-- 그런데 이 저장소의 테스트는 전부 rollback으로 끝난다 -- 즉 이 트리거는 여태 단 한 번도 돈 적이
+-- 없다. 같은 코드가 rollback으로 끝나면 통과하고 commit으로 끝나면 거부된다.
+--
+-- 그래서 `set constraints ... immediate`로 강제로 당겨서 발화시킨다. 커밋하지 않고도 트리거를
+-- 돌리는 유일한 방법이다.
+--
+-- 끝나면 반드시 deferred로 되돌려야 한다. immediate로 두면 transfer_space_ownership이 깨진다 --
+-- 그 함수는 기존 owner를 **먼저** 내리고 새 owner를 세우므로 두 UPDATE 사이에 owner가 0명인
+-- 순간이 있고, deferred라서 그게 허용되는 것이다.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  founder uuid := 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  founder_id bigint;
+  orphan_id bigint;
+begin
+  insert into auth.users (id, email) values (founder, 'owner-invariant@example.com');
+  select id into founder_id from public.profiles where auth_user_id = founder;
+  update public.profiles set type = 'teacher', status = 'accepted' where id = founder_id;
+  perform set_config('request.jwt.claim.sub', founder::text, true);
+
+  -- owner 없이 멤버만 있는 공간은 존재할 수 없다.
+  begin
+    insert into public.spaces (type, name) values ('community', 'owner 없는 공간')
+    returning id into orphan_id;
+    insert into public.space_members (space_id, user_id, role)
+    values (orphan_id, founder_id, 'member');
+
+    set constraints public.trg_validate_space_owner immediate;
+    raise exception 'a space with no owner must be rejected';
+  exception when others then
+    if sqlerrm <> 'active space must have exactly one owner' then raise; end if;
+  end;
+  set constraints public.trg_validate_space_owner deferred;
+
+  -- owner가 둘인 공간도 존재할 수 없다. 부분 유니크 인덱스(space_members_one_owner_key)가 먼저
+  -- 걸리므로 여기서 나오는 문구는 트리거의 것이 아니다 -- 두 그물이 겹쳐 있다는 것이 요점이다.
+  declare
+    other uuid := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    other_id bigint;
+    two_owner_id bigint;
+  begin
+    insert into auth.users (id, email) values (other, 'owner-invariant-2@example.com');
+    select id into other_id from public.profiles where auth_user_id = other;
+    update public.profiles set type = 'teacher', status = 'accepted' where id = other_id;
+
+    two_owner_id := public.create_space('community', 'owner 둘인 공간');
+    begin
+      insert into public.space_members (space_id, user_id, role)
+      values (two_owner_id, other_id, 'owner');
+      raise exception 'a space must not accept a second owner';
+    exception when unique_violation then
+      null;
+    end;
+
+    -- 소유권 이양은 그 유니크 인덱스를 지나가야 한다. 기존 owner를 **먼저** 내리기 때문에
+    -- 통과하는 것이고, 그 사이 owner가 0명인 순간은 deferred 트리거가 커밋 시점에 본다.
+    -- 여기서 immediate로 당겨 그 최종 상태(정확히 1명)를 실제로 확인한다.
+    insert into public.space_members (space_id, user_id, role)
+    values (two_owner_id, other_id, 'admin');
+    update public.spaces set member_count = 2 where id = two_owner_id;
+    perform public.transfer_space_ownership(two_owner_id, other_id);
+
+    set constraints public.trg_validate_space_owner immediate;
+    set constraints public.trg_validate_space_owner deferred;
+
+    if (select role from public.space_members where space_id = two_owner_id and user_id = other_id) <> 'owner'
+      or (select role from public.space_members where space_id = two_owner_id and user_id = founder_id) <> 'admin'
+    then
+      raise exception 'ownership transfer must swap the two roles';
+    end if;
+  end;
+end
+$$;
+
 rollback;
