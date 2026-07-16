@@ -34,6 +34,7 @@ import { cn } from "~/lib/utils"
 import type {
   Message,
   MessageAttachment,
+  MessageStatus,
   ReplyPreview,
   Room,
   RoomSummary,
@@ -136,6 +137,25 @@ async function readAttachment(file: File, index: number): Promise<MessageAttachm
   return { ...baseAttachment, src, durationSeconds: await readAudioDuration(src) }
 }
 
+// 전송 실패/성공 UX용 mock. 실제 전송(압축 -> 업로드 -> send RPC)이 들어갈 자리다. 지금은 잠깐
+// 지연 후 성공하되, 본문이나 파일명에 "fail"이 들어가면 실패시켜 재시도 흐름을 눌러볼 수 있게 한다.
+const MOCK_SEND_DELAY_MS = 700
+function mockPerformSend(message: Message): Promise<void> {
+  const haystack = [
+    message.content,
+    ...(message.attachments?.map((attachment) => attachment.name) ?? []),
+  ]
+    .join(" ")
+    .toLowerCase()
+
+  return new Promise((resolve, reject) => {
+    setTimeout(
+      () => (haystack.includes("fail") ? reject(new Error("mock send failure")) : resolve()),
+      MOCK_SEND_DELAY_MS
+    )
+  })
+}
+
 export default function MessengerPage() {
   const [roomSummaries, setRoomSummaries] = useState<RoomSummary[]>(() =>
     seedRooms.map((room) => getRoomSummary(room))
@@ -151,6 +171,9 @@ export default function MessengerPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedRoomIdRef = useRef<string | null>(null)
   const objectUrlsRef = useRef<string[]>([])
+  // 실패한 전송의 재시도 thunk. 메시지의 임시 id로 키를 잡는다 -- 재시도에 필요한 것(파일/본문/방)을
+  // 클로저가 붙들고 있어, Message는 순수 데이터로 남는다.
+  const pendingSendsRef = useRef(new Map<string, () => void>())
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -344,6 +367,50 @@ export default function MessengerPage() {
     setSelectedRoomMessages(selectedRoom.id, nextMessages)
   }
 
+  // 특정 방의 특정 메시지 status만 갱신한다. 전체 배열 교체(setSelectedRoomMessages)와 달리 함수형
+  // 업데이트라, 전송 중에 방을 바꾸거나 여러 전송이 겹쳐도 항상 최신 상태 위에 안전하게 얹힌다.
+  const patchMessageStatus = (
+    roomId: string,
+    messageId: string,
+    status: MessageStatus | undefined
+  ) => {
+    setMessagesByRoomId((previous) => {
+      const list = previous[roomId]
+      if (!list) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        [roomId]: list.map((message) =>
+          message.id === messageId ? { ...message, status } : message
+        ),
+      }
+    })
+  }
+
+  // 낙관적 전송의 코어. perform이 실제 전송(압축 -> 업로드 -> send RPC) 자리다. 성공하면 status를
+  // 지워 "전달됨"으로, 실패하면 "failed"로 두고 재시도 thunk를 붙든다. 재시도는 이 함수를 다시 탄다.
+  const runSend = (roomId: string, messageId: string, perform: () => Promise<void>) => {
+    perform()
+      .then(() => {
+        pendingSendsRef.current.delete(messageId)
+        // 실제 배선 때는 여기서 임시 메시지를 서버 응답(진짜 id/createdAt)으로 교체한다.
+        patchMessageStatus(roomId, messageId, undefined)
+      })
+      .catch(() => {
+        pendingSendsRef.current.set(messageId, () => {
+          patchMessageStatus(roomId, messageId, "sending")
+          runSend(roomId, messageId, perform)
+        })
+        patchMessageStatus(roomId, messageId, "failed")
+      })
+  }
+
+  const retryMessage = (message: Message) => {
+    pendingSendsRef.current.get(message.id)?.()
+  }
+
   const sendMessage = (draft: string) => {
     const nextContent = draft.trim()
 
@@ -351,6 +418,7 @@ export default function MessengerPage() {
       return false
     }
 
+    const roomId = selectedRoom.id
     const now = Date.now()
     const nextMessage: Message = {
       id: `local-${now}-text`,
@@ -359,9 +427,11 @@ export default function MessengerPage() {
       replyTo: replyTo ?? undefined,
       createdAt: new Date(now).toISOString(),
       read: true,
+      status: "sending",
     }
 
-    setSelectedRoomMessages(selectedRoom.id, [...selectedRoom.messages, nextMessage])
+    setSelectedRoomMessages(roomId, [...selectedRoom.messages, nextMessage])
+    runSend(roomId, nextMessage.id, () => mockPerformSend(nextMessage))
     setReplyTo(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -406,6 +476,7 @@ export default function MessengerPage() {
         attachments: imageAttachments,
         createdAt: new Date(now).toISOString(),
         read: true,
+        status: "sending",
       })
     }
 
@@ -416,10 +487,14 @@ export default function MessengerPage() {
         attachments: [attachment],
         createdAt: new Date(now + nextMessages.length).toISOString(),
         read: true,
+        status: "sending",
       })
     })
 
     setSelectedRoomMessages(targetRoomId, [...selectedRoom.messages, ...nextMessages])
+    nextMessages.forEach((message) =>
+      runSend(targetRoomId, message.id, () => mockPerformSend(message))
+    )
   }
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -498,6 +573,7 @@ export default function MessengerPage() {
               onReact={reactToMessage}
               onDelete={deleteMessage}
               onTogglePin={togglePinMessage}
+              onRetry={retryMessage}
               onSend={sendMessage}
               focusedMessageId={isMobile ? focusedMessageId : null}
               onFocusedMessageHandled={isMobile ? clearFocusedMessage : undefined}
@@ -601,6 +677,7 @@ export default function MessengerPage() {
                 onReact={reactToMessage}
                 onDelete={deleteMessage}
                 onTogglePin={togglePinMessage}
+                onRetry={retryMessage}
                 onSend={sendMessage}
                 focusedMessageId={isMobile ? null : focusedMessageId}
                 onFocusedMessageHandled={isMobile ? undefined : clearFocusedMessage}

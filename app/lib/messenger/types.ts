@@ -31,10 +31,15 @@ export type MessageReaction = {
   value: string
 }
 
+// 전송 상태. 서버에서 불러온(전달 완료된) 메시지는 이 필드가 없다 -- 없음 = 전달됨. 내가 보낸
+// 낙관적 메시지만 "sending"으로 뜨고, 성공하면 지워지고 실패하면 "failed"가 된다.
+export type MessageStatus = "sending" | "failed"
+
 export type Message = {
   id: string
   senderId: string
   content?: string
+  status?: MessageStatus
   createdAt: string
   deletedAt?: string
   deletedBy?: string

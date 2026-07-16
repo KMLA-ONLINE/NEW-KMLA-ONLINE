@@ -22,6 +22,7 @@ export function MessageList({
   onReact,
   onDelete,
   onTogglePin,
+  onRetry,
   onOpenActions,
   activeMobileActionMessageId,
   onCloseActions,
@@ -34,6 +35,7 @@ export function MessageList({
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
   onTogglePin: (message: Message) => void
+  onRetry: (message: Message) => void
   onOpenActions: (message: Message) => void
   activeMobileActionMessageId: string | null
   onCloseActions: () => void
@@ -198,6 +200,7 @@ export function MessageList({
               onReact={onReact}
               onDelete={onDelete}
               onTogglePin={onTogglePin}
+              onRetry={onRetry}
               onOpenActions={onOpenActions}
               isMobileActionActive={activeMobileActionMessageId === viewModel.message.id}
               onCloseActions={onCloseActions}

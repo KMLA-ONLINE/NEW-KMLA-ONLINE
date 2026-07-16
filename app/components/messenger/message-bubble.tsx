@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { EllipsisIcon, PinIcon, ReplyIcon, SmileIcon } from "lucide-react"
+import {
+  EllipsisIcon,
+  Loader2Icon,
+  PinIcon,
+  ReplyIcon,
+  RotateCcwIcon,
+  SmileIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
@@ -77,6 +85,7 @@ export function MessageBubble({
   onReact,
   onDelete,
   onTogglePin,
+  onRetry,
   onOpenActions,
   isMobileActionActive,
   onCloseActions,
@@ -96,6 +105,7 @@ export function MessageBubble({
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
   onTogglePin: (message: Message) => void
+  onRetry: (message: Message) => void
   onOpenActions: (message: Message) => void
   isMobileActionActive: boolean
   onCloseActions: () => void
@@ -441,7 +451,8 @@ export function MessageBubble({
                     "flex min-w-0 flex-col gap-1",
                     isMine ? "max-w-[74%] sm:max-w-[70%] md:max-w-[68%]" : "max-w-[70%]",
                     message.replyTo ? "-mt-4" : "",
-                    reactionBadge && "mb-2"
+                    reactionBadge && "mb-2",
+                    message.status === "sending" && "opacity-70"
                   )}
                 >
                   {message.content || isDeleted ? (
@@ -488,8 +499,29 @@ export function MessageBubble({
         </div>
       </div>
       <div className="flex justify-end">
-        <div className="flex max-w-[min(20rem,70%)] items-center justify-end px-1 sm:max-w-[70%]">
-          {!isDeleted && readReceipts.length > 0 ? (
+        <div className="flex max-w-[min(20rem,70%)] items-center justify-end gap-1.5 px-1 sm:max-w-[70%]">
+          {message.status === "sending" ? (
+            <span className="text-muted-foreground inline-flex items-center gap-1 text-[11px]">
+              <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
+              <span className="sr-only">전송 중</span>
+            </span>
+          ) : message.status === "failed" ? (
+            <>
+              <span className="text-destructive inline-flex items-center gap-1 text-[11px]">
+                <TriangleAlertIcon className="size-3.5" aria-hidden="true" />
+                전송 실패
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="다시 전송"
+                onClick={() => onRetry(message)}
+              >
+                <RotateCcwIcon className="size-3.5" />
+              </Button>
+            </>
+          ) : !isDeleted && readReceipts.length > 0 ? (
             <div className="flex -space-x-1" aria-label="Read by">
               {readReceipts.map((participant) => (
                 <Avatar key={participant.id} className="ring-background mt-2 size-4! ring-1">
