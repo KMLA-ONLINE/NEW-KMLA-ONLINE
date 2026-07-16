@@ -19,7 +19,9 @@ export const mockGroup: GroupSpace = {
   description: "학생 자치 활동, 행사 공지, 건의사항을 나누는 공간입니다.",
   type: "group",
   pubId: "student-council",
+  // 서명 URL을 내려줄 로더가 붙기 전이라 이니셜/그라디언트 폴백이다. 설정 탭에서 올려 보면 화면에 반영된다.
   imageUrl: null,
+  coverImageUrl: null,
   joinPolicy: "request",
   // 기본은 멤버 전원이 글을 쓴다. 'managers'로 바꾸면 owner/admin/manager만 메인 글을 쓰고
   // 나머지는 댓글만 단다(공지형 그룹). 그룹 설정에서 관리자가 켠다.
@@ -33,6 +35,7 @@ export const mockGroup: GroupSpace = {
   anonymitySuspendedUntil: null,
   memberCount: 128,
   isMember: true,
+  pinnedAt: null,
   // mock상 현재 사용자는 일반 멤버(mockGroupMembers의 id:1 "나" = member). 관리자 화면은
   // 개발용으로 group 라우트에서 ?as=admin 파라미터로 미리 볼 수 있다.
   viewerRole: "member",
