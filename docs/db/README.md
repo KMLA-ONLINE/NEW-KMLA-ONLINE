@@ -89,7 +89,7 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 
 **하네스의 한계**: `require_service_role()`은 `session_user`가 `postgres`면 통과시킨다. 테스트가 `psql -U postgres`로 돌고 `set session authorization`은 소유자 권한으로 불가능하므로, **service_role 게이트가 거절하는 것은 확인할 방법이 없다.**
 
-종단간 암호화는 `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다 — `npm test`에 포함되며 로컬 Supabase가 없으면 skip한다.
+종단간 암호화는 `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다. 빠른 기본 테스트(`npm test`)와 분리되어 있으므로, 로컬 Supabase를 띄운 뒤 `npm run test:e2ee`로 명시적으로 실행한다.
 
 ## Production 배포
 
