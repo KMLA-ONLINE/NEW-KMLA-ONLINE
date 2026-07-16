@@ -4,22 +4,23 @@
 
 ## 요약
 
-| 대상 | 즉시 처리 | 이후 처리 | 남는 것 |
-| --- | --- | --- | --- |
-| 프로필 | PII·`user_keys` 제거, `withdrawn` 전환 | 없음 | 익명화된 profile과 작성 콘텐츠·메시지 관계 |
-| Space | `deleted_at` 설정 | 7일 뒤 Storage 정리 후 hard delete | 파일 정리 전의 종속 행 |
-| 게시글 | 첨부 metadata·반응 삭제, soft delete | 7일 뒤 hard delete | 유예 중 글·댓글·멘션·알림 |
-| 최상위 댓글 | 하위 답글·반응까지 함께 soft delete | 7일 뒤 하위 트리와 hard delete | 없음 |
-| 답글 | 본문·반응 삭제, tombstone 전환 | 7일 뒤 가능한 행만 hard delete | 활성 하위 답글의 조상 tombstone |
-| 메시지 | 본문/암호문·첨부 metadata·반응·키 봉투 삭제 | 시간 기반 hard delete 없음 | 메시지 관계·시각·삭제 metadata |
-| Storage blob | cleanup queue 등록 또는 참조 제거 | Edge Function이 object 삭제 | 실패한 queue 항목 |
-| 알림 | 관련 대상 hard delete 시 FK cascade | 읽음 후 60일 뒤 hard delete | 읽지 않은 알림과 60일 이내 읽은 알림 |
+
+| 대상         | 즉시 처리                                      | 이후 처리                          | 남는 것                                     |
+| -------------- | ------------------------------------------------ | ------------------------------------ | --------------------------------------------- |
+| 프로필       | PII·`user_keys` 제거, `withdrawn` 전환        | 없음                               | 익명화된 profile과 작성 콘텐츠·메시지 관계 |
+| Space        | `deleted_at` 설정                              | 7일 뒤 Storage 정리 후 hard delete | 파일 정리 전의 종속 행                      |
+| 게시글       | 첨부 metadata·반응 삭제, soft delete          | 7일 뒤 hard delete                 | 유예 중 글·댓글·멘션·알림                |
+| 최상위 댓글  | 하위 답글·반응까지 함께 soft delete           | 7일 뒤 하위 트리와 hard delete     | 없음                                        |
+| 답글         | 본문·반응 삭제, tombstone 전환                | 7일 뒤 가능한 행만 hard delete     | 활성 하위 답글의 조상 tombstone             |
+| 메시지       | 본문/암호문·첨부 metadata·반응·키 봉투 삭제 | 시간 기반 hard delete 없음         | 메시지 관계·시각·삭제 metadata            |
+| Storage blob | cleanup queue 등록 또는 참조 제거              | Edge Function이 object 삭제        | 실패한 queue 항목                           |
+| 알림         | 관련 대상 hard delete 시 FK cascade            | 읽음 후 60일 뒤 hard delete        | 읽지 않은 알림과 60일 이내 읽은 알림        |
 
 ## 프로필과 Auth
 
 `withdraw_profile()`과 `auth.users`의 BEFORE DELETE 트리거는 `private.anonymize_profile()`을 공유한다.
 
-- `user_keys`를 삭제한다. 탈퇴한 계정은 과거 1:1 대화를 다시 열 수 없다.
+- `user_keys`를 삭제한다. 탈퇴한 계정은 과거 1:1 대화를 다시 열 수 없
 - 이름을 `탈퇴한 사용자`로 바꾸고 학번·기수·연락처·생일·소개·프로필/커버 이미지 참조 등 PII를 비운다.
 - `profiles.status`는 `withdrawn`, `deleted_at`은 현재 시각이 된다. profile 행의 hard purge는 없다.
 - 자발 탈퇴는 `auth_user_id`를 유지한다. Auth 사용자를 실제로 삭제한 경우에만 FK의 `ON DELETE SET NULL`로 끊긴다.

@@ -121,7 +121,9 @@ function getFileExtension(name: string) {
 // contentType is the source of truth (message_attachments.content_type is NOT
 // NULL), but a locally attached File can report an empty type, so fall back to
 // the extension rather than silently rendering a photo as a grey file chip.
-export function getAttachmentKind(attachment: MessageAttachment): AttachmentKind {
+export function getAttachmentKind(
+  attachment: Pick<MessageAttachment, "contentType" | "name">
+): AttachmentKind {
   const mediaKinds = ["image", "audio", "video"] as const
 
   for (const kind of mediaKinds) {

@@ -29,7 +29,7 @@ Three steps, and **the order is part of the contract: blobs go out first.**
 2. **`purge_deleted_content`** — hard-deletes posts and comments soft-deleted more than 30 days ago. Rows piling up is the smaller problem; the real one is that **a deleted anonymous post keeps its `author_id` forever**, and anonymous has to stay anonymous over time.
 3. **`purge_due_spaces`** — permanently removes spaces soft-deleted more than 7 days ago.
 
-Steps 2 and 3 come after step 1 because both **skip** (rather than force) any target whose attachment rows or `spaces.image_url` are still set. Those rows still existing means the file is still in Storage, and deleting the DB reference first would orphan the blob forever. Skipped work is retried on the next run.
+Steps 2 and 3 come after step 1 because both **skip** (rather than force) any target whose attachment rows, `spaces.image_url`, or `spaces.cover_image_url` are still set. Those references still existing mean the file is still in Storage, and deleting the DB reference first would orphan the blob forever. Skipped work is retried on the next run.
 
 The response summary reports `enqueued`, `claimed`, `deleted`, `failed`, `purgedPosts`, `purgedComments`, `purgedSpaces`, `skippedSpaces`. On error it returns the summary alongside the message — partial work is already committed, so you need to know how far it got.
 

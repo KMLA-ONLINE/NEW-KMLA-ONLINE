@@ -2,11 +2,15 @@
 
 Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage.sql)
 
-파일 업로드 모델과 blob 정리 파이프라인. private bucket 6개(`avatars`, `profile-covers`, `space-images`, `post-files`, `message-files`, `message-files-encrypted`) + storage RLS + finalize RPC + cleanup queue 조합.
+space-covers는 space-images와 별도인 커버 전용 private bucket이다. 두 bucket 모두 space.pub_id/uuid 경로를 쓰며, 이전 blob은 교체·clear 때 즉시 삭제하지 않고 48시간 orphan sweep이 정리한다.
+
+파일 업로드 모델과 blob 정리 파이프라인. private bucket 7개(avatars, profile-covers, space-images, space-covers, post-files, message-files, message-files-encrypted) + storage RLS + finalize RPC + cleanup queue 조합.
 
 메시지 첨부 bucket이 둘인 이유는 종단간 암호화다 — 아래 "주의" 참고.
 
 업로드는 2단계다: (1) Storage SDK로 provisional 경로에 직접 업로드 — bucket별 insert policy가 경로/소유권을 검증, (2) finalize류 RPC가 object 존재/MIME/크기/경로를 재검증하고 DB row를 만든다. bucket 정의 자체는 데이터라서 스키마가 아니라 baseline migration에 있다.
+
+바이트가 storage에 닿기 전 클라이언트 압축·WebP 통일 정책은 [image-handling.md](../../image-handling.md) — 여기서는 다루지 않는다.
 
 ## 테이블
 
@@ -21,6 +25,8 @@ Source: [`supabase/schemas/09-storage.sql`](../../../supabase/schemas/09-storage
 
 | 함수                                                    | 인증                                               | 쓰기 | 목적                                                                              |
 | ------------------------------------------------------- | -------------------------------------------------- | ---- | --------------------------------------------------------------------------------- |
+| finalize_space_cover(space_id, storage_path)            | space 관리자 (owner/admin)                         | O    | 검증된 space-covers object를 커버 슬롯에 연결                                     |
+| clear_space_cover(space_id)                             | space 관리자 (owner/admin)                         | O    | 커버 슬롯을 비움. 이전 blob은 48시간 orphan sweep이 정리                          |
 | `finalize_space_image(space_id, storage_path)`          | space 관리자 (owner/admin)                         | O    | 업로드된 space 이미지 검증 후`spaces.image_url` 연결                              |
 | `request_attachment_removal(owner_type, attachment_id)` | 첨부 소유자 (post 작성자 / message 발신자+방 멤버) | O    | 첨부 metadata 제거 + blob 삭제 큐 등록. 첨부만 남은 메시지는 soft delete까지 처리 |
 | `enqueue_due_storage_cleanup()`                         | service_role                                       | O    | 삭제 7일 경과한 첨부/space 이미지, 48시간 경과 고아 object를 큐에 적재            |

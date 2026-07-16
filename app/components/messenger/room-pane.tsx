@@ -32,6 +32,7 @@ export function RoomPane({
   onReact,
   onDelete,
   onTogglePin,
+  onRetry,
   onSend,
   focusedMessageId,
   onFocusedMessageHandled,
@@ -50,6 +51,7 @@ export function RoomPane({
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
   onTogglePin: (message: Message) => void
+  onRetry: (message: Message) => void
   onSend: (draft: string) => boolean
   focusedMessageId?: string | null
   onFocusedMessageHandled?: () => void
@@ -237,6 +239,7 @@ export function RoomPane({
                 onReact={onReact}
                 onDelete={onDelete}
                 onTogglePin={onTogglePin}
+                onRetry={onRetry}
                 onOpenActions={openActionPanel}
                 activeMobileActionMessageId={
                   isActionPanelOpen ? (activeActionMessage?.id ?? null) : null

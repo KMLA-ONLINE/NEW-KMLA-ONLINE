@@ -1,5 +1,12 @@
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react"
-import { useState } from "react"
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ImageIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -36,6 +43,7 @@ const JOIN_POLICY_OPTIONS: {
   },
 ]
 
+// 카드 헤더: 제목 + 편집/저장·취소. 읽기 모드에선 "편집"만, 편집 모드에선 취소·저장.
 function SectionHeader({
   title,
   editing,
@@ -74,10 +82,131 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
   return <section className="bg-card px-4 py-3 sm:rounded-xl sm:border sm:p-4">{children}</section>
 }
 
+// 아이콘(spaces.image_url)과 커버(spaces.cover_image_url). 세우는 것도 떼는 것도 RPC다 -- 두 컬럼
+// 모두 update grant에 없기 때문이다(열면 올린 적도 없는 경로나 남의 space 경로를 그대로 박아 넣을 수
+// 있다). 그래서 이 섹션들은 운영 권한(can_manage_space = owner/admin)에만 열린다 -- 매니저는
+// 게시판만 굴린다.
+//
+// TODO(backend): 파일을 버킷의 <space.pubId>/<uuid>에 올린 뒤 확정한다. 슬롯마다 버킷이 다르다 --
+// 아이콘은 space-images + finalize_space_image, 커버는 space-covers + finalize_space_cover(그
+// RPC들이 경로·소유·MIME을 다시 본다). 제거는 clear_space_image / clear_space_cover이고 멱등이라
+// 상태를 몰라도 안전하게 부를 수 있다.
+
+// 고른 파일을 objectURL로 미리 보여준다. 갈아끼울 때와 이 화면이 unmount될 때 모두 이전 URL을
+// 해제한다. SPA 탭 전환은 문서를 닫지 않으므로 마지막 URL을 cleanup하지 않으면 메모리에 남는다.
+// 파일 입력의 ref는 이 훅이 들지 않는다 -- 훅 밖으로 나간 ref를 렌더 중에 다시 읽는 모양이 되어
+// react-hooks가(정당하게) 잡는다. 입력을 그리는 쪽이 직접 든다.
+function useImageDraft(initial: string | null) {
+  const [url, setUrl] = useState(initial)
+  const objectUrlRef = useRef(initial?.startsWith("blob:") ? initial : null)
+
+  useEffect(
+    () => () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    },
+    []
+  )
+
+  const replace = (next: string | null) =>
+    setUrl((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current)
+      objectUrlRef.current = next?.startsWith("blob:") ? next : null
+      return next
+    })
+
+  return [url, replace] as const
+}
+
+function ImageControls({
+  url,
+  onReplace,
+}: {
+  url: string | null
+  onReplace: (next: string | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // TODO(backend): 실제 업로드 연결 때는 업로드 중 버튼 잠금·진행률, 압축/업로드/RPC 실패 표시와
+  // 재시도·취소를 추가한다. accept는 선택창 힌트일 뿐이므로 MIME·크기·권한 검증은 Storage/RPC가
+  // 최종적으로 맡는다.
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
+      {/* 버킷이 실제로 받는 것과 같은 말이어야 한다 -- 둘 다 jpeg/png/webp, 10MB까지. 화면이
+          서버보다 관대하게 말하면 거짓말이 된다. */}
+      <p className="text-muted-foreground text-xs">JPG · PNG · WebP · 10MB까지</p>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+          <ImageIcon className="size-4" aria-hidden="true" />
+          {url ? "변경" : "업로드"}
+        </Button>
+        {url ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={() => {
+              onReplace(null)
+              // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
+              if (inputRef.current) inputRef.current.value = ""
+            }}
+          >
+            제거
+          </Button>
+        ) : null}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) onReplace(URL.createObjectURL(file))
+        }}
+      />
+    </div>
+  )
+}
+
+function ImageSection({ group }: { group: GroupSpace }) {
+  const [url, replace] = useImageDraft(group.imageUrl)
+
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">그룹 아이콘</h2>
+      <div className="flex items-center gap-4">
+        <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-xl font-semibold">
+          {url ? <img src={url} alt="" className="size-full object-cover" /> : group.name.charAt(0)}
+        </div>
+        <ImageControls url={url} onReplace={replace} />
+      </div>
+    </SettingsCard>
+  )
+}
+
+function CoverSection({ group }: { group: GroupSpace }) {
+  const [url, replace] = useImageDraft(group.coverImageUrl)
+
+  return (
+    <SettingsCard>
+      <h2 className="mb-3 text-sm font-semibold">그룹 커버</h2>
+      <div className="flex flex-col gap-3">
+        {/* 헤더와 같은 그라디언트를 폴백으로 써서, 올리기 전에도 결과가 어떻게 보일지 그대로 보인다. */}
+        <div className="from-primary/30 to-primary/5 h-24 w-full overflow-hidden rounded-lg border bg-linear-to-br sm:h-28">
+          {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
+        </div>
+        <ImageControls url={url} onReplace={replace} />
+      </div>
+    </SettingsCard>
+  )
+}
+
 function BasicInfoSection({ group }: { group: GroupSpace }) {
   const [name, setName] = useState(group.name)
   const [description, setDescription] = useState(group.description)
   const [editing, setEditing] = useState(false)
+  // 편집 중 초안. 취소하면 버리고, 저장할 때만 커밋한다.
   const [draftName, setDraftName] = useState(name)
   const [draftDescription, setDraftDescription] = useState(description)
 
@@ -128,130 +257,23 @@ function BasicInfoSection({ group }: { group: GroupSpace }) {
   )
 }
 
-// spaces.pub_id. 만들 때 정하고 그 뒤로는 바꾸지 못한다 -- 편집 버튼이 없는 게 이 섹션의 요점이다.
-//
-// pub_id는 storage 경로에 박혀 있다(post-files/{pub_id}/{uuid}, space-images/{pub_id}/{uuid}).
-// 슬러그를 바꾸면 이 그룹에 이미 올라간 모든 첨부의 경로 검사가 어긋나고, 그걸 따라가려면 object를
-// 새 경로로 옮기고 storage_path를 다시 쓰는 배치가 필요하다. 서버도 같은 이유로 닫혀 있다 --
-// pub_id는 spaces의 update 컬럼 grant에 없고 바꾸는 RPC도 없다.
-function SlugSection({ pubId }: { pubId: string }) {
-  return (
-    <SettingsCard>
-      <h2 className="mb-3 text-sm font-semibold">주소</h2>
-      <p className="text-sm font-medium">/groups/{pubId}</p>
-      <p className="text-muted-foreground mt-1 text-xs">
-        그룹을 만들 때 정해지며 나중에 바꿀 수 없습니다.
-      </p>
-    </SettingsCard>
-  )
-}
-
-// spaces.image_url. 업로드가 2단계인 게 이 섹션의 전부다.
-//
-// TODO(backend): (1) Storage SDK로 `space-images/{group.pubId}/{crypto.randomUUID()}`에 직접
-// 올린다 -- space_images_insert 정책이 경로와 can_manage_space를 본다. (2) finalize_space_image(
-// space_id, storage_path)가 object 존재·24시간 신선도·MIME(jpeg/png/webp)을 **다시** 보고
-// spaces.image_url에 연결한다. image_url은 update 컬럼 grant에 없어서 이 RPC 말고는 쓸 길이 없다.
-// 확정되지 않은 blob은 48시간 뒤 고아 청소(enqueue_due_storage_cleanup)가 걷어간다 -- 그래서
-// 업로드만 하고 finalize를 못 해도 쓰레기가 쌓이지 않는다.
-//
-// 지금은 로컬 object URL로 미리보기만 만든다. 저장되지 않는다.
-const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
-
-function ImageSection({
-  imageUrl,
-  groupName,
-  onChange,
-}: {
-  imageUrl: string | null
-  groupName: string
-  onChange: (next: string | null) => void
-}) {
-  const [error, setError] = useState<string | null>(null)
-
-  const pick = (file: File | undefined) => {
-    if (!file) return
-    // 서버(finalize_space_image)가 보는 화이트리스트와 같다. 여기서 막는 건 왕복 한 번을 아끼는 것뿐.
-    if (!IMAGE_MIME_TYPES.includes(file.type)) {
-      setError("JPEG, PNG, WebP 이미지만 올릴 수 있습니다.")
-      return
-    }
-    setError(null)
-    onChange(URL.createObjectURL(file))
-  }
-
-  return (
-    <SettingsCard>
-      <h2 className="mb-3 text-sm font-semibold">그룹 이미지</h2>
-      <div className="flex items-center gap-4">
-        <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-2xl font-semibold">
-          {imageUrl ? (
-            <img src={imageUrl} alt="" className="size-full object-cover" />
-          ) : (
-            groupName.charAt(0)
-          )}
-        </div>
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" asChild>
-              <label>
-                이미지 선택
-                <input
-                  type="file"
-                  accept={IMAGE_MIME_TYPES.join(",")}
-                  className="sr-only"
-                  onChange={(event) => pick(event.target.files?.[0])}
-                />
-              </label>
-            </Button>
-            {imageUrl ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setError(null)
-                  onChange(null)
-                }}
-              >
-                제거
-              </Button>
-            ) : null}
-          </div>
-          <p className={cn("text-xs", error ? "text-destructive" : "text-muted-foreground")}>
-            {error ?? "JPEG, PNG, WebP를 올릴 수 있습니다."}
-          </p>
-        </div>
-      </div>
-    </SettingsCard>
-  )
-}
-
 function JoinPolicySection({
   policy,
   onChange,
-  pendingRequestCount,
 }: {
   policy: GroupSpace["joinPolicy"]
   onChange: (next: GroupSpace["joinPolicy"]) => void
-  /** 대기 중인 가입 요청 수. request에서 벗어나려면 먼저 0이어야 한다. */
-  pendingRequestCount: number
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(policy)
   const current = JOIN_POLICY_OPTIONS.find((option) => option.value === policy)
-
-  // 서버(set_space_join_policy)가 'resolve pending join requests first'로 거절하는 조건 그대로다.
-  // request에서 벗어나면 남은 요청은 아무도 승인할 수 없는 유령이 된다 -- 그 공간의 요청함을
-  // 띄울 화면이 사라지기 때문이다. 서버가 대신 일괄 수락/거절해 주지도 않는다: 그건 관리자가
-  // 내릴 판단이지 정책 전환의 부수 효과일 수 없다.
-  const blocked = policy === "request" && pendingRequestCount > 0
 
   const edit = () => {
     setDraft(policy)
     setEditing(true)
   }
   const save = () => {
+    // 전환 side effect(request에서 벗어날 때 대기 요청 정리 -- 비공개=거절/공개=수락)는 부모가 처리.
     onChange(draft)
     setEditing(false)
   }
@@ -266,38 +288,28 @@ function JoinPolicySection({
         onSave={save}
       />
       {editing ? (
-        <div className="flex flex-col gap-2">
-          <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
-            {JOIN_POLICY_OPTIONS.map((option) => {
-              const selected = option.value === draft
-              const disabled = blocked && option.value !== policy
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={disabled}
-                  onClick={() => setDraft(option.value)}
-                  className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors disabled:opacity-50"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{option.label}</p>
-                    <p className="text-muted-foreground text-xs">{option.description}</p>
-                  </div>
-                  {selected ? (
-                    <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
-          {blocked ? (
-            <p className="text-muted-foreground text-xs">
-              대기 중인 가입 요청 {pendingRequestCount}건을 먼저 처리해야 정책을 바꿀 수 있습니다.
-              멤버 탭에서 승인하거나 거절해주세요.
-            </p>
-          ) : null}
+        <div role="radiogroup" aria-label="가입 정책" className="flex flex-col">
+          {JOIN_POLICY_OPTIONS.map((option) => {
+            const selected = option.value === draft
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setDraft(option.value)}
+                className="hover:bg-muted flex items-center gap-3 rounded-lg p-2.5 text-left transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{option.label}</p>
+                  <p className="text-muted-foreground text-xs">{option.description}</p>
+                </div>
+                {selected ? (
+                  <CheckIcon className="text-primary size-5 shrink-0" aria-hidden="true" />
+                ) : null}
+              </button>
+            )
+          })}
         </div>
       ) : (
         <div>
@@ -553,11 +565,8 @@ export function GroupSettings({
   group,
   categories,
   canManage,
-  imageUrl,
-  onImageChange,
   joinPolicy,
   onJoinPolicyChange,
-  pendingRequestCount,
   postPolicy,
   onPostPolicyChange,
   allowAnonymous,
@@ -567,11 +576,8 @@ export function GroupSettings({
   categories: GroupCategory[]
   /** owner/admin. false면(= 매니저) 카테고리 섹션만 보인다. */
   canManage: boolean
-  imageUrl: string | null
-  onImageChange: (next: string | null) => void
   joinPolicy: GroupSpace["joinPolicy"]
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
-  pendingRequestCount: number
   postPolicy: GroupSpace["postPolicy"]
   onPostPolicyChange: (next: GroupSpace["postPolicy"]) => void
   allowAnonymous: boolean
@@ -581,20 +587,16 @@ export function GroupSettings({
     <div className="flex flex-col gap-4">
       {canManage ? (
         <>
+          <ImageSection group={group} />
+          <CoverSection group={group} />
           <BasicInfoSection group={group} />
-          <ImageSection imageUrl={imageUrl} groupName={group.name} onChange={onImageChange} />
-          <JoinPolicySection
-            policy={joinPolicy}
-            onChange={onJoinPolicyChange}
-            pendingRequestCount={pendingRequestCount}
-          />
+          <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
           {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
           <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
           <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
         </>
       ) : null}
       <CategorySection initial={categories} />
-      <SlugSection pubId={group.pubId} />
     </div>
   )
 }

@@ -83,7 +83,7 @@ export default function GroupPage() {
   const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
   // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
   // 로컬 object URL이라 새로고침하면 사라진다.
-  const [imageUrl, setImageUrl] = useState(mockGroup.imageUrl)
+  const imageUrl = mockGroup.imageUrl
   const [members, setMembers] = useState(mockGroupMembers)
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
@@ -304,11 +304,8 @@ export default function GroupPage() {
               group={liveGroup}
               categories={mockGroupCategories}
               canManage={canManage}
-              imageUrl={imageUrl}
-              onImageChange={setImageUrl}
               joinPolicy={joinPolicy}
               onJoinPolicyChange={changeJoinPolicy}
-              pendingRequestCount={pendingRequests.length}
               postPolicy={postPolicy}
               onPostPolicyChange={setPostPolicy}
               allowAnonymous={allowAnonymous}

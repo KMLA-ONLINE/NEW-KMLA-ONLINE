@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1553,6 +1553,7 @@ export type Database = {
       spaces: {
         Row: {
           allow_anonymous_posts: boolean
+          cover_image_url: string | null
           created_at: string
           created_by: number | null
           deleted_at: string | null
@@ -1570,6 +1571,7 @@ export type Database = {
         }
         Insert: {
           allow_anonymous_posts?: boolean
+          cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1587,6 +1589,7 @@ export type Database = {
         }
         Update: {
           allow_anonymous_posts?: boolean
+          cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
           deleted_at?: string | null
@@ -1723,6 +1726,8 @@ export type Database = {
         Args: { p_conversation_id: number }
         Returns: undefined
       }
+      clear_space_cover: { Args: { p_space_id: number }; Returns: undefined }
+      clear_space_image: { Args: { p_space_id: number }; Returns: undefined }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
       count_pending_profiles: { Args: never; Returns: number }
       create_direct_conversation: {
@@ -1780,6 +1785,10 @@ export type Database = {
       finalize_avatar: { Args: { p_storage_path: string }; Returns: undefined }
       finalize_cover_image: {
         Args: { p_storage_path: string }
+        Returns: undefined
+      }
+      finalize_space_cover: {
+        Args: { p_space_id: number; p_storage_path: string }
         Returns: undefined
       }
       finalize_space_image: {
