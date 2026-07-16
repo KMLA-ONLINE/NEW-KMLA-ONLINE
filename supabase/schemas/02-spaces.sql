@@ -574,9 +574,9 @@ $$;
 
 -- soft delete된 공간을 흔적까지 지운다. **blob이 먼저 나가야 한다.**
 --
--- enqueue_due_storage_cleanup이 삭제 7일이 지난 공간의 첨부와 이미지를 큐에 넣고, 파일이 Storage
--- 에서 실제로 지워진 뒤에야 complete_storage_cleanup이 post_attachments 행을 지우고 image_url을
--- 비운다. 그러니 그 둘이 아직 남아 있다는 건 곧 파일이 아직 살아 있다는 뜻이다. 그때 이 함수가
+-- enqueue_due_storage_cleanup이 삭제 7일이 지난 공간의 첨부·아이콘·커버를 큐에 넣고, 파일이 Storage
+-- 에서 실제로 지워진 뒤에야 complete_storage_cleanup이 post_attachments 행을 지우고 image_url/
+-- cover_image_url을 비운다. 그러니 그 참조가 아직 남아 있다는 건 곧 파일이 아직 살아 있다는 뜻이다. 그때 이 함수가
 -- 강제로 밀면 큐가 가리키던 행이 먼저 사라져 blob이 영영 고아로 남는다 -- 다음 실행에서 다시 본다.
 create function private.purge_space(p_space_id bigint)
 returns boolean language plpgsql security definer set search_path = '' as $$
@@ -584,7 +584,10 @@ begin
   if exists(
     select 1 from public.post_attachments a join public.posts p on p.id=a.post_id
     where p.space_id=p_space_id
-  ) or exists(select 1 from public.spaces where id=p_space_id and image_url is not null) then
+  ) or exists(
+    select 1 from public.spaces
+    where id=p_space_id and (image_url is not null or cover_image_url is not null)
+  ) then
     return false;
   end if;
 

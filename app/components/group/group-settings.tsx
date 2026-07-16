@@ -6,7 +6,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -92,15 +92,25 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 // RPC들이 경로·소유·MIME을 다시 본다). 제거는 clear_space_image / clear_space_cover이고 멱등이라
 // 상태를 몰라도 안전하게 부를 수 있다.
 
-// 고른 파일을 objectURL로 미리 보여준다. 갈아끼울 때 이전 URL을 놓아주지 않으면 그 파일이 탭을
-// 닫을 때까지 메모리에 남는다. 파일 입력의 ref는 이 훅이 들지 않는다 -- 훅 밖으로 나간 ref를
-// 렌더 중에 다시 읽는 모양이 되어 react-hooks가(정당하게) 잡는다. 입력을 그리는 쪽이 직접 든다.
+// 고른 파일을 objectURL로 미리 보여준다. 갈아끼울 때와 이 화면이 unmount될 때 모두 이전 URL을
+// 해제한다. SPA 탭 전환은 문서를 닫지 않으므로 마지막 URL을 cleanup하지 않으면 메모리에 남는다.
+// 파일 입력의 ref는 이 훅이 들지 않는다 -- 훅 밖으로 나간 ref를 렌더 중에 다시 읽는 모양이 되어
+// react-hooks가(정당하게) 잡는다. 입력을 그리는 쪽이 직접 든다.
 function useImageDraft(initial: string | null) {
   const [url, setUrl] = useState(initial)
+  const objectUrlRef = useRef(initial?.startsWith("blob:") ? initial : null)
+
+  useEffect(
+    () => () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+    },
+    []
+  )
 
   const replace = (next: string | null) =>
     setUrl((current) => {
       if (current?.startsWith("blob:")) URL.revokeObjectURL(current)
+      objectUrlRef.current = next?.startsWith("blob:") ? next : null
       return next
     })
 
@@ -116,6 +126,9 @@ function ImageControls({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // TODO(backend): 실제 업로드 연결 때는 업로드 중 버튼 잠금·진행률, 압축/업로드/RPC 실패 표시와
+  // 재시도·취소를 추가한다. accept는 선택창 힌트일 뿐이므로 MIME·크기·권한 검증은 Storage/RPC가
+  // 최종적으로 맡는다.
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-2">
       {/* 버킷이 실제로 받는 것과 같은 말이어야 한다 -- 둘 다 jpeg/png/webp, 10MB까지. 화면이

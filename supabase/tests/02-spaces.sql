@@ -324,6 +324,17 @@ begin
   -- storage-maintenance가 blob을 지우면 complete_storage_cleanup이 이 행을 걷어간다.
   delete from public.post_attachments where post_id = root_post;
 
+  -- 아이콘과 커버도 blob 참조다. 커버만 남은 공간을 밀어 버리면 cleanup queue가 참조를
+  -- 잃어 blob이 고아가 되므로, image_url과 똑같이 다음 실행까지 건너뛴다.
+  update public.spaces set cover_image_url='doomed-space-cover' where id=doomed_id;
+  select * into cleanup from public.purge_due_spaces();
+  if cleanup.skipped <> 1 or cleanup.purged <> 0
+    or not exists(select 1 from public.spaces where id=doomed_id)
+  then
+    raise exception 'a space with a live cover blob must be skipped, not purged';
+  end if;
+  update public.spaces set cover_image_url=null where id=doomed_id;
+
   select * into cleanup from public.purge_due_spaces();
   if cleanup.purged <> 1 or cleanup.skipped <> 0 then
     raise exception 'a due space with no live blobs must be purged';

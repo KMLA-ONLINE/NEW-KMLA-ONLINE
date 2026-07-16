@@ -85,7 +85,7 @@ owner에게 삭제 버튼이 없는 것은 의도다. 그룹 하나에는 남의
 
 `soft_delete_space`가 `deleted_at`을 찍고, 7일이 지나면 `purge_due_spaces`(storage-maintenance가 호출)가 글·댓글·반응·멘션·알림·멤버십·초대·카테고리·익명 정지 기록을 FK 순서로 걷어낸 뒤 space 행을 지운다.
 
-**blob이 먼저 나가야 한다.** `enqueue_due_storage_cleanup`이 같은 7일 기준으로 첨부와 space 이미지를 큐에 넣고, 파일이 Storage에서 **실제로** 지워진 뒤에야 `complete_storage_cleanup`이 `post_attachments` 행을 지우고 `image_url`을 비운다. 그러니 그 둘이 아직 남아 있다는 건 곧 파일이 살아 있다는 뜻이다 — 그때 `private.purge_space`는 그 공간을 **건너뛴다**(다음 실행이 다시 본다). 강제로 밀면 큐가 가리키던 행이 먼저 사라져 blob이 영영 고아로 남는다. 그래서 반환값이 `(purged, skipped)` 둘이다.
+**blob이 먼저 나가야 한다.** `enqueue_due_storage_cleanup`이 같은 7일 기준으로 첨부와 space 아이콘·커버를 큐에 넣고, 파일이 Storage에서 **실제로** 지워진 뒤에야 `complete_storage_cleanup`이 `post_attachments` 행을 지우고 `image_url`/`cover_image_url`을 비운다. 그러니 그 참조가 아직 남아 있다는 건 곧 파일이 살아 있다는 뜻이다 — 그때 `private.purge_space`는 그 공간을 **건너뛴다**(다음 실행이 다시 본다). 강제로 밀면 큐가 가리키던 행이 먼저 사라져 blob이 영영 고아로 남는다. 그래서 반환값이 `(purged, skipped)` 둘이다.
 
 `comments.parent_id`가 `on delete restrict`라 부모와 자식을 **한 DELETE에 담을 수 없다** — purge는 잎부터 벗겨 내려간다.
 

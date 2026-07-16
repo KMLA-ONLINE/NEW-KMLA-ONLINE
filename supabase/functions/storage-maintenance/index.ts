@@ -3,8 +3,8 @@ import { withSupabase } from "@supabase/server"
 
 // 하루 한 번 도는 정리 배치. 순서가 계약의 일부다: **blob이 먼저 나가야 한다.**
 //
-// 아래 두 정리(purge_deleted_content, purge_due_spaces)는 첨부 행이나 spaces.image_url이 남아
-// 있는 대상을 **건너뛴다**. 그 행들이 남아 있다는 건 파일이 아직 Storage에 있다는 뜻이고, 그때
+// 아래 두 정리(purge_deleted_content, purge_due_spaces)는 첨부 행이나 spaces.image_url/
+// cover_image_url이 남아 있는 대상을 **건너뛴다**. 그 참조가 남아 있다는 건 파일이 아직 Storage에 있다는 뜻이고, 그때
 // DB 행을 먼저 지우면 큐가 가리키던 참조가 사라져 blob이 영영 고아로 남기 때문이다. 그래서
 // blob 루프를 먼저 끝내고 그 다음에 부른다 -- 같은 실행 안에서 이어진다.
 
