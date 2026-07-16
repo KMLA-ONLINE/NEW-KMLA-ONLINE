@@ -21,6 +21,9 @@ create policy profile_covers_select on storage.objects for select to authenticat
 create policy space_images_select on storage.objects for select to authenticated using (
   bucket_id='space-images' and exists(select 1 from public.spaces s where s.image_url=storage.objects.name and s.deleted_at is null)
 );
+create policy space_covers_select on storage.objects for select to authenticated using (
+  bucket_id='space-covers' and exists(select 1 from public.spaces s where s.cover_image_url=storage.objects.name and s.deleted_at is null)
+);
 create policy post_files_select on storage.objects for select to authenticated using (
   bucket_id='post-files' and exists(select 1 from public.post_attachments a where a.storage_path=storage.objects.name and private.can_access_post(a.post_id))
 );
@@ -52,6 +55,15 @@ create policy profile_covers_insert on storage.objects for insert to authenticat
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
   bucket_id='space-images' and exists(
+    select 1 from public.spaces s
+    where s.pub_id::text=split_part(storage.objects.name,'/',1)
+      and s.deleted_at is null
+      and private.can_manage_space(s.id)
+      and private.has_uuid_object_suffix(storage.objects.name,s.pub_id::text||'/')
+  )
+);
+create policy space_covers_insert on storage.objects for insert to authenticated with check (
+  bucket_id='space-covers' and exists(
     select 1 from public.spaces s
     where s.pub_id::text=split_part(storage.objects.name,'/',1)
       and s.deleted_at is null
@@ -153,6 +165,36 @@ begin
   update public.spaces set image_url=p_storage_path where id=p_space_id;
 end $$;
 
+create function public.clear_space_image(p_space_id bigint)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  update public.spaces set image_url=null where id=p_space_id and deleted_at is null;
+end $$;
+
+create function public.finalize_space_cover(p_space_id bigint,p_storage_path text)
+returns void language plpgsql security definer set search_path='' as $$
+declare expected_prefix text;
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  select s.pub_id||'/' into expected_prefix from public.spaces s where s.id=p_space_id and s.deleted_at is null;
+  if expected_prefix is null then raise exception 'space not found'; end if;
+  if not private.has_uuid_object_suffix(p_storage_path,expected_prefix)
+    or not exists(select 1 from storage.objects where bucket_id='space-covers' and name=p_storage_path and created_at>=now()-interval '24 hours' and coalesce(metadata->>'mimetype','') in ('image/jpeg','image/png','image/webp'))
+    then raise exception 'invalid space cover object'; end if;
+  update public.spaces set cover_image_url=p_storage_path where id=p_space_id;
+end $$;
+
+create function public.clear_space_cover(p_space_id bigint)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  update public.spaces set cover_image_url=null where id=p_space_id and deleted_at is null;
+end $$;
+
 create function public.enqueue_due_storage_cleanup()
 returns bigint language plpgsql security definer set search_path='' as $$
 declare result bigint;
@@ -173,12 +215,16 @@ begin
   select 'space-images',s.image_url from public.spaces s
   where s.deleted_at<now()-interval '7 days' and s.image_url is not null
   union
+  select 'space-covers',s.cover_image_url from public.spaces s
+  where s.deleted_at<now()-interval '7 days' and s.cover_image_url is not null
+  union
   select o.bucket_id,o.name from storage.objects o
   where o.created_at<now()-interval '48 hours'
-    and o.bucket_id in ('avatars','profile-covers','space-images','post-files','message-files','message-files-encrypted')
+    and o.bucket_id in ('avatars','profile-covers','space-images','space-covers','post-files','message-files','message-files-encrypted')
     and not exists(select 1 from public.profiles p where o.bucket_id='avatars' and p.avatar_url=o.name)
     and not exists(select 1 from public.profiles p where o.bucket_id='profile-covers' and p.cover_image_url=o.name)
     and not exists(select 1 from public.spaces s where o.bucket_id='space-images' and s.image_url=o.name)
+    and not exists(select 1 from public.spaces s where o.bucket_id='space-covers' and s.cover_image_url=o.name)
     and not exists(select 1 from public.post_attachments a where o.bucket_id='post-files' and a.storage_path=o.name)
     and not exists(select 1 from public.message_attachments a where o.bucket_id in ('message-files','message-files-encrypted') and a.storage_bucket=o.bucket_id and a.storage_path=o.name)
   on conflict(storage_bucket,storage_path) do update
@@ -221,6 +267,7 @@ begin
   elsif bucket='avatars' then update public.profiles set avatar_url=null where avatar_url=path;
   elsif bucket='profile-covers' then update public.profiles set cover_image_url=null where cover_image_url=path;
   elsif bucket='space-images' then update public.spaces set image_url=null where image_url=path and deleted_at is not null;
+  elsif bucket='space-covers' then update public.spaces set cover_image_url=null where cover_image_url=path and deleted_at is not null;
   else raise exception 'invalid cleanup bucket'; end if;
   update private.attachment_cleanup_queue set processed_at=now(),last_error=null where id=p_id;
 end $$;
@@ -240,7 +287,7 @@ revoke all on table private.attachment_cleanup_queue from public,anon,authentica
 revoke all on sequence private.attachment_cleanup_queue_id_seq from public,anon,authenticated;
 grant select,insert,update,delete on private.attachment_cleanup_queue to service_role;
 grant usage,select on sequence private.attachment_cleanup_queue_id_seq to service_role;
-grant execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text) to authenticated;
-revoke execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text) from public, anon, service_role;
+grant execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text), public.clear_space_image(bigint), public.finalize_space_cover(bigint,text), public.clear_space_cover(bigint) to authenticated;
+revoke execute on function public.request_attachment_removal(text,bigint), public.finalize_space_image(bigint,text), public.clear_space_image(bigint), public.finalize_space_cover(bigint,text), public.clear_space_cover(bigint) from public, anon, service_role;
 grant execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) to service_role;
 revoke execute on function public.enqueue_due_storage_cleanup(),public.claim_storage_cleanup(int4),public.complete_storage_cleanup(bigint),public.fail_storage_cleanup(bigint,text) from public,anon,authenticated;

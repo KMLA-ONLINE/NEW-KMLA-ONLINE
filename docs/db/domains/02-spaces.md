@@ -60,6 +60,10 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 
 | 함수                                                          | 인증         | 목적                                                                           |
 | ------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------ |
+| finalize_space_image(space_id, storage_path)                  | 관리자       | 검증된 space-images object를 아이콘 슬롯에 연결                               |
+| clear_space_image(space_id)                                   | 관리자       | 아이콘 슬롯을 비움. blob은 48시간 orphan sweep이 정리                         |
+| finalize_space_cover(space_id, storage_path)                  | 관리자       | 검증된 space-covers object를 커버 슬롯에 연결                                 |
+| clear_space_cover(space_id)                                   | 관리자       | 커버 슬롯을 비움. blob은 48시간 orphan sweep이 정리                           |
 | `create_space(type, name, description?, pub_id?, …)`          | accepted     | community는 누구나, **group은 app admin만**. 생성자가 owner가 된다             |
 | `set_space_join_policy(space_id, policy)`                     | 관리자       | 가입 정책 전환. **대기 요청이 남아 있으면 거부한다**                           |
 | `soft_delete_space(space_id)`                                 | service_role | 공간 soft delete. 7일 뒤 아래 배치가 걷어간다                                  |

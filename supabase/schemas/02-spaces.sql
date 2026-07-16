@@ -30,6 +30,10 @@ create table public.spaces (
   name text not null,
   description text null,
   image_url text null,
+  -- 아이콘과 다른 슬롯(그룹 상단 배너)이라 버킷도 다르다: image_url은 space-images, 이건
+  -- space-covers. profiles가 avatar_url(avatars)와 cover_image_url(profile-covers)을 가르는 것과
+  -- 같은 구조다. 둘 다 컬럼 grant에 쓰기가 없고 finalize_space_cover/clear_space_cover로만 바뀐다.
+  cover_image_url text null,
   join_policy public.space_join_policy not null default 'public',
   post_policy public.space_post_policy not null default 'all',
   -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
@@ -302,7 +306,7 @@ create policy space_categories_insert on public.space_categories for insert to a
 create policy space_categories_update on public.space_categories for update to authenticated using (private.can_curate_space(space_id)) with check (private.can_curate_space(space_id));
 create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_curate_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,cover_image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
 -- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
 grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
 grant update (name,description,allow_anonymous_posts,post_policy) on public.spaces to authenticated;

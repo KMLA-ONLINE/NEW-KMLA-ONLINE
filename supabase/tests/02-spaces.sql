@@ -50,6 +50,129 @@ begin
   then
     raise exception 'space lifecycle contract failed';
   end if;
+
+  -- 공간 아이콘·커버 URL은 임의 경로 주입을 막기 위해 컬럼 grant로 열지 않는다. 검증된
+  -- storage object만 finalize RPC가 연결하고, clear RPC만 끊는다.
+  if has_column_privilege('authenticated', 'public.spaces', 'image_url', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.spaces', 'cover_image_url', 'UPDATE')
+    or to_regprocedure('public.finalize_space_image(bigint,text)') is null
+    or to_regprocedure('public.clear_space_image(bigint)') is null
+    or to_regprocedure('public.finalize_space_cover(bigint,text)') is null
+    or to_regprocedure('public.clear_space_cover(bigint)') is null
+    or not has_function_privilege('authenticated', 'public.finalize_space_image(bigint,text)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.clear_space_image(bigint)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.finalize_space_cover(bigint,text)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.clear_space_cover(bigint)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.finalize_space_image(bigint,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.clear_space_image(bigint)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.finalize_space_cover(bigint,text)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.clear_space_cover(bigint)', 'EXECUTE')
+  then
+    raise exception 'space image contract failed';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- finalize/clear space image: 관리자만, 해당 space 경로의 새 이미지 MIME만
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  manager_user uuid := '11111111-1111-4111-8111-f1f1f1f1f1f1';
+  outsider_user uuid := '22222222-2222-4222-8222-f2f2f2f2f2f2';
+  manager_id bigint;
+  outsider_id bigint;
+  space_id bigint;
+  other_space_id bigint;
+  space_pub_id text;
+  other_space_pub_id text;
+  image_path text;
+  cover_path text;
+  other_path text;
+  stale_path text;
+  non_image_path text;
+begin
+  insert into auth.users (id, email) values
+    (manager_user, 'space-image-manager@example.com'),
+    (outsider_user, 'space-image-outsider@example.com');
+  select id into manager_id from public.profiles where auth_user_id=manager_user;
+  select id into outsider_id from public.profiles where auth_user_id=outsider_user;
+  update public.profiles set type='teacher',status='accepted' where id in (manager_id,outsider_id);
+
+  insert into public.spaces (type,name) values ('group','이미지 공간') returning id,pub_id into space_id,space_pub_id;
+  insert into public.spaces (type,name) values ('group','다른 이미지 공간') returning id,pub_id into other_space_id,other_space_pub_id;
+  insert into public.space_members (space_id,user_id,role) values
+    (space_id,manager_id,'owner'),
+    (other_space_id,manager_id,'owner');
+
+  image_path:=space_pub_id||'/'||gen_random_uuid()::text;
+  cover_path:=space_pub_id||'/'||gen_random_uuid()::text;
+  other_path:=other_space_pub_id||'/'||gen_random_uuid()::text;
+  stale_path:=space_pub_id||'/'||gen_random_uuid()::text;
+  non_image_path:=space_pub_id||'/'||gen_random_uuid()::text;
+  insert into storage.objects (bucket_id,name,owner_id,created_at,metadata) values
+    ('space-images',image_path,manager_user::text,now(),'{"mimetype":"image/png","size":1000}'::jsonb),
+    ('space-covers',cover_path,manager_user::text,now(),'{"mimetype":"image/webp","size":1000}'::jsonb),
+    ('space-images',other_path,manager_user::text,now(),'{"mimetype":"image/jpeg","size":1000}'::jsonb),
+    ('space-images',stale_path,manager_user::text,now()-interval '25 hours','{"mimetype":"image/png","size":1000}'::jsonb),
+    ('space-covers',non_image_path,manager_user::text,now(),'{"mimetype":"application/pdf","size":1000}'::jsonb);
+
+  perform set_config('request.jwt.claim.sub',manager_user::text,true);
+  perform public.finalize_space_image(space_id,image_path);
+  perform public.finalize_space_cover(space_id,cover_path);
+  if (select image_url from public.spaces where id=space_id) is distinct from image_path
+    or (select cover_image_url from public.spaces where id=space_id) is distinct from cover_path then
+    raise exception 'a manager must set independent space image slots';
+  end if;
+
+  begin
+    perform public.finalize_space_image(space_id,other_path);
+    raise exception 'a space image must live under that space prefix';
+  exception when others then
+    if sqlerrm not like '%invalid space image object%' then raise; end if;
+  end;
+  begin
+    perform public.finalize_space_image(space_id,stale_path);
+    raise exception 'a stale space image must be rejected';
+  exception when others then
+    if sqlerrm not like '%invalid space image object%' then raise; end if;
+  end;
+  begin
+    perform public.finalize_space_cover(space_id,non_image_path);
+    raise exception 'a non-image space cover must be rejected';
+  exception when others then
+    if sqlerrm not like '%invalid space cover object%' then raise; end if;
+  end;
+  begin
+    perform public.finalize_space_cover(space_id,image_path);
+    raise exception 'a cover must not accept an icon bucket object';
+  exception when others then
+    if sqlerrm not like '%invalid space cover object%' then raise; end if;
+  end;
+
+  perform public.clear_space_image(space_id);
+  perform public.clear_space_image(space_id);
+  perform public.clear_space_cover(space_id);
+  perform public.clear_space_cover(space_id);
+  if (select image_url from public.spaces where id=space_id) is not null
+    or (select cover_image_url from public.spaces where id=space_id) is not null then
+    raise exception 'a manager must be able to clear both space image slots idempotently';
+  end if;
+
+  perform set_config('request.jwt.claim.sub',outsider_user::text,true);
+  begin
+    perform public.finalize_space_cover(space_id,cover_path);
+    raise exception 'a non-member must not set the space cover';
+  exception when others then
+    if sqlerrm not like '%space manager required%' then raise; end if;
+  end;
+  begin
+    perform public.clear_space_image(space_id);
+    raise exception 'a non-member must not clear the space image';
+  exception when others then
+    if sqlerrm not like '%space manager required%' then raise; end if;
+  end;
 end
 $$;
 
