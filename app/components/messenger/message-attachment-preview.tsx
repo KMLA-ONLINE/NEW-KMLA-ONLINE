@@ -194,6 +194,31 @@ function MessageImageGrid({ attachments }: { attachments: MessageAttachment[] })
   )
 }
 
+// 메시지당 비이미지 첨부는 하나뿐이다(불변식은 아래 참고). video/audio/file 중 하나로 그린다.
+function NonImageAttachment({ attachment }: { attachment: MessageAttachment }) {
+  const kind = getAttachmentKind(attachment)
+
+  if (kind === "video") {
+    return <MessageVideo attachment={attachment} />
+  }
+
+  // Audio with no source is just a file we happen to be unable to play.
+  if (kind === "audio" && attachment.src) {
+    return (
+      <AudioPlayer
+        src={attachment.src}
+        name={attachment.name}
+        durationSeconds={attachment.durationSeconds}
+      />
+    )
+  }
+
+  return <FilePreview attachment={attachment} />
+}
+
+// 한 메시지의 첨부는 항상 "이미지 여러 장" 또는 "비이미지 파일 하나"다 -- 전송이 그렇게 쪼개
+// 보내고(messenger의 sendFiles), 서버도 그렇게만 받는다(send RPC의 "only image attachments may
+// share one message"). 그래서 이미지 그룹과 파일을 한 메시지에 섞어 그릴 일이 없어, 둘 중 하나만 그린다.
 export function MessageAttachmentGroup({
   attachments,
   className,
@@ -201,42 +226,22 @@ export function MessageAttachmentGroup({
   attachments: MessageAttachment[]
   className?: string
 }) {
-  const images = attachments.filter((attachment) => getAttachmentKind(attachment) === "image")
-  const [firstImage] = images
+  const [first] = attachments
+  if (!first) {
+    return null
+  }
 
   return (
     <div className={cn("flex flex-col gap-1", className)}>
-      {images.length > 1 ? (
-        <MessageImageGrid attachments={images} />
-      ) : firstImage ? (
-        <MessageImage attachment={firstImage} />
-      ) : null}
-
-      {attachments.map((attachment) => {
-        const kind = getAttachmentKind(attachment)
-
-        if (kind === "image") {
-          return null
-        }
-
-        if (kind === "video") {
-          return <MessageVideo key={attachment.id} attachment={attachment} />
-        }
-
-        // Audio with no source is just a file we happen to be unable to play.
-        if (kind === "audio" && attachment.src) {
-          return (
-            <AudioPlayer
-              key={attachment.id}
-              src={attachment.src}
-              name={attachment.name}
-              durationSeconds={attachment.durationSeconds}
-            />
-          )
-        }
-
-        return <FilePreview key={attachment.id} attachment={attachment} />
-      })}
+      {getAttachmentKind(first) === "image" ? (
+        attachments.length > 1 ? (
+          <MessageImageGrid attachments={attachments} />
+        ) : (
+          <MessageImage attachment={first} />
+        )
+      ) : (
+        <NonImageAttachment attachment={first} />
+      )}
     </div>
   )
 }
