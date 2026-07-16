@@ -9,6 +9,7 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 ## 문서 규칙 (`domains/*.md`)
 
 - 모든 RPC와 trigger를 목록화한다. RPC는 **인증 조건 · 쓰기 여부 · 목적**, trigger는 **대상 테이블 · 이벤트 · side effect**.
+- `## RPC`/`## Trigger` 표는 SQL 선언 순서나 이름순이 아니라 **호출 흐름**으로 나눈다. RPC는 읽기 → 일반 사용자 작업(생성 → 변경/삭제) → 관리자 작업 → service-role 정리, trigger는 입력·형태 검증 → 서버 소유 상태 갱신 → 파생 효과 순서다. 한 흐름의 짝(`create`/`accept`, `suspend`/`undo`)은 붙여 둔다.
 - 구현 SQL은 복사하지 않는다. 상단의 Source 링크가 구현의 기준이다.
 - 스키마를 바꾸면 같은 작업에서 대응하는 domain 문서를 갱신한다.
 

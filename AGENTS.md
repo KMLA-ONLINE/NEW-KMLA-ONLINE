@@ -84,7 +84,7 @@ The policy below is settled. Build each piece when the wait it covers becomes re
 ## Database Architecture
 
 - Comment and reaction counts are not cached. Read them with `count(*)`; `posts` has no counter columns. A cache would need a trigger, since clients write `comments` and `post_reactions` directly under column grants rather than through an RPC.
-- `spaces.member_count` **is** cached, maintained by the `join_space` / `leave_space` / `accept_space_invite` RPCs. There is no reconciliation job (`reconcile_cached_counts` was removed), so treat it as approximate where an exact count matters.
+- `spaces.member_count` **is** cached, maintained when a space is created and by the `join_space` / `leave_space` / `accept_space_invite` / `approve_join_request` RPCs. There is no reconciliation job (`reconcile_cached_counts` was removed), so treat it as approximate where an exact count matters.
 
 ## Wiring the Backend
 

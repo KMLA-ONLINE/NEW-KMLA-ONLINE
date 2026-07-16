@@ -23,17 +23,29 @@ space-covers는 space-images와 별도인 커버 전용 private bucket이다. �
 
 ## RPC
 
+### Space 이미지 슬롯
+
+| 함수                                           | 인증                       | 쓰기 | 목적                                                       |
+| ---------------------------------------------- | -------------------------- | ---- | ---------------------------------------------------------- |
+| `finalize_space_image(space_id, storage_path)` | space 관리자 (owner/admin) | O    | 검증된 space-images object를 아이콘 슬롯에 연결            |
+| `clear_space_image(space_id)`                  | space 관리자 (owner/admin) | O    | 아이콘 슬롯을 비움. 이전 blob은 48시간 orphan sweep이 정리 |
+| `finalize_space_cover(space_id, storage_path)` | space 관리자 (owner/admin) | O    | 검증된 space-covers object를 커버 슬롯에 연결              |
+| `clear_space_cover(space_id)`                  | space 관리자 (owner/admin) | O    | 커버 슬롯을 비움. 이전 blob은 48시간 orphan sweep이 정리   |
+
+### 첨부 제거
+
 | 함수                                                    | 인증                                               | 쓰기 | 목적                                                                              |
 | ------------------------------------------------------- | -------------------------------------------------- | ---- | --------------------------------------------------------------------------------- |
-| finalize_space_cover(space_id, storage_path)            | space 관리자 (owner/admin)                         | O    | 검증된 space-covers object를 커버 슬롯에 연결                                     |
-| clear_space_cover(space_id)                             | space 관리자 (owner/admin)                         | O    | 커버 슬롯을 비움. 이전 blob은 48시간 orphan sweep이 정리                          |
-| `finalize_space_image(space_id, storage_path)`          | space 관리자 (owner/admin)                         | O    | 업로드된 space 이미지 검증 후`spaces.image_url` 연결                              |
 | `request_attachment_removal(owner_type, attachment_id)` | 첨부 소유자 (post 작성자 / message 발신자+방 멤버) | O    | 첨부 metadata 제거 + blob 삭제 큐 등록. 첨부만 남은 메시지는 soft delete까지 처리 |
-| `enqueue_due_storage_cleanup()`                         | service_role                                       | O    | 삭제 7일 경과한 첨부/space 이미지, 48시간 경과 고아 object를 큐에 적재            |
-| `claim_storage_cleanup(limit)`                          | service_role                                       | O    | 큐 항목 클레임 (skip locked, 10분 리스, 시도 횟수 증가)                           |
-| `complete_storage_cleanup(id)`                          | service_role                                       | O    | blob 삭제 완료 후 관련 DB 참조(row/URL) 정리 + 큐 완료 처리                       |
-| `fail_storage_cleanup(id, error)`                       | service_role                                       | O    | 실패 기록 + 지수 백오프로 재시도 예약 (최대 24시간)                               |
 
+### Storage maintenance 워커
+
+| 함수                            | 인증         | 쓰기 | 목적                                                               |
+| ------------------------------- | ------------ | ---- | ------------------------------------------------------------------ |
+| `enqueue_due_storage_cleanup()` | service_role | O    | 삭제 7일 경과한 첨부/space 이미지, 48시간 경과 고아 object를 큐에 적재 |
+| `claim_storage_cleanup(limit)`  | service_role | O    | 큐 항목 클레임 (skip locked, 10분 리스, 시도 횟수 증가)            |
+| `complete_storage_cleanup(id)`  | service_role | O    | blob 삭제 완료 후 관련 DB 참조(row/URL) 정리 + 큐 완료 처리        |
+| `fail_storage_cleanup(id, error)` | service_role | O    | 실패 기록 + 지수 백오프로 재시도 예약 (최대 24시간)              |
 `request_attachment_removal`의 첫 인자는 `p_owner_type`이고 값은 `'post'` 또는 `'message'` — **어느 테이블이 그 첨부를 소유하는가**다. 첨부가 *무엇인가*를 말하는 `public.attachment_kind`(`image`/`audio`/`video`/`file`)와는 다른 축이다. 이름이 비슷해 헷갈리기 쉬워 SQL에도 같은 주석이 붙어 있다.
 
 ## Private helper

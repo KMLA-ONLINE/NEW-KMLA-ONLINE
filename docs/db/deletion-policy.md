@@ -35,8 +35,8 @@ Space 삭제는 service-role 작업이다.
 
 1. `soft_delete_space()`가 `spaces.deleted_at`만 설정한다.
 2. 7일 뒤 Storage maintenance가 Space 이미지와 그 Space 글의 첨부를 cleanup queue에 넣는다.
-3. Edge Function이 object를 실제로 제거하고, `complete_storage_cleanup()`이 `post_attachments`와 `spaces.image_url` 참조를 정리한다.
-4. `purge_due_spaces()`가 첨부 행과 `image_url`이 없는 Space만 hard delete한다. 파일이 남았으면 skip하고 다음 실행에서 재시도한다.
+3. Edge Function이 object를 실제로 제거하고, `complete_storage_cleanup()`이 `post_attachments`, `spaces.image_url`, `spaces.cover_image_url` 참조를 정리한다.
+4. `purge_due_spaces()`가 첨부 행과 `image_url`·`cover_image_url`이 없는 Space만 hard delete한다. 파일이 남았으면 skip하고 다음 실행에서 재시도한다.
 
 hard purge는 댓글·반응·알림·글·가입 요청·초대·익명 정지 기록·카테고리·멤버십을 지운 뒤 Space 행을 지운다. 부모 FK가 `RESTRICT`인 댓글은 잎부터 반복해서 지운다.
 
