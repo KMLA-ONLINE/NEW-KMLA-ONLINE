@@ -88,8 +88,10 @@ if echo "$STAGED" | grep -qE '^supabase/'; then
 fi
 
 if echo "$STAGED" | grep -qE '^app/lib/crypto/'; then
-  # KDF 고정 벡터(파라미터가 조용히 바뀌면 배포 후 전 계정 로그인 불가), AAD 바인딩,
-  # 그리고 진짜 DB 왕복. 통합 테스트는 로컬 Supabase가 없으면 스스로 skip한다.
-  echo "→ 크립토 테스트"
-  npx vitest run app/lib/crypto
+  # KDF 고정 벡터와 AAD 바인딩은 빠른 단위 테스트로, 진짜 DB 왕복은 별도 필수 검사로
+  # 분리한다. crypto 변경에서 통합 테스트를 skip하면 "통과"가 아니라 미검증이므로 막는다.
+  echo "→ 크립토 단위 테스트"
+  npx vitest run app/lib/crypto/crypto.test.ts
+  echo "→ E2EE DB 통합 테스트"
+  npm run test:e2ee
 fi

@@ -19,7 +19,7 @@ space-covers는 space-images와 별도인 커버 전용 private bucket이다. �
 ## Storage RLS (storage.objects)
 
 - bucket별 select policy: DB row와 연결된 object(또는 본인의 provisional 업로드)만 읽기 허용
-- bucket별 insert policy: 경로 패턴 + 소유권/멤버십 검증. UPDATE/DELETE는 열지 않는다
+- bucket별 insert policy: 경로 패턴 + 소유권/멤버십 검증. UPDATE/DELETE는 열지 않는다. profile 기반 upload 조건은 `private.has_active_profile()`을 거쳐 확인하므로 `profiles.auth_user_id` column grant를 열지 않는다
 
 ## RPC
 

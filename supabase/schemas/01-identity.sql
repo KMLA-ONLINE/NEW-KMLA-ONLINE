@@ -137,6 +137,44 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function private.handle_auth_user_created();
 
+-- Storage RLS runs as authenticated, while profiles.auth_user_id is intentionally hidden by
+-- column grants. Keep the minimum identity/approval lookup in private so policy helpers do
+-- not need to expose that UUID or weaken the profile grant.
+create table private.profile_auth_map (
+  profile_id bigint primary key references public.profiles(id) on delete cascade,
+  auth_user_id uuid not null unique,
+  status public.profile_status not null,
+  deleted_at timestamptz null
+);
+
+create function private.sync_profile_auth_map()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.auth_user_id is null then
+    delete from private.profile_auth_map where profile_id = new.id;
+  else
+    insert into private.profile_auth_map(profile_id, auth_user_id, status, deleted_at)
+    values (new.id, new.auth_user_id, new.status, new.deleted_at)
+    on conflict (profile_id) do update
+    set auth_user_id = excluded.auth_user_id,
+        status = excluded.status,
+        deleted_at = excluded.deleted_at;
+  end if;
+  return new;
+end $$;
+
+create trigger sync_profile_auth_map
+  after insert or update of auth_user_id, status, deleted_at on public.profiles
+  for each row execute function private.sync_profile_auth_map();
+
+insert into private.profile_auth_map(profile_id, auth_user_id, status, deleted_at)
+select id, auth_user_id, status, deleted_at
+from public.profiles
+where auth_user_id is not null;
 create function private.current_profile_id()
 returns bigint
 language sql
@@ -144,13 +182,25 @@ stable
 security definer
 set search_path = ''
 as $$
-  select p.id
-  from public.profiles as p
+  select p.profile_id
+  from private.profile_auth_map as p
   where p.auth_user_id = (select auth.uid())
-  order by p.id
-  limit 1
 $$;
 
+create function private.has_active_profile()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from private.profile_auth_map as p
+    where p.auth_user_id = (select auth.uid())
+      and p.deleted_at is null
+  )
+$$;
 create function private.is_accepted_user()
 returns boolean
 language sql
@@ -160,7 +210,7 @@ set search_path = ''
 as $$
   select exists (
     select 1
-    from public.profiles as p
+    from private.profile_auth_map as p
     where p.auth_user_id = (select auth.uid())
       and p.status = 'accepted'
       and p.deleted_at is null
@@ -168,8 +218,11 @@ as $$
 $$;
 
 revoke execute on function private.handle_auth_user_created() from public, anon, authenticated, service_role;
+revoke all on table private.profile_auth_map from public, anon, authenticated, service_role;
 revoke execute on function private.current_profile_id() from public, anon, authenticated, service_role;
+revoke execute on function private.has_active_profile() from public, anon, authenticated, service_role;
 revoke execute on function private.is_accepted_user() from public, anon, authenticated, service_role;
+revoke execute on function private.sync_profile_auth_map() from public, anon, authenticated, service_role;
 
 create function private.is_app_admin()
 returns boolean language sql stable security definer set search_path = '' as $$
@@ -373,6 +426,7 @@ using (user_id = (select private.current_profile_id()));
 
 grant usage on schema public, private to authenticated;
 grant execute on function private.current_profile_id() to authenticated;
+grant execute on function private.has_active_profile() to authenticated;
 grant execute on function private.is_accepted_user() to authenticated;
 
 grant select on table public.profile_departments, public.permissions, public.user_permissions to authenticated;

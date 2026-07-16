@@ -9,7 +9,7 @@
 // 않기 위해서다. 주소와 키는 supabase start의 공개된 데모 값으로 고정한다: 환경변수를 읽으면
 // 이 테스트가 언젠가 운영 DB를 향해 발사될 수 있다.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
-import { beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
   createAccount,
@@ -144,6 +144,7 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
   let bob: User
   let conversationId: number
   let messageId: number
+  let attachmentPath: string | null = null
 
   beforeAll(async () => {
     ;[alice, bob] = await Promise.all([signUp("alice"), signUp("bob")])
@@ -154,6 +155,18 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
     if (error) throw error
     conversationId = data as number
     messageId = await send(alice, bob, conversationId, SECRET)
+  }, TIMEOUT)
+
+  afterAll(async () => {
+    if (attachmentPath) {
+      const { error } = await admin.storage.from("message-files-encrypted").remove([attachmentPath])
+      if (error) throw error
+    }
+
+    for (const user of [alice, bob]) {
+      const { error } = await admin.auth.admin.deleteUser(user.authUserId)
+      if (error) throw error
+    }
   }, TIMEOUT)
 
   it("수신자가 읽는다", async () => {
@@ -363,6 +376,7 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       // 경로는 <conversation_id>/<내 auth uid>/<uuid>. 버킷 정책이 두 번째 세그먼트가 내 uid인지,
       // 대화가 direct라 버킷이 message-files-encrypted인지까지 본다.
       const path = `${conversationId}/${alice.authUserId}/${crypto.randomUUID()}`
+      attachmentPath = path
       const { error: uploadError } = await alice.db.storage
         .from("message-files-encrypted")
         .upload(path, sealedFile, { contentType: "application/octet-stream" })

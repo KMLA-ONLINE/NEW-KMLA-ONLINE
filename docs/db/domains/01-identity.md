@@ -8,6 +8,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 - `profile_departments` — profile에 연결할 부서 lookup (`name`). service_role이 관리하고 authenticated는 읽기만 가능
 - `profiles` — 이름/역할/상태/학생정보/부서/국내·국제 track/복학 여부/연락처/avatar/cover/soft delete. `status`가 `accepted`인지가 권한 모델의 핵심 전제
+- `private.profile_auth_map` — `profile_id`, 내부 auth UUID, 상태·삭제 시각만 복제하는 비노출 권한 조회 표. `profiles.auth_user_id` column grant를 열지 않고 Storage RLS와 공통 identity helper가 현재 사용자를 확인한다
 - `user_keys` — 이 사용자의 **암호학적** 신원. `profiles`가 사회적 신원이라면 그 옆에 걸린 열쇠고리다. X25519 신원 공개키 + 봉인된 blob 둘(`wrapped_user_key`, `wrapped_identity_secret_key`). 키 계층 전체는 [docs/e2ee.md](../../e2ee.md)
 - `permissions` — 문자열 key 기반 권한 registry (seed: `gongang`, `karaoke` — baseline migration)
 - `user_permissions` — profile별 permission 부여
@@ -72,6 +73,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 | 함수                                        | 용도                                                                                                                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `private.current_profile_id()`              | 현재 auth user의 profile id                                                                                                                                                     |
+| `private.has_active_profile()`              | 현재 auth user가 soft-delete되지 않은 profile을 가졌는지. Storage upload policy가 비공개 auth UUID를 직접 읽지 않도록 쓴다                                                     |
 | `private.is_accepted_user()`                | 현재 사용자가 accepted + non-deleted인지                                                                                                                                        |
 | `private.is_app_admin()`                    | 현재 사용자가 accepted admin인지                                                                                                                                                |
 | `private.has_permission(key)`               | accepted + 해당 permission 보유 여부                                                                                                                                            |
@@ -86,6 +88,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 | 트리거                 | 테이블       | 이벤트        | side effect                                                                                                         |
 | ---------------------- | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `on_auth_user_created` | `auth.users` | AFTER INSERT  | `profiles` 1행 자동 생성 (이름: metadata `full_name` → `name` → `사용자`, 50자 절단)                                |
+| `sync_profile_auth_map` | `profiles` | AFTER INSERT / auth UUID·status·삭제 시각 UPDATE | `private.profile_auth_map`을 동기화. auth UUID를 browser 역할에 열지 않는 Storage RLS 조회 경로다 |
 | `on_auth_user_deleted` | `auth.users` | BEFORE DELETE | admin/space owner면 예외로 삭제 거부. 아니면 profile 삭제 처리(`탈퇴한 사용자`) + `withdrawn` + `auth_user_id` null |
 ## 주의
 

@@ -30,13 +30,13 @@
 
 - For normal code changes, run `npm run lint` then `npm run typecheck`.
 - `npm run typecheck` runs `react-router typegen && tsc`; it regenerates `.react-router/types`.
-- `npm test` runs vitest (test files live next to routes, e.g. `app/routes/_app.profile.test.tsx`).
+- `npm test` runs the fast unit suite. `npm run test:e2ee` runs the real local-Supabase E2EE round-trip and fails when the local API is unavailable; use it for crypto work.
 - DB checks live in `supabase/tests/`: run `npm run test:db` against the local DB after `supabase db reset`. One file per domain, each with its own `begin ... rollback` (safe to re-run, and runnable alone: `node supabase/tests/run.mjs 05-chat`). `00-privileges.sql` is not a domain — it holds the schema-wide privilege invariants that catch what `db diff` cannot see. `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
 - **The pre-commit hook enforces the expensive checks, but only for the paths that need them** (`.husky/pre-commit`). There is no test CI — the sole workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync) — so the hook *is* the safety net.
   - Staging anything under `supabase/` ⇒ `supabase db diff` must return "No schema changes found" (otherwise `test:db` would be checking a stale DB and its green would be a lie), then `npm run test:db` must pass. If local Supabase is not running, the commit is **blocked** rather than silently skipped.
-  - Staging anything under `app/lib/crypto/` ⇒ the crypto suite runs (KDF golden vectors, AAD binding, real round-trip).
+  - Staging anything under `app/lib/crypto/` ⇒ KDF/AAD unit tests and the required local E2EE round-trip both run; unlike `npm test`, the latter is never silently skipped.
   - Everything else stays as fast as before: lint + typecheck only. A slow hook trains people to reach for `--no-verify`, which is worse than no hook — they would still believe the check ran.
-- Why the hook is worth the seconds: `00-privileges.sql` found a live vulnerability the moment it was written. Six `private` helpers had an empty ACL (= implicit `EXECUTE TO PUBLIC`) because the declarative schema's `revoke`/`grant` lines had **never been carried into a migration** — `db diff` does not emit function grants, so nothing downstream noticed. One of them was `private.anonymize_profile(bigint)`, a `SECURITY DEFINER` function that scrubs whatever profile id you hand it, and `authenticated` has `USAGE` on the `private` schema. Any logged-in student could permanently delete any other user's account with one line. Typecheck, lint, and `db diff` all passed on that code.
+- The DB hook is a security boundary, not busywork: `db diff` does not emit function grants, and `00-privileges.sql` previously caught `SECURITY DEFINER` helpers left executable by `PUBLIC` despite lint, typecheck, and diff all passing.
 
 ## Scope / Generated Files
 
@@ -47,10 +47,11 @@
 
 - When changing code, schema, migrations, or behavior, update any related Markdown docs in the repo during the same task when such docs already exist.
 - In Markdown prose, write ranges as `1 ~ 100`, never `1~100`. Two unspaced tildes pair up into strikethrough syntax and the preview swallows everything between them. A hyphen (`1-100`) is safe either way.
+- In `docs/db/domains/`, arrange RPC and trigger tables by caller flow under headings, never by SQL declaration or alphabetic order. The canonical grouping rule is in `docs/db/README.md`.
 
 ## Windows patching(codex)
 
-- If `apply_patch` fails with `windows sandbox ... apply deny-read ACLs`, do not retry it or the `apply_patch.bat` wrapper. Invoke the Codex patch engine directly with one UTF-8 PATCH argument.
+- If `apply_patch` fails with `windows sandbox ... apply deny-read ACLs`, do not retry it or the `apply_patch.bat` wrapper. Use the Codex patch engine directly with one UTF-8 PATCH argument only when the runner exposes it; otherwise report the tool limitation instead of attempting an unverified workaround.
 
 ## Imports / Aliases
 
@@ -109,21 +110,9 @@ Much of the app still renders module-level mock arrays (feed, spaces, profile, m
   - `VITE_SUPABASE_PUBLISHABLE_KEY`
 - All code reads `import.meta.env.*` (client-only bundle — there is no server code reading `process.env.*`).
 
-## Skills (opencode only)
+## OpenCode integrations
 
-- Only opencode loads `.agents/skills/`. Claude Code does not; skip this section there.
-- Repo-local skills are vendored upstream in `.agents/skills/`; they are general-purpose aids, not app-specific architecture docs.
-- Use `react-router-framework-mode` for route modules, `loader`/`action`, redirects, auth flow, `root.tsx`, route-generated `./+types/*`, or `react-router.config.ts` changes.
-- Use `shadcn` whenever touching `components.json`, adding/updating shadcn components, or composing UI from the existing `app/components/ui/*` primitives.
-- Use `supabase` for auth, schema, migrations, RLS, storage, local Supabase config, or MCP-backed Supabase work.
-- Before installing or updating shadcn components, inspect project info first and verify the resolved aliases. Do not copy registry code that assumes `@/components/ui/...` without fixing imports for this repo.
-- Use `frontend-design` only for explicit page/component redesign work. Preserve the repo's existing Tailwind v4 + shadcn token setup unless the user asks for a broader visual change.
-- Use `vercel-react-best-practices` selectively for React performance work. Ignore Next.js-specific guidance that does not apply to this React Router app.
-- Use `web-design-guidelines` only for UI/a11y/design review requests; it is an audit skill, not an implementation guide.
-
-## MCP (opencode only)
-
-- These servers are configured in `opencode.json`. There is no `.mcp.json`, so Claude Code has none of them — do not go looking for MCP tools there; use psql, the Supabase CLI, and `npx shadcn@latest` directly.
-- `opencode.json` enables the `shadcn` MCP server. Prefer MCP registry search/view/example tools for shadcn discovery and installation work.
-- `opencode.json` enables the `supabase` MCP server at the local Studio endpoint `http://127.0.0.1:54723/api/mcp`. Prefer MCP tools for Supabase docs, SQL, advisors, and project inspection when available.
-- For shadcn project metadata such as aliases, framework, base, and installed components, use `npx shadcn@latest info` because MCP only covers registry operations.
+- This section applies only to OpenCode. Other runners use their injected skills and tools; do not infer unavailable integrations from this file.
+- Use `react-router-framework-mode` for React Router routes, `shadcn` for `components.json` or `app/components/ui/`, and `supabase` for auth, schema, migrations, RLS, Storage, or local Supabase work.
+- Before changing shadcn components, inspect project metadata and aliases; this repo uses `~/*`, not `@/*`. Use `frontend-design` only for explicit redesigns, `vercel-react-best-practices` only for React performance work, and `web-design-guidelines` only for UI/a11y audits.
+- OpenCode MCP servers are configured in `opencode.json`: prefer the shadcn registry tools for registry work and the local Supabase MCP endpoint for Supabase inspection. For shadcn project metadata, use `npx shadcn@latest info`.
