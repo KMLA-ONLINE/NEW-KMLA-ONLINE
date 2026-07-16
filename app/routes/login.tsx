@@ -5,32 +5,27 @@ import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { createClient } from "~/lib/supabase/client"
 import { derivePasswordKeys } from "~/lib/crypto/account"
 import { openVault } from "~/lib/crypto/vault"
-import { useHydrated } from "~/lib/use-hydrated"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 
 /**
- * 로그인은 서버 action이 아니라 브라우저에서 돈다. 그래야만 하는 이유가 하나 있다:
- * **비밀번호가 우리 서버를 지나가면 안 된다.**
+ * 로그인은 브라우저에서 돈다. 그래야만 하는 이유가 하나 있다:
+ * **비밀번호가 어떤 서버도 지나가면 안 된다.**
  *
- * action은 SSR 서버에서 실행되므로, 거기서 signInWithPassword를 부르면 원문 비밀번호가
- * 브라우저 -> 우리 서버 -> Supabase 순으로 흐른다. 그 순간 우리는 모든 DM을 복호화할 수 있는
- * 키를 유도할 수 있게 되고, 종단간 암호화는 겉보기에만 멀쩡한 연극이 된다.
+ * SPA라 서버 action 자체가 없다 -- 있었다면 signInWithPassword를 거기서 부르는 순간 원문
+ * 비밀번호가 브라우저 -> 우리 서버 -> Supabase 순으로 흘러, 우리가 모든 DM을 복호화할 수 있는
+ * 키를 유도하게 되고 종단간 암호화는 겉보기에만 멀쩡한 연극이 된다.
  *
  * 그래서 브라우저에서 Argon2id를 돌려 masterKey를 만들고, 거기서 갈라낸 authHash만 Supabase
  * Auth에 보낸다. encKey는 같은 masterKey에서 나오지만 서버로 가지 않는다. HKDF의 두 출력은
  * 서로 독립이라, authHash를 손에 쥔 서버도 encKey를 재현할 수 없다. (docs/e2ee.md)
- *
- * createBrowserClient가 세션을 쿠키에 쓰므로 SSR 로더는 그대로 동작한다.
  */
 export default function Login() {
   const navigate = useNavigate()
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  // 하이드레이션 전에는 제출 버튼을 꺼 둔다 -- 그 전 네이티브 제출은 비밀번호를 서버로 GET한다.
-  const hydrated = useHydrated()
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -154,7 +149,7 @@ export default function Login() {
                   </div>
                 </div>
 
-                <Button type="submit" className="h-10 w-full" disabled={loading || !hydrated}>
+                <Button type="submit" className="h-10 w-full" disabled={loading}>
                   {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
                   {loading ? "로그인 중..." : "로그인"}
                 </Button>

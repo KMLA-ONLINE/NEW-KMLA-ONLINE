@@ -2,13 +2,13 @@
 
 ## Stack
 
-- Single-package React Router 7 app with SSR enabled in `react-router.config.ts`.
+- Single-package React Router 7 app in **SPA mode** (`ssr: false` in `react-router.config.ts`). There is no server render: the build pre-renders only the root shell, and every route renders in the browser. Server `loader`/`action` never run — use `clientLoader`/`clientAction`.
 - Routes are declared explicitly in `app/routes.ts` with `index()` / `route()` / `layout()`. A file's path is not its URL, and a new module under `app/routes/` does nothing until it is registered there. Moving to `flatRoutes()` is the eventual plan; write route modules so that switch stays cheap, but do not assume it has happened.
 - `npm` is the package manager here. Use the committed `package-lock.json`; do not assume `pnpm` or a monorepo tool.
 - Tailwind CSS v4 is loaded from `app/app.css`.
 - shadcn is configured in `components.json` with style `radix-vega`.
-- Supabase browser helpers live in `app/lib/supabase/client.ts`; server helpers live in `app/lib/supabase/server.ts`.
-- **Auth runs in the browser, not in a server `action`.** Direct messages are end-to-end encrypted, and the key that opens them is derived from the password — so the raw password must never reach our SSR server. `login`/`signup`/`reset-password` therefore call the browser Supabase client and send only a derived `authHash`. Do not "simplify" them back into server actions. See [docs/e2ee.md](docs/e2ee.md).
+- Supabase helpers live in `app/lib/supabase/client.ts` (browser `createBrowserClient`). There is no server client — SPA has no request to build one from.
+- **Auth runs in the browser.** Direct messages are end-to-end encrypted, and the key that opens them is derived from the password — so the raw password must never reach any server. SPA has no server `action` to be tempted into, and `login`/`signup`/`reset-password` call the browser Supabase client and send only a derived `authHash`. Do not add a server that handles the password. See [docs/e2ee.md](docs/e2ee.md).
 
 ## Local Supabase Ports
 
@@ -19,8 +19,8 @@
 
 - Install: `npm install`
 - Dev server: `npm run dev`
-- Build: `npm run build`
-- Prod server: `npm run start`
+- Build: `npm run build` (SPA — emits static `build/client/`; there is no `build/server`)
+- Preview the prod build locally: `npm run start` (`vite preview` over `build/client`, with SPA history fallback). Deploys are static hosting (Vercel), not a Node server.
 - Lint app code: `npm run lint`
 - Fix app lint issues: `npm run lint:fix`
 - Format app code: `npm run format`
@@ -90,9 +90,8 @@ The policy below is settled. Build each piece when the wait it covers becomes re
 
 Much of the app still renders module-level mock arrays (feed, spaces, profile, messenger). When replacing one with real data:
 
-- Read and write from a route `loader` / `action` using `createClient(request)` from `app/lib/supabase/server.ts`. Do not call Supabase from a component body or a `useEffect`.
-- Any route module that touches `supabase.auth` must return the `headers` from `createClient(request)` on **every** response (`redirect(to, { headers })`, `data(value, { headers })`). Dropping them silently discards the refreshed session cookie, and the next request arrives logged out.
-- `app/lib/supabase/client.ts` is for browser-only concerns — realtime subscriptions and direct-to-storage uploads. Everything else belongs on the server.
+- Read and write from a route `clientLoader` / `clientAction` using `createClient()` from `app/lib/supabase/client.ts`. Do not call Supabase from a component body or a `useEffect` — the route module is still the seam. (Server `loader`/`action` do not run in SPA mode; do not add them.)
+- The browser client persists and refreshes the session on its own (cookies + localStorage). There is no `headers` handoff to thread through responses the way a server loader needed — that whole cookie dance is gone with SSR.
 - Keep components data-agnostic: they take rows as props and the route supplies them. A component that imports a constant standing in for a table (see `PLACEHOLDER_REACTION_TYPES` in `app/lib/reactions.ts`) has to be rewritten when the loader lands; one that takes props does not.
 - Shape mock data like the query that will replace it — ISO timestamps rather than `"2h ago"`, real column names, nullable fields actually nullable. Formatting is the renderer's job.
 - Every RLS policy gates on `private.is_accepted_user()`. A signed-in user whose `profiles.status` is not `accepted` sees empty results rather than an error, so route on `status` (`none`/`rejected` → `/setup`, `pending` → `/pending`) instead of on the session alone.
@@ -108,8 +107,7 @@ Much of the app still renders module-level mock arrays (feed, spaces, profile, m
 - Required env vars are listed in `.env.example`:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLISHABLE_KEY`
-- Client code reads `import.meta.env.*`.
-- Server code currently reads `process.env.*` for the same `VITE_*` values.
+- All code reads `import.meta.env.*` (client-only bundle — there is no server code reading `process.env.*`).
 
 ## Skills (opencode only)
 

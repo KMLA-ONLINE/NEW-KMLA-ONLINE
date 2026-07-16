@@ -19,7 +19,7 @@ X25519 신원 공개키 ──────────────────�
 
 **Supabase Auth는 원문 비밀번호를 받지 않는다.** 받으면 서버가 encKey를 재현할 수 있어 그 자리에서 E2EE가 무너지는데, 겉보기에는 완벽히 동작하기 때문에 알아채기 어렵다. HKDF의 두 출력은 서로 독립이라 authHash를 쥐고도 encKey는 나오지 않는다.
 
-그래서 `login`/`signup`은 **서버 action이 아니라 브라우저에서** 돈다. SSR action은 우리 서버에서 실행되므로 거기서 `signInWithPassword`를 부르면 원문이 우리 서버를 지나간다.
+그래서 `login`/`signup`은 **브라우저에서** 돈다. 앱은 SPA라 서버 action이라는 선택지 자체가 없다 — 있었다면 거기서 `signInWithPassword`를 부르는 순간 원문이 우리 서버를 지나갔을 것이다.
 
 `userKey`를 한 겹 끼운 이유:
 

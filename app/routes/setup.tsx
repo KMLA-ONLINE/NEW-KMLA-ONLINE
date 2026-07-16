@@ -1,15 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from "react"
-import {
-  data,
-  useFetcher,
-  useLoaderData,
-  useNavigate,
-  type ActionFunctionArgs,
-  type LoaderFunctionArgs,
-} from "react-router"
+import { useFetcher, useLoaderData, useNavigate } from "react-router"
 import { Camera, ChevronLeft, Loader2, Upload } from "lucide-react"
 
-import { createClient } from "~/lib/supabase/server"
+import type { Route } from "./+types/setup"
 import type { Database } from "~/lib/supabase/database.types"
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
@@ -26,26 +19,19 @@ import {
 
 type ProfileType = Database["public"]["Enums"]["profile_type"]
 type ProfileTrack = Database["public"]["Enums"]["profile_track"]
-type OnboardingArgs = Database["public"]["Functions"]["submit_onboarding"]["Args"]
 
-/**
- * submit_onboarding declares no SQL defaults, so every parameter is generated as
- * non-null even though most of the columns behind them are nullable. A teacher
- * has no student number and no track.
- */
-type OnboardingInput = { [Key in keyof OnboardingArgs]: OnboardingArgs[Key] | null }
-
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { supabase } = createClient(request)
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export function clientLoader() {
   // 온보딩 마지막 단계의 OTP를 이 이메일로 보낸다 -- 가입 때 쓴 것이고, 사용자가 다시 입력하지 않는다.
-  return { email: user?.email ?? null }
+  // 아직 목이다. 백엔드를 붙일 때 브라우저 세션에서 읽어 온다.
+  return { email: "user@kmla" as string | null }
 }
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { supabase, headers } = createClient(request)
+/**
+ * SPA라 서버 action이 없다. 이건 백엔드 없이 도는 목이다 -- OTP 발송·검증·온보딩 저장(RPC)은
+ * 백엔드를 붙일 때 여기서 브라우저 Supabase 클라이언트로 한다. 컴포넌트가 기대하는 응답 모양
+ * (`otpSent`/`success`/`error`)만 그대로 흉내 낸다.
+ */
+export async function clientAction({ request }: Route.ClientActionArgs) {
   const formData = await request.formData()
 
   const readText = (field: string) => {
@@ -54,84 +40,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return text === "" ? null : text
   }
 
-  const readNumber = (field: string) => {
-    const text = readText(field)
-    return text === null ? null : Number(text)
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user?.email) {
-    return { error: "세션이 만료되었습니다. 다시 로그인해 주세요." }
-  }
-
-  // 온보딩 제출은 두 단계다: 코드 발송(send-otp)과 코드 확인 후 제출(verify). 프로필은
-  // 이메일이 확인된 뒤에만 pending으로 넘어간다.
   const intent = readText("intent")
 
   if (intent === "send-otp") {
-    // enable_confirmations=false라 이미 로그인돼 있지만, signInWithOtp가 같은 이메일로 6자리
-    // 코드를 보낸다(magic_link 템플릿의 {{ .Token }}). shouldCreateUser=false: 새 계정은 안 만든다.
-    const { error } = await supabase.auth.signInWithOtp({
-      email: user.email,
-      options: { shouldCreateUser: false },
-    })
-    if (error) {
-      return { error: "인증 코드를 보내지 못했습니다. 잠시 후 다시 시도해 주세요." }
-    }
-    return data({ otpSent: true as const, email: user.email }, { headers })
+    return { otpSent: true as const, email: "user@kmla" }
   }
 
-  // intent === "verify": 코드를 먼저 확인한다. 틀리면 프로필을 제출하지 않는다.
+  // intent === "verify": 목이라 6자리 코드면 무엇이든 통과시킨다.
   const token = readText("otp")
   if (!token) {
     return { error: "인증 코드를 입력해 주세요." }
   }
-  const { error: verifyError } = await supabase.auth.verifyOtp({
-    email: user.email,
-    token,
-    type: "email",
-  })
-  if (verifyError) {
-    return { error: "인증 코드가 올바르지 않거나 만료되었습니다." }
-  }
 
   const name = readText("name")
   const profileType = readText("type") as ProfileType | null
-  const gender = readText("gender") as OnboardingArgs["p_gender"] | null
+  const gender = readText("gender")
 
   if (!name || !profileType || !gender) {
     return { error: "이름, 구분, 성별을 모두 입력해 주세요." }
   }
 
-  const input: OnboardingInput = {
-    p_name: name,
-    p_type: profileType,
-    p_gender: gender,
-    p_track: readText("track") as ProfileTrack | null,
-    p_student_number: readText("studentNumber"),
-    p_cohort: readNumber("cohort"),
-    p_class_no: readNumber("classNo"),
-    p_dorm_room: readNumber("dormRoom"),
-    p_phone_number: readText("phoneNumber"),
-    p_birthday: readText("birthday"),
-    p_is_reenrolled: false,
-    // `description` stays editable on the profile page. `department` is not the
-    // user's to choose -- profiles grants update only on (name, gender,
-    // phone_number, birthday, description), so only service_role can ever set
-    // it. Null here is deliberate; do not add a field for it.
-    p_department: null,
-    p_description: null,
-  }
-
-  const { error } = await supabase.rpc("submit_onboarding", input as OnboardingArgs)
-
-  if (error) {
-    return { error: "프로필 저장에 실패했습니다. 입력한 정보를 확인해 주세요." }
-  }
-
-  return data({ success: true as const, name }, { headers })
+  return { success: true as const, name }
 }
 
 type SetupFormData = {
@@ -262,8 +191,8 @@ function BirthdayFields({
 
 export default function Setup() {
   const navigate = useNavigate()
-  const fetcher = useFetcher<typeof action>()
-  const { email } = useLoaderData<typeof loader>()
+  const fetcher = useFetcher<typeof clientAction>()
+  const { email } = useLoaderData<typeof clientLoader>()
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<SetupFormData>(initialFormData)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
