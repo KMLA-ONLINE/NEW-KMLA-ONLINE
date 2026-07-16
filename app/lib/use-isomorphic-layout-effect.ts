@@ -8,8 +8,8 @@ import { useEffect, useLayoutEffect } from "react"
  * 해야 한다. `useEffect`로 하면 브라우저가 한 번 그린 다음에 고치는 것이라, 고치기 전의
  * 프레임이 사용자 눈에 그대로 보인다.
  *
- * 서버에는 페인트가 없어서 React가 경고를 찍는다. SSR 중에는 `useEffect`로 바꿔 치운다 --
- * 어차피 서버에서는 둘 다 실행되지 않는다.
+ * 브라우저 밖(빌드 시 root 셸 프리렌더)에는 페인트가 없어서 React가 경고를 찍는다. 그때는
+ * `useEffect`로 바꿔 치운다 -- 어차피 거기서는 둘 다 실행되지 않는다.
  */
 export const useIsomorphicLayoutEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect
