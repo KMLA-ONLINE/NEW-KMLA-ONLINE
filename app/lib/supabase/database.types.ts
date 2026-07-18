@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -1888,6 +1888,21 @@ export type Database = {
           reaction_count: number
           top_reactions: Json
           updated_at: string
+        }[]
+      }
+      get_post_reactors: {
+        Args: {
+          p_after_user_id?: number
+          p_limit?: number
+          p_post_id: number
+          p_reaction_type_id?: number
+        }
+        Returns: {
+          avatar_url: string
+          created_at: string
+          name: string
+          reaction_type_id: number
+          user_id: number
         }[]
       }
       get_unread_message_count: { Args: never; Returns: number }

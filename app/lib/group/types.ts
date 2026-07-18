@@ -65,6 +65,24 @@ export type GroupPostAuthor = {
 }
 
 /**
+ * 이 글에 반응한 한 사람(post_reactions ⋈ profiles ⋈ reaction_types). "누가 어떤 이모지로
+ * 눌렀나" 목록 모달에서 쓴다. 반응자는 **언제나 실명**이다 -- post_reactions.user_id엔 익명
+ * 개념이 없어서, 글이 익명이어도 누가 눌렀는지는 드러난다(반응은 익명 글이라도 실명 행동이다).
+ */
+export type GroupPostReactor = {
+  /** profiles.id */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  avatarUrl: string | null
+  /** 이 사람이 누른 반응 타입(reaction_types.id). 어떤 이모지인지는 reactionTypes에서 찾는다. */
+  reactionTypeId: number
+  /** post_reactions.created_at (ISO 8601). "전체" 탭을 시간순으로 정렬하는 데 쓴다. */
+  createdAt: string
+}
+
+/**
  * 이 글이 놓인 space의 최소 정보. 피드처럼 **여러 space의 글을 한 흐름에 모을 때만** 채운다 --
  * 그때 각 글이 어느 그룹에서 왔는지 알아야 하기 때문이다. 그룹 안에서는(단일 space) null이다:
  * 헤더가 이미 어느 그룹인지 말하고 있어 글마다 붙이면 잡음이다. 백엔드에선 피드 로더가
@@ -192,6 +210,13 @@ export type GroupPost = {
   reactionCount: number
   /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
   topReactions: string[]
+  /**
+   * 반응한 사람들 -- 요약 이모지를 눌렀을 때 뜨는 "누가 어떤 이모지로" 목록 모달용.
+   * **실제 백엔드는 목록/상세 RPC가 아니라 모달을 열 때 별도 RPC로 페이지 단위로 읽는다**
+   * (반응이 수백이면 목록마다 실어 내리는 건 낭비다). 그래서 map-post는 이 필드를 채우지 않고
+   * 여기서도 optional이다 -- 없으면 요약 이모지는 클릭 불가. 목엔 그 로더가 없어 미리 합성해 둔다.
+   */
+  reactors?: GroupPostReactor[]
 }
 
 export type GroupComment = {

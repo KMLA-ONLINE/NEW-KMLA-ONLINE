@@ -124,6 +124,7 @@ export default function GroupPostDetailPage() {
                 commentCount={post.commentCount}
                 topReactions={post.topReactions}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
+                reactors={post.reactors}
                 postPath="."
                 onComment={() => composerRef.current?.focus()}
               />

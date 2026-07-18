@@ -159,6 +159,7 @@ export function GroupPostCard({
         commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
+        reactors={post.reactors}
         postPath={postPath}
         className="mt-1"
       />

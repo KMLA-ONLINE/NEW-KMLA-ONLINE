@@ -1,9 +1,12 @@
 import { MessageCircleIcon, SendIcon } from "lucide-react"
+import { useState } from "react"
 import { Link, useHref } from "react-router"
 import { toast } from "sonner"
 
 import { GroupReactionButton } from "~/components/group/group-reaction-button"
+import { GroupReactionListDialog } from "~/components/group/group-reaction-list-dialog"
 import { Twemoji } from "~/components/ui/twemoji"
+import type { GroupPostReactor } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -15,6 +18,7 @@ export function GroupPostActionBar({
   commentCount,
   topReactions,
   reactionTypes,
+  reactors,
   postPath,
   onComment,
   className,
@@ -23,6 +27,11 @@ export function GroupPostActionBar({
   commentCount: number
   topReactions: string[]
   reactionTypes: ReactionType[]
+  /**
+   * 반응자 목록(누가 어떤 이모지로). 있으면 우측 요약 이모지가 눌러서 목록 모달을 여는 버튼이
+   * 된다. 없으면(로더가 아직 안 채운 실데이터) 요약은 표시만 되고 클릭되지 않는다.
+   */
+  reactors?: GroupPostReactor[]
   /** 이 게시물의 상대 경로. 카드에선 "posts/:pubId", 상세에선 "."(이미 그 글 위에 있으므로). */
   postPath: string
   /** 주면 댓글 아이콘이 링크 대신 버튼이 된다(상세에서 댓글 입력창으로 포커스). */
@@ -31,6 +40,8 @@ export function GroupPostActionBar({
 }) {
   // 상대 경로를 이 라우트 기준의 절대 경로로 해석한다 -- 공유 링크에 origin을 붙이려면 필요하다.
   const postHref = useHref(postPath)
+  const [reactorsOpen, setReactorsOpen] = useState(false)
+  const canOpenReactors = reactors != null && reactors.length > 0
 
   const commentInner = (
     <>
@@ -80,11 +91,33 @@ export function GroupPostActionBar({
         </button>
       </div>
       {topReactions.length > 0 ? (
-        <div className="flex items-center gap-0.5 pr-2 text-sm">
-          {topReactions.map((emoji) => (
-            <Twemoji key={emoji} text={emoji} className="leading-none" />
-          ))}
-        </div>
+        canOpenReactors ? (
+          <button
+            type="button"
+            onClick={() => setReactorsOpen(true)}
+            aria-label={`반응한 사람 ${reactionCount}명 보기`}
+            className="hover:bg-muted -mr-1 flex items-center gap-0.5 rounded-md px-2 py-1 text-sm transition-colors"
+          >
+            {topReactions.map((emoji) => (
+              <Twemoji key={emoji} text={emoji} className="leading-none" />
+            ))}
+          </button>
+        ) : (
+          <div className="flex items-center gap-0.5 pr-2 text-sm">
+            {topReactions.map((emoji) => (
+              <Twemoji key={emoji} text={emoji} className="leading-none" />
+            ))}
+          </div>
+        )
+      ) : null}
+
+      {canOpenReactors ? (
+        <GroupReactionListDialog
+          open={reactorsOpen}
+          onOpenChange={setReactorsOpen}
+          reactors={reactors}
+          reactionTypes={reactionTypes}
+        />
       ) : null}
     </div>
   )

@@ -1,3 +1,4 @@
+import { makeMockReactors } from "~/lib/group/mock-reactors"
 import type {
   GroupCategory,
   GroupJoinRequest,
@@ -79,7 +80,7 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
       },
     ],
     reactionCount: 21,
-    topReactions: ["👍", "❤️"],
+    topReactions: ["👍", "❤️", "😮"],
     comments: [
       {
         id: 1,
@@ -168,7 +169,7 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
     createdAt: "2026-07-11T02:00:00.000Z",
     images: [],
     reactionCount: 14,
-    topReactions: ["👍"],
+    topReactions: ["👍", "😮"],
     comments: [
       {
         id: 4,
@@ -307,7 +308,7 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
       { src: mockImage("#4f46e5", "#a5b4fc"), alt: "sports-day-cheering.jpg" },
     ],
     reactionCount: 34,
-    topReactions: ["❤️", "👍"],
+    topReactions: ["❤️", "👍", "😆"],
     comments: [
       {
         id: 9,
@@ -336,7 +337,7 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
       { src: mockImage("#1e293b", "#94a3b8"), alt: "trip-nightview.jpg" },
     ],
     reactionCount: 41,
-    topReactions: ["❤️", "😆"],
+    topReactions: ["❤️", "😆", "😮"],
     comments: [
       {
         id: 10,
@@ -367,7 +368,7 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
       { src: mockImage("#7e22ce", "#f0abfc"), alt: "festival-closing.jpg" },
     ],
     reactionCount: 27,
-    topReactions: ["👍", "❤️"],
+    topReactions: ["👍", "❤️", "😆"],
     comments: [
       {
         id: 11,
@@ -399,6 +400,8 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
 export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => ({
   ...post,
   commentCount: post.comments?.filter((comment) => !comment.isDeleted).length ?? 0,
+  // 반응자 목록은 reactionCount·topReactions에서 합성한다(총원·아이콘이 요약과 일치).
+  reactors: makeMockReactors(post.reactionCount, post.topReactions),
 }))
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
