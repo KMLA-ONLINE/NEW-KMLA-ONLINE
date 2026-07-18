@@ -69,6 +69,8 @@ create table public.user_permissions (
 );
 
 create index idx_profiles_status_deleted_at on public.profiles (status, deleted_at);
+create index idx_profiles_pending_queue on public.profiles (onboarding_completed_at, id)
+where status='pending' and deleted_at is null;
 
 alter table public.profile_departments
   add constraint profile_departments_name_check check (char_length(btrim(name)) between 1 and 50);
