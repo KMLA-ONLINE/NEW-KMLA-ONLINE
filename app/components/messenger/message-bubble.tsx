@@ -22,6 +22,7 @@ import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import {
   formatMessageTime,
   getBubbleShapeClass,
+  getJumboEmoji,
   getLinkedTextSegments,
   isDeletedMessage,
   isPinnedMessage,
@@ -129,6 +130,11 @@ export function MessageBubble({
   const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
   const attachments = message.attachments ?? []
   const hasAttachments = attachments.length > 0
+  // 이모지만 몇 개 있는 메시지는 버블 없이 크게 띄운다(페북식). 첨부가 같이 오면 일반 버블로 둔다.
+  const isJumboEmoji =
+    !isDeleted && !hasAttachments && message.content
+      ? getJumboEmoji(message.content) !== null
+      : false
   const { isSwipeActive, swipeElementRef, replyIconRef, pointerHandlers } =
     useMessageBubbleGestures({
       isMine,
@@ -458,9 +464,11 @@ export function MessageBubble({
                   {message.content || isDeleted ? (
                     <div
                       className={cn(
-                        "relative px-3 py-2 transition-shadow duration-300",
-                        bubbleShapeClass,
-                        bubbleToneClass,
+                        "relative transition-shadow duration-300",
+                        // 점보는 버블 배경·모양 없이 여백만 준다. 아니면 기존 버블 스타일.
+                        isJumboEmoji
+                          ? "px-1 py-0.5"
+                          : cn("px-3 py-2", bubbleShapeClass, bubbleToneClass),
                         isHighlighted &&
                           "ring-primary/25 ring-offset-background ring-2 ring-offset-2"
                       )}
@@ -468,6 +476,10 @@ export function MessageBubble({
                       {isDeleted ? (
                         <p className="text-sm leading-5 wrap-break-word whitespace-pre-wrap">
                           {DELETED_MESSAGE_LABEL}
+                        </p>
+                      ) : isJumboEmoji ? (
+                        <p className="text-5xl leading-none">
+                          <Twemoji text={message.content ?? ""} />
                         </p>
                       ) : message.content ? (
                         <p className="text-sm leading-5 wrap-break-word whitespace-pre-wrap">

@@ -48,6 +48,27 @@ export function getLinkedTextSegments(text: string): LinkedTextSegment[] {
   return segments.length > 0 ? segments : [{ type: "text", text }]
 }
 
+// 이모지 **하나만** 있는 메시지는 버블 없이 크게 띄운다(페북/아이메시지 "점보"). 둘 이상이면
+// 일반 버블로 보낸다. content가 순수 이모지고 딱 한 자면 그 문자열을, 아니면 null을 준다. 숫자·#·*가
+// \p{Emoji}에 걸리는 흔한 오탐을 피하려 Extended_Pictographic만 이모지로 보고, 스킨톤·ZWJ·VS16·
+// 국기(지역 표시자)·태그 문자를 함께 허용한다.
+const EMOJI_ONLY_PATTERN =
+  /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\p{Join_Control}|\p{Variation_Selector}|[\u{E0020}-\u{E007F}])+$/u
+
+export function getJumboEmoji(content: string): string | null {
+  const trimmed = content.trim()
+  if (!trimmed || !EMOJI_ONLY_PATTERN.test(trimmed)) {
+    return null
+  }
+  // Segmenter로 그래핀(사용자 인지 문자) 수를 센다 -- 이모지 하나만 점보다. ZWJ 가족·국기·스킨톤은
+  // 코드포인트가 여럿이어도 한 자로 세어 정확히 "이모지 1개"만 걸러낸다. Segmenter가 없는 구형
+  // 환경이면 개수를 못 재니 점보를 포기하고 일반 버블로 둔다(과하게 키우는 것보단 안전한 쪽).
+  if (typeof Intl === "undefined" || !("Segmenter" in Intl)) {
+    return null
+  }
+  return [...new Intl.Segmenter().segment(trimmed)].length === 1 ? trimmed : null
+}
+
 export function isDeletedMessage(message: Message) {
   return Boolean(message.deletedAt)
 }

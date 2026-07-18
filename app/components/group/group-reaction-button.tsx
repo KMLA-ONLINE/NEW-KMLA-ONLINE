@@ -1,4 +1,5 @@
 import { ThumbsUpIcon } from "lucide-react"
+import type { PointerEvent } from "react"
 import { useEffect, useRef, useState } from "react"
 
 import { QuickReactionList } from "~/components/quick-reaction-list"
@@ -7,9 +8,11 @@ import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
 const LONG_PRESS_MS = 350
+const HOVER_OPEN_MS = 500
 
 // 페북식 좋아요 버튼. 짧게 누르면 기본 반응(좋아요) 토글, 꾹 누르면(롱프레스) quick
-// reaction 피커가 위로 뜬다. 반응 저장은 백엔드 붙일 때 -- 지금은 화면 상태만.
+// reaction 피커가 위로 뜬다. 데스크톱에서는 일정 시간 hover해도 피커가 뜬다.
+// 반응 저장은 백엔드 붙일 때 -- 지금은 화면 상태만.
 export function GroupReactionButton({
   count,
   reactionTypes,
@@ -21,6 +24,7 @@ export function GroupReactionButton({
   const [open, setOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressed = useRef(false)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearTimer = () => {
     if (timer.current) {
@@ -29,8 +33,34 @@ export function GroupReactionButton({
     }
   }
 
-  // 롱프레스 대기 중 언마운트되면(예: 보기 모드 전환으로 카드 제거) 남은 타이머를 정리한다.
-  useEffect(() => () => clearTimer(), [])
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+    }
+  }
+
+  // 롱프레스/hover 대기 중 언마운트되면(예: 보기 모드 전환으로 카드 제거) 남은 타이머를 정리한다.
+  useEffect(
+    () => () => {
+      clearTimer()
+      clearHoverTimer()
+    },
+    []
+  )
+
+  // 마우스로만 hover-open을 트리거(터치는 pointerType이 "touch"라 무시됨).
+  const handleContainerPointerEnter = (event: PointerEvent) => {
+    if (event.pointerType !== "mouse") return
+    clearHoverTimer()
+    hoverTimer.current = setTimeout(() => setOpen(true), HOVER_OPEN_MS)
+  }
+
+  const handleContainerPointerLeave = (event: PointerEvent) => {
+    if (event.pointerType !== "mouse") return
+    clearHoverTimer()
+    setOpen(false)
+  }
 
   const handlePointerDown = () => {
     longPressed.current = false
@@ -55,7 +85,11 @@ export function GroupReactionButton({
   const displayCount = count + (selected ? 1 : 0)
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onPointerEnter={handleContainerPointerEnter}
+      onPointerLeave={handleContainerPointerLeave}
+    >
       {open ? (
         // TODO(a11y): 지금은 fixed 백드롭 바깥클릭으로만 닫힌다. Radix Popover로 바꿔 Escape·
         // 포커스 트랩·바깥클릭·stacking을 일괄 처리하는 게 좋다(댓글 반응 피커도 동일 패턴).

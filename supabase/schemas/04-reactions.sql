@@ -25,6 +25,10 @@ create table public.comment_reactions (
 
 create index idx_post_reactions_type_count on public.post_reactions (post_id, reaction_type_id);
 create index idx_post_reactions_user_created_at on public.post_reactions (user_id, created_at);
+-- 반응자 목록(get_post_reactors)의 시간순 keyset. (post_id, created_at, user_id)면 "전체" 정렬을
+-- 역방향 스캔으로 잇고, 튜플 커서 비교도 이 인덱스로 받는다. type_count 인덱스는 (post_id,
+-- reaction_type_id)라 시간 정렬엔 못 쓴다.
+create index idx_post_reactions_post_created_at on public.post_reactions (post_id, created_at, user_id);
 create index idx_comment_reactions_type_count on public.comment_reactions (comment_id, reaction_type_id);
 create index idx_comment_reactions_user_created_at on public.comment_reactions (user_id, created_at);
 
@@ -87,3 +91,56 @@ language sql stable security definer set search_path = '' as $$
     (select r.reaction_type_id from public.comment_reactions r where r.comment_id=p_comment_id and r.user_id=p_caller_id)
 $$;
 revoke execute on function private.post_reaction_summary(bigint,bigint), private.comment_reaction_summary(bigint,bigint) from public, anon, authenticated, service_role;
+
+-- 반응자 목록. "누가 어떤 이모지로 눌렀나" 모달이 요약 이모지를 눌렀을 때 연다. 요약
+-- (private.post_reaction_summary)이 상위 3개 아이콘만 세어 주는 것과 달리, 여기선 반응자를 한
+-- 명씩 최신순으로 페이지네이션해 내려준다. get_post_comments와 같은 계약이다:
+--   * security definer -- author_id처럼 profiles를 invoker 컬럼 grant에 기대지 않고 소유자 권한으로
+--     name/avatar_url을 붙인다(반응자는 익명이 아니라 실명이므로 숨길 건 없다).
+--   * can_access_post 게이트 -- 접근 못 하는 글의 반응자 명단이 새지 않게. 존재 오라클도 겸한다.
+--   * keyset 페이지네이션 -- 정렬은 (created_at, user_id) 내림차순(최신 반응이 위). 커서는 직전
+--     페이지 마지막 반응자의 user_id다((post_id,user_id)가 PK라 한 명을 유일하게 가리킨다). 그 행의
+--     created_at을 되읽어 튜플 비교로 잇는다 -- get_post_comments가 마지막 루트 id로 잇는 것과 같은 꼴.
+-- p_reaction_type_id를 주면 그 타입만(모달의 타입 탭), null이면 전체. avatar_url은 원본 경로 그대로
+-- 내려주고 서명은 로더 몫이다(다른 프로필 이미지와 같은 계약).
+create function public.get_post_reactors(
+  p_post_id bigint,
+  p_reaction_type_id bigint default null,
+  p_after_user_id bigint default null,
+  p_limit int4 default 30
+)
+returns table(
+  user_id bigint,
+  name text,
+  avatar_url text,
+  reaction_type_id bigint,
+  created_at timestamptz
+)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  after_created_at timestamptz;
+begin
+  perform private.require_current_profile(true);
+  if not private.can_access_post(p_post_id) then raise exception 'post access required'; end if;
+  -- null 상한 가드. `p_limit < 1`은 null일 때 참이 아니라 null이라 그냥 지나가고, `limit null`은
+  -- 상한이 없다는 뜻이라 접근 가능한 반응자를 한 번에 통째로 빨아낼 수 있다(다른 읽기 RPC와 동일).
+  if p_limit is null or p_limit < 1 or p_limit > 50 then raise exception 'limit must be 1 to 50'; end if;
+
+  if p_after_user_id is not null then
+    select r.created_at into after_created_at
+    from public.post_reactions r where r.post_id=p_post_id and r.user_id=p_after_user_id;
+  end if;
+
+  return query
+  select r.user_id, pr.name, pr.avatar_url, r.reaction_type_id, r.created_at
+  from public.post_reactions r
+  join public.profiles pr on pr.id=r.user_id
+  where r.post_id=p_post_id
+    and (p_reaction_type_id is null or r.reaction_type_id=p_reaction_type_id)
+    and (p_after_user_id is null or (r.created_at, r.user_id) < (after_created_at, p_after_user_id))
+  order by r.created_at desc, r.user_id desc
+  limit p_limit;
+end;
+$$;
+revoke execute on function public.get_post_reactors(bigint,bigint,bigint,int4) from public, anon, authenticated, service_role;
+grant execute on function public.get_post_reactors(bigint,bigint,bigint,int4) to authenticated;
