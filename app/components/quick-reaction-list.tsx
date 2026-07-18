@@ -12,12 +12,12 @@ export function QuickReactionList({
   className?: string
 }) {
   return (
-    <div className={cn("flex flex-nowrap items-center gap-1 overflow-x-auto", className)}>
+    <div className={cn("flex flex-nowrap items-center gap-1", className)}>
       {reactionTypes.map((reactionType) => (
         <button
           key={reactionType.id}
           type="button"
-          className="bg-background hover:bg-muted flex size-10 shrink-0 items-center justify-center rounded-full text-lg transition-colors"
+          className="flex size-10 shrink-0 origin-bottom items-center justify-center rounded-full text-2xl transition-[transform,background-color] duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-0.5 hover:scale-125 focus-visible:-translate-y-1.5 focus-visible:scale-125 focus-visible:outline-none"
           aria-label={`${reactionType.name} 반응 남기기`}
           onClick={() => onSelect(reactionType)}
         >
