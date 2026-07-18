@@ -141,7 +141,6 @@ create table public.chat_notification_settings (
   primary key (conversation_id, user_id)
 );
 
-create index idx_direct_conversations_user1 on public.direct_conversations (user1_id);
 create index idx_direct_conversations_user2 on public.direct_conversations (user2_id);
 create index idx_conversation_members_user on public.conversation_members (user_id, conversation_id);
 create index idx_messages_sender_created_at on public.messages (sender_id, created_at);

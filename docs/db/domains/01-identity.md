@@ -55,6 +55,8 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 승인 큐를 RPC로 읽는 이유: `profiles_select`에는 admin 분기가 없어 **관리자에게도 pending 행은 보이지 않는다**. RLS에 `or private.is_app_admin()`을 더하면 한 줄로 풀리지만 그 한 줄은 컬럼이 아니라 _행_ 을 연다 — rejected·withdrawn·soft-delete된 행까지, 아무 쿼리에서나, 영구히. `list_pending_profiles`는 pending으로 잠긴 창만 낸다.
 
+승인 큐 전용 부분 인덱스는 `pending`이면서 soft-delete되지 않은 행만 `onboarding_completed_at, id` 순서로 둔다. 목록 RPC의 정렬과 키셋 커서 조건을 그대로 따라가므로, 이미 심사된 profile까지 인덱싱하지 않는다.
+
 열쇠고리 RPC가 `accepted`를 요구하지 않는 이유: 열쇠고리는 **가입 직후, 브라우저가 아직 비밀번호를 들고 있는 그 순간**에 만들어야 한다. 승인까지 미루면 그때는 세션만 있고 비밀번호가 없어 `encKey`를 만들 방법이 없다.
 
 `bytea`가 PostgREST를 지나면 hex 문자열이 되어 2배로 부푸므로 경계에서는 base64로 주고받고 컬럼은 `bytea`로 남긴다. 클라이언트 쓰기 경로가 이 RPC들뿐인 이유도 같다 — `user_keys`에는 insert/update grant가 아예 없다.
