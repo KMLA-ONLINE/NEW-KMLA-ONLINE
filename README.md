@@ -1,53 +1,18 @@
 # KMLA Online
 
-KMLA Online is the renewal version of the school community app for Korean Minjok Leadership Academy (KMLA).
+KMLA Online은 민족사관고등학교 온라인 커뮤니티입니다. 학교 안에서 오가는 소식과 대화를 한곳에 모아, 필요한 정보를 더 편하게 나누는 것을 목표로 합니다.
 
-## Status
+## 무엇을 할 수 있나요?
 
-This project is in early development and currently serves as the starting point for the new app.
+- 학교 공간별 소식과 게시글을 확인하고 의견을 나눌 수 있습니다.
+- 사진과 파일을 첨부해 더 풍부하게 내용을 공유할 수 있습니다.
+- 구성원과 메시지를 주고받고, 필요한 알림을 받을 수 있습니다.
+- 1:1 대화는 내용을 참여자만 열 수 있도록 종단간 암호화로 보호합니다.
 
-## Planned Features
+## 현재 상태
 
-- Google OAuth sign-in
-- Group-based announcements and communication
-- Push notifications
-- Messaging
-- Posts
+KMLA Online은 개발 중입니다. 기능과 화면은 학교 구성원의 사용 경험을 바탕으로 차례로 다듬고 있으며, 일부 기능은 준비 과정에서 바뀔 수 있습니다.
 
-## Tech Stack
+## 함께 만드는 공간
 
-- React Router 7
-- React 19
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui
-- Supabase
-
-## Local Development
-
-```bash
-npm install
-cp .env.example .env
-npm run dev
-```
-
-The app runs locally at `http://localhost:3000`.
-
-## Environment Variables
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-
-## Useful Commands
-
-```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-npm run typecheck
-```
-
-## Deployment
-
-Deployment is currently deployed using Vercel.
+이 커뮤니티가 서로에게 도움이 되는 공간이 되도록, 상대를 존중하고 개인정보와 대화 내용을 소중히 다뤄 주세요.

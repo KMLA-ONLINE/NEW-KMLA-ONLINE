@@ -24,31 +24,48 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 
 ## RPC
 
+### 알림함 읽기
+
 | 함수                                    | 인증     | 목적                                                                |
 | --------------------------------------- | -------- | ------------------------------------------------------------------- |
 | `list_notifications(before_id?, limit)` | accepted | 알림함 keyset. 익명이면 actor를 지우고, 대상을 pub_id로 풀어 내린다 |
 | `get_unread_notification_count()`       | accepted | 내비 뱃지용. 100에서 세기를 멈춘다(뱃지는 99+ 위를 구분하지 않는다) |
+
+### 운영 정리
+
+| 함수                                            | 인증         | 목적                                                        |
+| ----------------------------------------------- | ------------ | ----------------------------------------------------------- |
 | `purge_read_notifications(older_than?, limit?)` | service_role | 읽은 지 기본 60일 지난 알림을 제한된 배치 단위로 hard delete |
 
 **"모두 읽음"에 RPC는 없다** — `update notifications set read_at=now() where read_at is null` 한 줄이면 된다(RLS가 내 행으로 가두고 컬럼 grant가 `read_at`만 연다).
 
 보존 기간은 [삭제·보존 정책](../deletion-policy.md)에 있다.
-
 ## Trigger
 
-| 트리거                                | 테이블                        | 이벤트                                    | 만드는 알림                                                                                         |
-| ------------------------------------- | ----------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `trg_notify_on_comment`               | `comments`                    | AFTER INSERT                              | 글쓴이 `post_comment` + 부모 댓글 작성자 `comment_reply`. 같은 사람이면 **답글이 이겨** 알림은 하나 |
-| `trg_notify_on_post_mention`          | `post_mentions`               | AFTER INSERT                              | `post_mention`                                                                                      |
-| `trg_notify_on_comment_mention`       | `comment_mentions`            | AFTER INSERT                              | `comment_mention`. 이미 그 댓글로 나간 알림이 있으면 **종류만 올린다**                              |
-| `trg_notify_on_post_removed`          | `posts`                       | AFTER UPDATE of `deleted_at`              | 모더레이터가 지웠을 때만(`deleted_by <> author_id`)                                                 |
-| `trg_notify_on_comment_removed`       | `comments`                    | AFTER UPDATE of `deleted_at`              | 위와 같음                                                                                           |
-| `trg_notify_on_join_request`          | `space_join_requests`         | AFTER INSERT                              | owner/admin에게 `space_join_request`                                                                |
-| `trg_notify_on_join_request_resolved` | `space_join_requests`         | **CONSTRAINT** AFTER DELETE, **DEFERRED** | `space_join_approved` 또는 `..._rejected`. 본인 취소면 아무것도 안 만든다 (아래)                    |
-| `trg_notify_on_space_invite`          | `space_invites`               | AFTER INSERT                              | 대상 지정 초대만 (공유 링크는 받는 사람이 없다)                                                     |
-| `trg_notify_on_role_changed`          | `space_members`               | AFTER UPDATE of `role`                    | `space_role_changed`. **내가 바꾼 내 역할은 건너뛴다** (아래)                                       |
-| `trg_notify_on_anonymity_suspended`   | `space_anonymity_suspensions` | AFTER I/U of `suspended_until`            | `space_anonymity_suspended`                                                                         |
+### 콘텐츠 활동
 
+| 트리거                          | 테이블             | 이벤트                       | 만드는 알림                                                                                         |
+| ------------------------------- | ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| `trg_notify_on_comment`         | `comments`         | AFTER INSERT                 | 글쓴이 `post_comment` + 부모 댓글 작성자 `comment_reply`. 같은 사람이면 **답글이 이겨** 알림은 하나 |
+| `trg_notify_on_post_mention`    | `post_mentions`    | AFTER INSERT                 | `post_mention`                                                                                      |
+| `trg_notify_on_comment_mention` | `comment_mentions` | AFTER INSERT                 | `comment_mention`. 이미 그 댓글로 나간 알림이 있으면 **종류만 올린다**                              |
+| `trg_notify_on_post_removed`    | `posts`            | AFTER UPDATE of `deleted_at` | 모더레이터가 지웠을 때만(`deleted_by <> author_id`)                                                 |
+| `trg_notify_on_comment_removed` | `comments`         | AFTER UPDATE of `deleted_at` | 위와 같음                                                                                           |
+
+### 가입과 역할
+
+| 트리거                                | 테이블                | 이벤트                                    | 만드는 알림                                                                                      |
+| ------------------------------------- | --------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `trg_notify_on_join_request`          | `space_join_requests` | AFTER INSERT                              | owner/admin에게 `space_join_request`                                                             |
+| `trg_notify_on_join_request_resolved` | `space_join_requests` | **CONSTRAINT** AFTER DELETE, **DEFERRED** | `space_join_approved` 또는 `..._rejected`. 본인 취소면 아무것도 안 만든다 (아래)                 |
+| `trg_notify_on_space_invite`          | `space_invites`       | AFTER INSERT                              | 대상 지정 초대만 (공유 링크는 받는 사람이 없다)                                                  |
+| `trg_notify_on_role_changed`          | `space_members`       | AFTER UPDATE of `role`                    | `space_role_changed`. **내가 바꾼 내 역할은 건너뛴다** (아래)                                    |
+
+### 익명 정지
+
+| 트리거                              | 테이블                        | 이벤트                         | 만드는 알림                 |
+| ----------------------------------- | ----------------------------- | ------------------------------ | --------------------------- |
+| `trg_notify_on_anonymity_suspended` | `space_anonymity_suspensions` | AFTER I/U of `suspended_until` | `space_anonymity_suspended` |
 ## 주의
 
 - **왜 트리거인가(RPC가 아니라).** `comments`/`*_mentions`에는 insert 컬럼 grant가 있어 클라이언트가 테이블에 직접 쓴다. 생성을 RPC에만 걸면 테이블로 바로 질러 **알림 없이 댓글을 다는 우회**가 가능하다. 트리거는 security definer라 insert grant 없이도 쓴다.

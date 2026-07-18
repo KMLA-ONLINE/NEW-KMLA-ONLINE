@@ -8,6 +8,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 - `profile_departments` — profile에 연결할 부서 lookup (`name`). service_role이 관리하고 authenticated는 읽기만 가능
 - `profiles` — 이름/역할/상태/학생정보/부서/국내·국제 track/복학 여부/연락처/avatar/cover/soft delete. `status`가 `accepted`인지가 권한 모델의 핵심 전제
+- `private.profile_auth_map` — `profile_id`, 내부 auth UUID, 상태·삭제 시각만 복제하는 비노출 권한 조회 표. `profiles.auth_user_id` column grant를 열지 않고 Storage RLS와 공통 identity helper가 현재 사용자를 확인한다
 - `user_keys` — 이 사용자의 **암호학적** 신원. `profiles`가 사회적 신원이라면 그 옆에 걸린 열쇠고리다. X25519 신원 공개키 + 봉인된 blob 둘(`wrapped_user_key`, `wrapped_identity_secret_key`). 키 계층 전체는 [docs/e2ee.md](../../e2ee.md)
 - `permissions` — 문자열 key 기반 권한 registry (seed: `gongang`, `karaoke` — baseline migration)
 - `user_permissions` — profile별 permission 부여
@@ -16,31 +17,47 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 ## RPC
 
-| 함수                                     | 인증                                                     | 쓰기 | 목적                                                                        |
-| ---------------------------------------- | -------------------------------------------------------- | ---- | --------------------------------------------------------------------------- |
-| `submit_onboarding(...)`                 | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                                     |
-| `list_pending_profiles(after_id, limit)` | app admin                                                | X    | 승인 대기 큐. **오래 기다린 순서**(오름차순) — 커서도 반대라 `after_id`     |
-| `count_pending_profiles()`               | app admin                                                | X    | 대기 인원 수                                                                |
-| `review_profiles(profile_ids[], status)` | app admin                                                | O    | 배치 심사. 실제로 옮긴 행 수를 반환 (이미 심사된 id는 세지 않는다)          |
-| `review_profile(profile_id, status)`     | app admin                                                | O    | 단건 심사. `review_profiles`를 감싼다 — 심사 규칙은 한 곳에만 산다          |
-| `withdraw_profile()`                     | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                                    |
-| `finalize_avatar(storage_path)`          | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결                             |
-| `finalize_cover_image(storage_path)`     | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결                 |
-| `bootstrap_first_app_admin(profile_id)`  | service_role                                             | O    | admin이 하나도 없을 때 첫 admin 지정                                        |
-| `set_app_admin(profile_id)`              | app admin                                                | O    | 두 번째 이후의 admin 임명 (accepted만)                                      |
-| `unset_app_admin(profile_id)`            | app admin                                                | O    | admin 강등. **마지막 한 명은 못 내린다**                                    |
-| `get_my_key_vault()`                     | 본인 profile (accepted 불필요)                           | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
-| `get_identity_public_keys(user_ids[])`   | accepted (security **invoker**)                          | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
-| `create_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
-| `reseal_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 비밀번호 변경. **신원키를 건드릴 수 없다** — 그래서 히스토리가 살아남는다   |
-| `rotate_user_keys(...)`                  | 본인 profile (accepted 불필요)                           | O    | 비밀번호를 잊었을 때. 신원키까지 새로 발급, 지난 DM은 영영 닫힌다           |
+### 열쇠고리
+
+| 함수                                   | 인증                            | 쓰기 | 목적                                                                        |
+| -------------------------------------- | ------------------------------- | ---- | --------------------------------------------------------------------------- |
+| `create_user_keys(...)`                | 본인 profile (accepted 불필요)  | O    | 가입 시 1회. 이미 있으면 실패 — 덮어쓰면 그 사람의 DM이 통째로 죽는다       |
+| `get_my_key_vault()`                   | 본인 profile (accepted 불필요)  | X    | 봉인된 blob이 서버 밖으로 나가는 **유일한** 문. 호출자 행에 스스로를 가둔다 |
+| `get_identity_public_keys(user_ids[])` | accepted (security **invoker**) | X    | 상대의 신원 공개키. 메시지 키를 봉인하려면 먼저 필요하다                    |
+| `reseal_user_keys(...)`                | 본인 profile (accepted 불필요)  | O    | 비밀번호 변경. **신원키를 건드릴 수 없다** — 그래서 히스토리가 살아남는다   |
+| `rotate_user_keys(...)`                | 본인 profile (accepted 불필요)  | O    | 비밀번호를 잊었을 때. 신원키까지 새로 발급, 지난 DM은 영영 닫힌다           |
+
+### 온보딩과 profile
+
+| 함수                                 | 인증                                                     | 쓰기 | 목적                                                        |
+| ------------------------------------ | -------------------------------------------------------- | ---- | ----------------------------------------------------------- |
+| `submit_onboarding(...)`             | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                     |
+| `finalize_avatar(storage_path)`      | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결             |
+| `finalize_cover_image(storage_path)` | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결 |
+| `withdraw_profile()`                 | accepted 본인 (admin이거나 space owner면 거부)           | O    | 본인 profile 삭제 처리 +`withdrawn` 처리                    |
+
+### 가입 심사
+
+| 함수                                     | 인증      | 쓰기 | 목적                                                                    |
+| ---------------------------------------- | --------- | ---- | ----------------------------------------------------------------------- |
+| `list_pending_profiles(after_id, limit)` | app admin | X    | 승인 대기 큐. **오래 기다린 순서**(오름차순) — 커서도 반대라 `after_id` |
+| `count_pending_profiles()`               | app admin | X    | 대기 인원 수                                                            |
+| `review_profiles(profile_ids[], status)` | app admin | O    | 배치 심사. 실제로 옮긴 행 수를 반환 (이미 심사된 id는 세지 않는다)      |
+| `review_profile(profile_id, status)`     | app admin | O    | 단건 심사. `review_profiles`를 감싼다 — 심사 규칙은 한 곳에만 산다      |
+
+### 앱 관리자
+
+| 함수                                    | 인증         | 쓰기 | 목적                                    |
+| --------------------------------------- | ------------ | ---- | --------------------------------------- |
+| `bootstrap_first_app_admin(profile_id)` | service_role | O    | admin이 하나도 없을 때 첫 admin 지정    |
+| `set_app_admin(profile_id)`             | app admin    | O    | 두 번째 이후의 admin 임명 (accepted만)  |
+| `unset_app_admin(profile_id)`           | app admin    | O    | admin 강등. **마지막 한 명은 못 내린다** |
 
 승인 큐를 RPC로 읽는 이유: `profiles_select`에는 admin 분기가 없어 **관리자에게도 pending 행은 보이지 않는다**. RLS에 `or private.is_app_admin()`을 더하면 한 줄로 풀리지만 그 한 줄은 컬럼이 아니라 _행_ 을 연다 — rejected·withdrawn·soft-delete된 행까지, 아무 쿼리에서나, 영구히. `list_pending_profiles`는 pending으로 잠긴 창만 낸다.
 
 열쇠고리 RPC가 `accepted`를 요구하지 않는 이유: 열쇠고리는 **가입 직후, 브라우저가 아직 비밀번호를 들고 있는 그 순간**에 만들어야 한다. 승인까지 미루면 그때는 세션만 있고 비밀번호가 없어 `encKey`를 만들 방법이 없다.
 
 `bytea`가 PostgREST를 지나면 hex 문자열이 되어 2배로 부푸므로 경계에서는 base64로 주고받고 컬럼은 `bytea`로 남긴다. 클라이언트 쓰기 경로가 이 RPC들뿐인 이유도 같다 — `user_keys`에는 insert/update grant가 아예 없다.
-
 ## Onboarding 필수 필드
 
 DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending` 이상인 profile은 다음 값이 필요하다.
@@ -56,6 +73,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 | 함수                                        | 용도                                                                                                                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `private.current_profile_id()`              | 현재 auth user의 profile id                                                                                                                                                     |
+| `private.has_active_profile()`              | 현재 auth user가 soft-delete되지 않은 profile을 가졌는지. Storage upload policy가 비공개 auth UUID를 직접 읽지 않도록 쓴다                                                     |
 | `private.is_accepted_user()`                | 현재 사용자가 accepted + non-deleted인지                                                                                                                                        |
 | `private.is_app_admin()`                    | 현재 사용자가 accepted admin인지                                                                                                                                                |
 | `private.has_permission(key)`               | accepted + 해당 permission 보유 여부                                                                                                                                            |
@@ -65,11 +83,13 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 ## Trigger
 
+### Auth 생명주기
+
 | 트리거                 | 테이블       | 이벤트        | side effect                                                                                                         |
 | ---------------------- | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `on_auth_user_created` | `auth.users` | AFTER INSERT  | `profiles` 1행 자동 생성 (이름: metadata `full_name` → `name` → `사용자`, 50자 절단)                                |
+| `sync_profile_auth_map` | `profiles` | AFTER INSERT / auth UUID·status·삭제 시각 UPDATE | `private.profile_auth_map`을 동기화. auth UUID를 browser 역할에 열지 않는 Storage RLS 조회 경로다 |
 | `on_auth_user_deleted` | `auth.users` | BEFORE DELETE | admin/space owner면 예외로 삭제 거부. 아니면 profile 삭제 처리(`탈퇴한 사용자`) + `withdrawn` + `auth_user_id` null |
-
 ## 주의
 
 - profile 생성 경로는 Auth trigger뿐이다. user metadata는 이름 외에 role/status 판정에 쓰지 않는다.

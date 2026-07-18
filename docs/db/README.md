@@ -9,6 +9,7 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 ## 문서 규칙 (`domains/*.md`)
 
 - 모든 RPC와 trigger를 목록화한다. RPC는 **인증 조건 · 쓰기 여부 · 목적**, trigger는 **대상 테이블 · 이벤트 · side effect**.
+- `## RPC`/`## Trigger` 표는 SQL 선언 순서나 이름순이 아니라 **호출 흐름**으로 나눈다. RPC는 읽기 → 일반 사용자 작업(생성 → 변경/삭제) → 관리자 작업 → service-role 정리, trigger는 입력·형태 검증 → 서버 소유 상태 갱신 → 파생 효과 순서다. 한 흐름의 짝(`create`/`accept`, `suspend`/`undo`)은 붙여 둔다.
 - 구현 SQL은 복사하지 않는다. 상단의 Source 링크가 구현의 기준이다.
 - 스키마를 바꾸면 같은 작업에서 대응하는 domain 문서를 갱신한다.
 
@@ -88,7 +89,7 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 
 **하네스의 한계**: `require_service_role()`은 `session_user`가 `postgres`면 통과시킨다. 테스트가 `psql -U postgres`로 돌고 `set session authorization`은 소유자 권한으로 불가능하므로, **service_role 게이트가 거절하는 것은 확인할 방법이 없다.**
 
-종단간 암호화는 `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다 — `npm test`에 포함되며 로컬 Supabase가 없으면 skip한다.
+종단간 암호화는 `app/lib/crypto/e2ee.integration.test.ts`가 진짜 키로 진짜 DB를 왕복시킨다. 빠른 기본 테스트(`npm test`)와 분리되어 있으므로, 로컬 Supabase를 띄운 뒤 `npm run test:e2ee`로 명시적으로 실행한다.
 
 ## Production 배포
 

@@ -58,25 +58,41 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 
 ## RPC
 
-| 함수                                                          | 인증         | 목적                                                                           |
-| ------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------ |
-| finalize_space_image(space_id, storage_path)                  | 관리자       | 검증된 space-images object를 아이콘 슬롯에 연결                               |
-| clear_space_image(space_id)                                   | 관리자       | 아이콘 슬롯을 비움. blob은 48시간 orphan sweep이 정리                         |
-| finalize_space_cover(space_id, storage_path)                  | 관리자       | 검증된 space-covers object를 커버 슬롯에 연결                                 |
-| clear_space_cover(space_id)                                   | 관리자       | 커버 슬롯을 비움. blob은 48시간 orphan sweep이 정리                           |
-| `create_space(type, name, description?, pub_id?, …)`          | accepted     | community는 누구나, **group은 app admin만**. 생성자가 owner가 된다             |
-| `set_space_join_policy(space_id, policy)`                     | 관리자       | 가입 정책 전환. **대기 요청이 남아 있으면 거부한다**                           |
-| `soft_delete_space(space_id)`                                 | service_role | 공간 soft delete. 7일 뒤 아래 배치가 걷어간다                                  |
-| `purge_due_spaces(limit?)`                                    | service_role | 유예 지난 공간 영구 삭제 배치. `(purged, skipped)` 반환                        |
-| `join_space(space_id)`                                        | accepted     | `'joined'` 또는 `'requested'` 반환. invite_only·밴은 거부                      |
-| `approve_join_request(space_id, user_id)`                     | 관리자       | 멤버 승격. 거절·요청취소는 `space_join_requests` 직접 delete                   |
-| `leave_space(space_id)`                                       | 멤버         | 본인 탈퇴 (owner는 이양 먼저)                                                  |
-| `create_space_invite(space_id, target_user_id?, expires_at?)` | 관리자       | 초대장 발급. **어떤 초대도 30일을 못 넘긴다**(미지정이면 30일)                 |
-| `accept_space_invite(token)`                                  | accepted     | 대상 지정 초대는 대상 본인만. 엉뚱한 사람에겐 초대의 존재 자체를 숨겨 거부한다 |
-| `revoke_space_invite(invite_id)`                              | 관리자       | 초대장 폐기                                                                    |
-| `set_space_member_role(space_id, user_id, role)`              | 관리자       | 역할 변경. **owner는 세우지도 내리지도 못한다**(위 "owner와 admin은 대등하다") |
-| `transfer_space_ownership(space_id, new_owner_id)`            | **owner**    | 소유권 이양. 대상은 현재 admin이어야 한다                                      |
+### 공간 생성과 설정
 
+| 함수                                                 | 인증     | 목적                                                                       |
+| ---------------------------------------------------- | -------- | -------------------------------------------------------------------------- |
+| `create_space(type, name, description?, pub_id?, …)` | accepted | community는 누구나, **group은 app admin만**. 생성자가 owner가 된다         |
+| `set_space_join_policy(space_id, policy)`            | 관리자   | 가입 정책 전환. **대기 요청이 남아 있으면 거부한다**                       |
+| `finalize_space_image(space_id, storage_path)`       | 관리자   | 검증된 space-images object를 아이콘 슬롯에 연결                           |
+| `clear_space_image(space_id)`                        | 관리자   | 아이콘 슬롯을 비움. blob은 48시간 orphan sweep이 정리                     |
+| `finalize_space_cover(space_id, storage_path)`       | 관리자   | 검증된 space-covers object를 커버 슬롯에 연결                             |
+| `clear_space_cover(space_id)`                        | 관리자   | 커버 슬롯을 비움. blob은 48시간 orphan sweep이 정리                       |
+
+### 가입과 초대
+
+| 함수                                                          | 인증     | 목적                                                                           |
+| ------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `join_space(space_id)`                                        | accepted | `'joined'` 또는 `'requested'` 반환. invite_only·밴은 거부                      |
+| `approve_join_request(space_id, user_id)`                     | 관리자   | 멤버 승격. 거절·요청취소는 `space_join_requests` 직접 delete                   |
+| `leave_space(space_id)`                                       | 멤버     | 본인 탈퇴 (owner는 이양 먼저)                                                  |
+| `create_space_invite(space_id, target_user_id?, expires_at?)` | 관리자   | 초대장 발급. **어떤 초대도 30일을 못 넘긴다**(미지정이면 30일)                 |
+| `accept_space_invite(token)`                                  | accepted | 대상 지정 초대는 대상 본인만. 엉뚱한 사람에겐 초대의 존재 자체를 숨겨 거부한다 |
+| `revoke_space_invite(invite_id)`                              | 관리자   | 초대장 폐기                                                                    |
+
+### 역할
+
+| 함수                                               | 인증      | 목적                                                                             |
+| -------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
+| `set_space_member_role(space_id, user_id, role)`   | 관리자    | 역할 변경. **owner는 세우지도 내리지도 못한다**(위 "owner와 admin은 대등하다") |
+| `transfer_space_ownership(space_id, new_owner_id)` | **owner** | 소유권 이양. 대상은 현재 admin이어야 한다                                        |
+
+### 운영 정리
+
+| 함수                          | 인증         | 목적                                                    |
+| ----------------------------- | ------------ | ------------------------------------------------------- |
+| `soft_delete_space(space_id)` | service_role | 공간 soft delete. 7일 뒤 아래 배치가 걷어간다           |
+| `purge_due_spaces(limit?)`    | service_role | 유예 지난 공간 영구 삭제 배치. `(purged, skipped)` 반환 |
 `spaces`에는 insert grant가 없다(service_role만) — `create_space`가 공간을 만드는 유일한 문이다. **`group`은 app admin만** 만든다: 공식 그룹은 학교 조직을 옮긴 것이라 이름이 곧 권위이고(`spaces_active_group_name_key`가 이름을 유일하게 잡는다), 아무나 '학생회'를 선점하면 안 된다. `pub_id`를 안 넘기면 컬럼 default(랜덤 12자)가 남는다.
 
 ## 공간 삭제 (soft delete → 7일 → purge)
@@ -104,17 +120,18 @@ owner에게 삭제 버튼이 없는 것은 의도다. 그룹 하나에는 남의
 
 ## Trigger
 
+### 멤버십 불변식
+
 | 트리거                     | 테이블          | 이벤트                                | side effect                                           |
 | -------------------------- | --------------- | ------------------------------------- | ----------------------------------------------------- |
 | `trg_validate_space_owner` | `space_members` | AFTER I/U/D (**deferred constraint**) | 커밋 시점에 owner가 정확히 1명이 아니면 트랜잭션 거부 |
-
 익명 강제 트리거(`trg_enforce_anonymous_allowed_*`)는 `posts`/`comments`에 걸리므로 [03-content](03-content.md)에 있다. 트리거 **함수**(`private.enforce_anonymous_allowed`)만 여기 산다 — 판단 기준(`allow_anonymous_posts`, 익명 정지)이 전부 space의 것이라서다.
 
 익명 강제가 RPC가 아니라 **트리거**인 이유: posts/comments는 컬럼 grant로 직접 insert할 수 있어, RPC에서만 막으면 테이블에 바로 꽂아 우회된다.
 
 ## 주의
 
-- `spaces`의 update는 **컬럼 단위**로 관리자에게만: `name`, `description`, `allow_anonymous_posts`, `post_policy`. 나머지는 각자 RPC가 맡는다 — `join_policy`는 `set_space_join_policy`, `image_url`은 `finalize_space_image`(storage 도메인), `member_count`는 캐시라 join/leave RPC만 건드린다.
+- `spaces`의 update는 **컬럼 단위**로 관리자에게만: `name`, `description`, `allow_anonymous_posts`, `post_policy`. 나머지는 각자 RPC가 맡는다 — `join_policy`는 `set_space_join_policy`, `image_url`은 `finalize_space_image`(storage 도메인), `member_count`는 캐시라 공간 생성·가입·탈퇴·초대 수락·가입 승인 RPC가 관리한다.
 - **`pub_id`는 생성 시점에 정해지고 불변이다.** update 컬럼 grant에 없고 바꾸는 RPC도 없다 — storage 경로가 이 값으로 짜여 있어서(`post-files/{pub_id}/{uuid}`, `space-images/{pub_id}/{uuid}`) 슬러그를 바꾸면 이미 올라간 모든 첨부의 경로 검사가 어긋난다. 열려면 object를 새 경로로 옮기고 `storage_path`를 다시 쓰는 배치가 먼저 있어야 한다.
 - **가입 정책 전환은 대기 요청을 넘어가지 못한다.** `request`에서 벗어나는 순간 남아 있던 요청은 아무도 승인할 수 없는 유령이 된다(`approve_join_request`는 여전히 돌지만 그 공간의 요청함을 띄울 화면이 사라진다). 서버가 대신 일괄 수락/거절해 주지도 않는다 — 그건 관리자가 내릴 판단이지 정책 전환의 부수 효과일 수 없다. 그래서 먼저 비우게 하고 막는다(`'resolve pending join requests first'`).
 - **`allow_anonymous_posts`를 꺼도 이미 올라간 익명 글은 그대로 익명이다.** `posts.is_anonymous`는 불변이라(update grant에 없다) 소급해서 작성자가 공개되지 않는다 — 익명을 믿고 쓴 사람을 배신하지 않는다.

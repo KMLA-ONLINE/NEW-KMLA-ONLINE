@@ -23,14 +23,15 @@ Schedule an HTTPS `POST` to `storage-maintenance` at least daily with the projec
 
 ## What `storage-maintenance` does
 
-Three steps, and **the order is part of the contract: blobs go out first.**
+Four steps, and **the order is part of the contract: blobs go out first.**
 
 1. **Blobs.** `enqueue_due_storage_cleanup` queues due and orphaned objects; then claim → delete through the Storage API → `complete_storage_cleanup` (or `fail_storage_cleanup`, which backs off exponentially). It loops until the queue is dry, capped at 20 rounds of 100 — a single round would drain only 100 objects per daily run, so a busy queue would never shrink. Objects are removed per bucket in one call, not one call each. A `remove` on an object that is already gone is not an error; Storage delete is idempotent, so success just means "the file is not there", which is the state we wanted.
-2. **`purge_deleted_content`** — hard-deletes posts and comments soft-deleted more than 30 days ago. Rows piling up is the smaller problem; the real one is that **a deleted anonymous post keeps its `author_id` forever**, and anonymous has to stay anonymous over time.
-3. **`purge_due_spaces`** — permanently removes spaces soft-deleted more than 7 days ago.
+2. **`purge_deleted_content`** — hard-deletes posts and comments soft-deleted more than 7 days ago. Rows piling up is the smaller problem; the real one is that **a deleted anonymous post keeps its `author_id` forever**, and anonymous has to stay anonymous over time.
+3. **`purge_read_notifications`** — hard-deletes notifications that have been read for more than 60 days. Unread notifications have no time-based purge.
+4. **`purge_due_spaces`** — permanently removes spaces soft-deleted more than 7 days ago.
 
-Steps 2 and 3 come after step 1 because both **skip** (rather than force) any target whose attachment rows, `spaces.image_url`, or `spaces.cover_image_url` are still set. Those references still existing mean the file is still in Storage, and deleting the DB reference first would orphan the blob forever. Skipped work is retried on the next run.
+Steps 2 and 4 come after step 1 because both **skip** (rather than force) any target whose attachment rows, `spaces.image_url`, or `spaces.cover_image_url` are still set. Those references still existing mean the file is still in Storage, and deleting the DB reference first would orphan the blob forever. Skipped work is retried on the next run.
 
-The response summary reports `enqueued`, `claimed`, `deleted`, `failed`, `purgedPosts`, `purgedComments`, `purgedSpaces`, `skippedSpaces`. On error it returns the summary alongside the message — partial work is already committed, so you need to know how far it got.
+The response summary reports `enqueued`, `claimed`, `deleted`, `failed`, `purgedPosts`, `purgedComments`, `purgedReadNotifications`, `purgedSpaces`, `skippedSpaces`. On error it returns the summary alongside the message — partial work is already committed, so you need to know how far it got.
 
 `cleanup_conversation` (chat) is service_role too but is **not** called here: it takes one conversation id and there is no "due" criterion for conversations. It is a manual operation.

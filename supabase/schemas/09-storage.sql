@@ -46,11 +46,11 @@ create policy message_files_select on storage.objects for select to authenticate
   )
 );
 create policy avatars_insert on storage.objects for insert to authenticated with check (
-  bucket_id='avatars' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
+  bucket_id='avatars' and private.has_active_profile()
   and private.has_uuid_object_suffix(storage.objects.name,(select auth.uid())::text||'/')
 );
 create policy profile_covers_insert on storage.objects for insert to authenticated with check (
-  bucket_id='profile-covers' and exists(select 1 from public.profiles p where p.auth_user_id=(select auth.uid()) and p.deleted_at is null)
+  bucket_id='profile-covers' and private.has_active_profile()
   and private.has_uuid_object_suffix(storage.objects.name,(select auth.uid())::text||'/')
 );
 create policy space_images_insert on storage.objects for insert to authenticated with check (
