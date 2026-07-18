@@ -92,14 +92,15 @@ export function MessageActionPanel({
   open,
   onOpenChange,
   onReply,
-  onDelete,
+  onStartSelection,
   onTogglePin,
 }: {
   message: Message | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onReply: (message: Message) => void
-  onDelete: (message: Message) => void
+  /** 삭제를 바로 실행하지 않고 다중 선택 모드로 들어간다(해당 메시지가 먼저 선택된 채로). */
+  onStartSelection: (message: Message) => void
   onTogglePin: (message: Message) => void
 }) {
   if (!message || isDeletedMessage(message)) {
@@ -154,7 +155,7 @@ export function MessageActionPanel({
                 label="삭제"
                 className="text-destructive"
                 onClick={() => {
-                  onDelete(message)
+                  onStartSelection(message)
                   handleOpenChange(false)
                 }}
               />

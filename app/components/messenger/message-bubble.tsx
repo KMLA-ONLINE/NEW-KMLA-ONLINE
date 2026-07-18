@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import {
+  CheckIcon,
   EllipsisIcon,
   Loader2Icon,
   PinIcon,
@@ -70,6 +71,26 @@ function LinkedMessageText({ text }: { text: string }) {
   )
 }
 
+// 다중 선택 모드에서 내 메시지 왼쪽에 뜨는 원형 토글. 선택되면 파란 원 + 체크로 채워진다.
+function SelectionCircle({ selected, onToggle }: { selected: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={selected ? "메시지 선택 해제" : "메시지 선택"}
+      onClick={onToggle}
+      className={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+        selected
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-muted-foreground/40"
+      )}
+    >
+      {selected ? <CheckIcon className="size-3.5" /> : null}
+    </button>
+  )
+}
+
 export function MessageBubble({
   message,
   author,
@@ -90,6 +111,10 @@ export function MessageBubble({
   onOpenActions,
   isMobileActionActive,
   onCloseActions,
+  isSelectionMode,
+  isSelected,
+  isSelectable,
+  onToggleSelect,
 }: {
   message: Message
   author: Participant
@@ -110,6 +135,12 @@ export function MessageBubble({
   onOpenActions: (message: Message) => void
   isMobileActionActive: boolean
   onCloseActions: () => void
+  /** 모바일/태블릿 다중 삭제 선택 모드. 켜지면 스와이프/롱프레스/호버 액션을 전부 죽인다. */
+  isSelectionMode: boolean
+  isSelected: boolean
+  /** 내가 보낸, 아직 삭제되지 않은 메시지만 선택 가능하다(soft_delete_message가 sender만 허용). */
+  isSelectable: boolean
+  onToggleSelect: (messageId: string) => void
 }) {
   const isMine = message.senderId === CURRENT_USER.id
   const isDeleted = isDeletedMessage(message)
@@ -127,7 +158,8 @@ export function MessageBubble({
   const [overflowMenuPlacement, setOverflowMenuPlacement] = useState<"top" | "bottom">("top")
   const interactionRef = useRef<HTMLDivElement>(null)
   const isDesktopActionOpen = isReactionPickerOpen || isOverflowOpen
-  const isReactionPickerVisible = !isDeleted && (isReactionPickerOpen || isMobileActionActive)
+  const isReactionPickerVisible =
+    !isDeleted && !isSelectionMode && (isReactionPickerOpen || isMobileActionActive)
   const attachments = message.attachments ?? []
   const hasAttachments = attachments.length > 0
   // 이모지만 몇 개 있는 메시지는 버블 없이 크게 띄운다(페북식). 첨부가 같이 오면 일반 버블로 둔다.
@@ -138,7 +170,7 @@ export function MessageBubble({
   const { isSwipeActive, swipeElementRef, replyIconRef, pointerHandlers } =
     useMessageBubbleGestures({
       isMine,
-      disabled: isDeleted || isMobileActionActive,
+      disabled: isDeleted || isMobileActionActive || isSelectionMode,
       message,
       onOpenActions,
       onReply,
@@ -213,7 +245,7 @@ export function MessageBubble({
     )
   }
 
-  const actionRail = (
+  const actionRail = isSelectionMode ? null : (
     <div className="relative">
       <div
         className={cn(
@@ -364,7 +396,31 @@ export function MessageBubble({
             swipeElementRef.current = element
           }}
           className={cn("group/message flex w-full items-end gap-2", isMine && "justify-end")}
+          // 선택 모드에서는 버블 어디를 눌러도(이미지·첨부·답장 미리보기 포함) 원래 동작(뷰어
+          // 열기, 답장 대상으로 스크롤 등) 대신 선택을 토글한다. capture 단계에서 막아야 안쪽의
+          // PhotoLink(Link)·답장 버튼의 onClick이 아예 실행되지 않는다.
+          onClickCapture={
+            isSelectionMode
+              ? (event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (isSelectable) {
+                    onToggleSelect(message.id)
+                  }
+                }
+              : undefined
+          }
         >
+          {isSelectionMode && isMine ? (
+            <div className="flex w-8 shrink-0 items-end justify-center pb-1">
+              {isSelectable ? (
+                <SelectionCircle
+                  selected={isSelected}
+                  onToggle={() => onToggleSelect(message.id)}
+                />
+              ) : null}
+            </div>
+          ) : null}
           {!isMine ? (
             <div className="flex w-8 shrink-0 items-end">
               {showAvatar ? (
