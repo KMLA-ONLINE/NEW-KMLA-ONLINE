@@ -92,6 +92,7 @@ const rawFeedPosts: GroupPost[] = [
     content:
       "흰색 케이스에 스티커가 붙어 있어요. 케이스 색이랑 스티커 모양을 말해주시면 돌려드릴게요.",
     author: null,
+    isAuthorAnonymitySuspended: false,
     isPinned: false,
     createdAt: "2026-07-12T23:40:00.000Z",
     images: [],
@@ -148,6 +149,8 @@ const rawFeedPosts: GroupPost[] = [
     title: "매점에 건강한 간식도 들여놔 주세요",
     content: "샐러드나 과일, 그릭요거트 같은 것도 있으면 좋겠어요. 공감하시면 반응 눌러주세요!",
     author: null,
+    // group/mock-data.ts의 같은 시나리오와 맞춘 대역: 정지 중인 익명 글.
+    isAuthorAnonymitySuspended: true,
     isPinned: false,
     createdAt: "2026-07-11T22:15:00.000Z",
     images: [],

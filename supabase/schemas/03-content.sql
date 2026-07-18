@@ -478,6 +478,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
   category jsonb,
@@ -532,6 +533,15 @@ begin
     page.title,
     page.content,
     page.is_anonymous,
+    -- 관리자에게만 뜨는 "익명 제한 취소" 메뉴 항목의 표시 여부. can_manage_space로 관리자가 아닌
+    -- 호출자에게는 항상 false다 -- 그렇지 않으면 멤버 전원이 익명 글 목록을 훑어 "지금 정지 중인
+    -- 사람이 쓴 글"을 공짜로 골라낼 수 있다. 이 함수가 이미 감수하기로 한 상습범 연결 유출(위
+    -- suspend_anonymity 주석)조차 그 행동에 비용이 들게 설계돼 있는데, 목록에 상시로 뿌리면 그
+    -- 비용이 사라져 정확히 그 문서가 경고하는 "공짜 작성자 지도"가 된다.
+    private.can_manage_space(page.space_id) and exists(
+      select 1 from public.space_anonymity_suspensions x
+      where x.space_id=page.space_id and x.user_id=page.author_id and x.suspended_until > now()
+    ),
     private.post_author(page.author_id, page.is_anonymous),
     page.author_id=caller_id,
     case when cat.id is null then null else
@@ -588,6 +598,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
   category jsonb,
@@ -624,6 +635,11 @@ begin
     p.title,
     p.content,
     p.is_anonymous,
+    -- list_space_posts와 같은 관리자 전용 게이트(private.can_manage_space) -- 주석은 그쪽에 있다.
+    private.can_manage_space(p.space_id) and exists(
+      select 1 from public.space_anonymity_suspensions x
+      where x.space_id=p.space_id and x.user_id=p.author_id and x.suspended_until > now()
+    ),
     private.post_author(p.author_id, p.is_anonymous),
     p.author_id=caller_id,
     case when cat.id is null then null else
@@ -673,6 +689,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
   category jsonb,
@@ -697,6 +714,11 @@ begin
   return query
   select
     p.id, p.pub_id, p.space_id, p.title, p.content, p.is_anonymous,
+    -- list_space_posts와 같은 관리자 전용 게이트(private.can_manage_space) -- 주석은 그쪽에 있다.
+    private.can_manage_space(p.space_id) and exists(
+      select 1 from public.space_anonymity_suspensions x
+      where x.space_id=p.space_id and x.user_id=p.author_id and x.suspended_until > now()
+    ),
     private.post_author(p.author_id, p.is_anonymous),
     p.author_id=caller_id,
     case when cat.id is null then null else

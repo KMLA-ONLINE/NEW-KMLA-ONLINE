@@ -348,6 +348,40 @@ export default function MessengerPage() {
     }
   }
 
+  // 모바일/태블릿 다중 선택 삭제 모드(room-pane.tsx)의 확정 액션. 위 deleteMessage와 같은 규칙
+  // (본인 메시지 + 아직 안 지워진 것만)을 여기서도 다시 검사한다 -- 선택 UI가 걸러주더라도
+  // 이 함수가 최종 방어선이어야 한다.
+  //
+  // TODO(backend): 각 id에 대해 soft_delete_message(id) RPC를 호출한다(sender만 통과, 첨부는
+  // cleanup 큐로, 모두에게 삭제된 것으로 표시 -- supabase/schemas/05-chat.sql:914). 단건 RPC뿐이라
+  // Promise.all로 병렬 호출하고, 실패한 id만 골라 재시도/에러 토스트를 붙여야 한다.
+  const deleteMessages = (messageIds: string[]) => {
+    if (!selectedRoom || messageIds.length === 0) {
+      return
+    }
+
+    const idsToDelete = new Set(messageIds)
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      idsToDelete.has(candidate.id) &&
+      candidate.senderId === CURRENT_USER.id &&
+      !isDeletedMessage(candidate)
+        ? {
+            ...candidate,
+            deletedAt: new Date().toISOString(),
+            deletedBy: CURRENT_USER.id,
+            pinnedAt: undefined,
+            pinnedBy: undefined,
+          }
+        : candidate
+    )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
+
+    if (replyTo && idsToDelete.has(replyTo.messageId)) {
+      setReplyTo(null)
+    }
+  }
+
   const togglePinMessage = (message: Message) => {
     if (!selectedRoom || isDeletedMessage(message)) {
       return
@@ -572,6 +606,7 @@ export default function MessengerPage() {
               onReply={openReply}
               onReact={reactToMessage}
               onDelete={deleteMessage}
+              onDeleteMany={deleteMessages}
               onTogglePin={togglePinMessage}
               onRetry={retryMessage}
               onSend={sendMessage}
@@ -676,6 +711,7 @@ export default function MessengerPage() {
                 onReply={openReply}
                 onReact={reactToMessage}
                 onDelete={deleteMessage}
+                onDeleteMany={deleteMessages}
                 onTogglePin={togglePinMessage}
                 onRetry={retryMessage}
                 onSend={sendMessage}

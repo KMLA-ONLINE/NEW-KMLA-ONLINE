@@ -7,6 +7,7 @@ import {
   formatMessageDateLabel,
   getMessageGroupPosition,
   getReplyText,
+  isDeletedMessage,
   shouldSeparateMessages,
   shouldShowDateSeparator,
   shouldShowMessageTime,
@@ -28,6 +29,9 @@ export function MessageList({
   onCloseActions,
   focusedMessageId,
   onFocusedMessageHandled,
+  isSelectionMode,
+  selectedMessageIds,
+  onToggleMessageSelection,
 }: {
   room: Room
   reactionTypes: ReactionType[]
@@ -41,6 +45,10 @@ export function MessageList({
   onCloseActions: () => void
   focusedMessageId?: string | null
   onFocusedMessageHandled?: () => void
+  /** 모바일/태블릿 다중 삭제 선택 모드. room-pane.tsx가 롱프레스 액션패널의 "삭제"로 진입시킨다. */
+  isSelectionMode: boolean
+  selectedMessageIds: Set<string>
+  onToggleMessageSelection: (messageId: string) => void
 }) {
   const messages = room.messages
   const participants = room.participants
@@ -164,6 +172,7 @@ export function MessageList({
         showTime: shouldShowMessageTime(messages, index),
         shouldSeparate: shouldSeparateMessages(previousMessage, message),
         showDateSeparator: shouldShowDateSeparator(previousMessage, message),
+        isSelectable: isMine && !isDeletedMessage(message),
       }
     })
   }, [messages, participants, roomType])
@@ -204,6 +213,10 @@ export function MessageList({
               onOpenActions={onOpenActions}
               isMobileActionActive={activeMobileActionMessageId === viewModel.message.id}
               onCloseActions={onCloseActions}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedMessageIds.has(viewModel.message.id)}
+              isSelectable={viewModel.isSelectable}
+              onToggleSelect={onToggleMessageSelection}
             />
           </div>
         )
