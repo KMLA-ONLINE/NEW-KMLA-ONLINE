@@ -1,17 +1,18 @@
 import { ChevronDownIcon, SearchIcon } from "lucide-react"
 import { useState } from "react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
-import { Button } from "~/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -264,14 +265,14 @@ export function GroupMemberList({
 
       {/* 이양은 되돌릴 수 없다. 드롭다운에서 바로 실행하지 않고 상대 이름(+기수)을 눈으로 다시
           확인시킨다 -- 동명이인이 있는 목록에서 잘못 누르면 그룹을 통째로 남에게 넘긴 것이 된다. */}
-      <Dialog
+      <AlertDialog
         open={transferTarget !== null}
         onOpenChange={(open) => !open && setTransferTarget(null)}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>소유권을 넘길까요?</DialogTitle>
-            <DialogDescription asChild>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>소유권을 넘길까요?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
                 <p>
                   <span className="text-foreground font-semibold">
@@ -289,14 +290,11 @@ export function GroupMemberList({
                   새 소유자가 넘겨줘야 합니다.
                 </p>
               </div>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setTransferTarget(null)}>
-              취소
-            </Button>
-            <Button
-              type="button"
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTransferTarget(null)}>취소</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
               onClick={() => {
                 if (transferTarget) onTransferOwnership?.(transferTarget)
@@ -304,10 +302,10 @@ export function GroupMemberList({
               }}
             >
               넘기기
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

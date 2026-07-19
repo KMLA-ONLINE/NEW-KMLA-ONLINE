@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { Badge } from "~/components/ui/badge"
 import { MessageBubble } from "~/components/messenger/message-bubble"
@@ -15,6 +15,10 @@ import {
 import { cn } from "~/lib/utils"
 import type { ReactionType } from "~/lib/reactions"
 import type { Message, Participant, Room } from "~/lib/messenger/types"
+
+// 매번 새 [] 리터럴을 만들면 읽음 표시가 없는(대다수) 버블마다 매 렌더 새 배열 참조가 되어,
+// MessageBubble이 memo 처리돼 있어도 readReceipts prop이 항상 "달라짐"으로 잡힌다.
+const NO_READ_RECEIPTS: Participant[] = []
 
 export function MessageList({
   room,
@@ -57,16 +61,19 @@ export function MessageList({
   const highlightTimerRef = useRef<number | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
 
-  const setMessageElement = (messageId: string, element: HTMLDivElement | null) => {
+  // MessageBubble이 memo 처리돼 있어도, 여기서 매 렌더 새로 만든 함수를 그 props로 내려주면
+  // 얕은 비교가 항상 "달라짐"으로 나와 롱프레스 한 번에 목록 전체가 다시 실행된다. ref/setter만
+  // 참조하므로 deps 없이 고정 참조로 만들 수 있다.
+  const setMessageElement = useCallback((messageId: string, element: HTMLDivElement | null) => {
     if (element) {
       messageElementsRef.current.set(messageId, element)
       return
     }
 
     messageElementsRef.current.delete(messageId)
-  }
+  }, [])
 
-  const openReplyTarget = (messageId: string) => {
+  const openReplyTarget = useCallback((messageId: string) => {
     const target = messageElementsRef.current.get(messageId)
     if (!target) {
       return
@@ -83,7 +90,7 @@ export function MessageList({
       setHighlightedMessageId(null)
       highlightTimerRef.current = null
     }, 1200)
-  }
+  }, [])
 
   useEffect(() => {
     if (!focusedMessageId) {
@@ -96,7 +103,7 @@ export function MessageList({
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [focusedMessageId, onFocusedMessageHandled])
+  }, [focusedMessageId, onFocusedMessageHandled, openReplyTarget])
 
   useEffect(
     () => () => {
@@ -162,7 +169,7 @@ export function MessageList({
             ? getReplyText(replyTarget)
             : message.replyTo.text
           : undefined,
-        readReceipts: readReceiptParticipantsByMessageId.get(message.id) ?? [],
+        readReceipts: readReceiptParticipantsByMessageId.get(message.id) ?? NO_READ_RECEIPTS,
         groupPosition,
         showAvatar: !isMine && (groupPosition === "single" || groupPosition === "end"),
         showName:

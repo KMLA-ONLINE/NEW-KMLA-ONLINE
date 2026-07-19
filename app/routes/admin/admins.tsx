@@ -3,17 +3,19 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { MenuSubHeader } from "~/components/menu/menu-sub-header"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import { mockAdminCandidates, mockAppAdmins } from "~/lib/admin/mock-data"
 import { PROFILE_TYPE_LABEL, type AppAdminProfile } from "~/lib/admin/types"
@@ -253,11 +255,11 @@ function ConfirmDialog({
   const title = step === 1 ? (appointing ? "관리자로 임명" : "관리자에서 내리기") : "한 번 더 확인"
 
   return (
-    <Dialog open={confirmation !== null} onOpenChange={(open) => (open ? null : onCancel())}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
+    <AlertDialog open={confirmation !== null} onOpenChange={(open) => (open ? null : onCancel())}>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>
             {step === 1 ? (
               appointing ? (
                 <>
@@ -274,8 +276,8 @@ function ConfirmDialog({
             ) : (
               <>이름이 같은 사람이 있을 수 있습니다. 아래가 맞는 사람인지 확인해주세요.</>
             )}
-          </DialogDescription>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
         <div className="bg-muted/50 flex items-center gap-3 rounded-lg border px-3 py-2.5">
           <Avatar className="size-9">
@@ -287,30 +289,28 @@ function ConfirmDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onCancel}>
+        <AlertDialogFooter>
+          <AlertDialogCancel variant="ghost" onClick={onCancel}>
             취소
-          </Button>
+          </AlertDialogCancel>
           {step === 1 ? (
-            <Button
-              type="button"
+            <AlertDialogAction
               variant={appointing ? "default" : "destructive"}
               onClick={() => onNext({ person, action, step: 2 })}
             >
               계속
-            </Button>
+            </AlertDialogAction>
           ) : (
-            <Button
-              type="button"
+            <AlertDialogAction
               variant={appointing ? "default" : "destructive"}
               onClick={() => onCommit(shown)}
             >
               {appointing ? `${person.name} 님을 임명` : `${person.name} 님을 내리기`}
-            </Button>
+            </AlertDialogAction>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
