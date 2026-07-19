@@ -45,7 +45,7 @@ type Descriptor = {
 const TONE = {
   neutral: "bg-primary text-primary-foreground",
   positive: "bg-primary/10 text-primary",
-  negative: "bg-destructive text-white",
+  negative: "bg-destructive text-destructive-foreground",
 } as const
 
 /** 굵게 뽑는 고유명사(사람 이름, 그룹 이름). 문장에서 먼저 눈에 걸려야 하는 부분이다. */
