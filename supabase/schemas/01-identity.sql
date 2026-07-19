@@ -441,7 +441,19 @@ grant select (
   phone_number, avatar_url, cover_image_url, birthday, description, status, dorm_room,
   is_reenrolled, onboarding_completed_at, status_updated_at, created_at, updated_at, deleted_at
 ) on table public.profiles to authenticated;
-grant update (name, gender, phone_number, birthday, description) on table public.profiles
+-- 본인이 고칠 수 있는 칸. student_number만 빠진다 -- 학번은 심사에서 신원을 대조한 값이고
+-- unique 제약이 걸려 있어, 바꿀 수 있게 두면 남의 학번을 선점하거나 심사받은 신원과 다른
+-- 사람이 될 수 있다. 나머지(기수·반·계열·부서·방)는 진급·전과·부서 이동으로 실제로 바뀌는
+-- 값이라 매번 관리자를 거치게 할 이유가 없다.
+--
+-- 여기서 열어도 무결성은 constraint가 계속 잡는다: 학생은 cohort/track을 null로 비울 수 없고
+-- (profiles_student_identity_check, profiles_track_required_check), cohort는 1 ~ 100,
+-- class_no·dorm_room은 양수, department는 profile_departments FK 안의 이름이어야 한다.
+-- role·status·type·avatar_url·cover_image_url은 계속 빠져 있다.
+grant update (
+  name, gender, phone_number, birthday, description,
+  cohort, class_no, track, department, dorm_room
+) on table public.profiles
 to authenticated;
 
 -- 공개키만. 봉인된 blob은 public.get_my_key_vault()로만 나가고, 그 함수는 호출자 행으로
@@ -453,6 +465,53 @@ grant select, insert, update, delete
 on table public.profile_departments, public.profiles, public.user_keys, public.permissions, public.user_permissions
 to service_role;
 grant usage, select on sequence public.profiles_id_seq to service_role;
+
+-- 내 profile. profiles_select는 본인 행을 이미 열어두지만, 클라이언트에는 그 행을 *고를*
+-- 열쇠가 없다: auth_user_id가 컬럼 grant에서 빠져 있어 `where auth_user_id=auth.uid()`를 쓸 수
+-- 없고, profiles.id는 로그인만으로는 알 수 없다. 이 함수는 그 한 칸만 메운다.
+--
+-- 그래서 security definer지만 여는 것은 없다. 돌려주는 컬럼 집합이 authenticated의 select
+-- 컬럼 grant와 정확히 같고(auth_user_id·status_updated_by 제외), 조건은 호출자 본인 행 하나로
+-- 잠겨 있다 -- RLS가 이미 허용하는 것을 id 없이 부를 수 있게 만들 뿐이다.
+--
+-- accepted를 요구하지 않는다. status가 pending인 사람에게 대기 화면을 그리려면 그 status를
+-- 읽어야 하고, 본인 행은 status와 무관하게 profiles_select가 이미 열어둔다. 대신 탈퇴한
+-- 행(deleted_at)은 뺀다 -- 그건 anonymize된 껍데기다. profile이 없으면 0행이다.
+create function public.get_my_profile()
+returns table(
+  id bigint,
+  name text,
+  role public.app_role,
+  type public.profile_type,
+  student_number char(6),
+  class_no int2,
+  cohort int2,
+  gender public.profile_gender,
+  track public.profile_track,
+  department text,
+  phone_number text,
+  avatar_url text,
+  cover_image_url text,
+  birthday date,
+  description text,
+  status public.profile_status,
+  dorm_room int2,
+  is_reenrolled boolean,
+  onboarding_completed_at timestamptz,
+  status_updated_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language sql stable security definer set search_path = '' as $$
+  select
+    p.id, p.name, p.role, p.type, p.student_number, p.class_no, p.cohort, p.gender, p.track,
+    p.department, p.phone_number, p.avatar_url, p.cover_image_url, p.birthday, p.description,
+    p.status, p.dorm_room, p.is_reenrolled, p.onboarding_completed_at, p.status_updated_at,
+    p.created_at, p.updated_at
+  from public.profiles p
+  where p.auth_user_id = (select auth.uid())
+    and p.deleted_at is null
+$$;
 
 create function public.submit_onboarding(p_name text,p_type public.profile_type,p_student_number char(6),p_class_no int2,p_cohort int2,p_gender public.profile_gender,p_track public.profile_track,p_department text,p_is_reenrolled boolean,p_phone_number text,p_birthday date,p_description text,p_dorm_room int2)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -611,6 +670,8 @@ revoke execute on function public.submit_onboarding(text,public.profile_type,cha
 grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.review_profiles(bigint[],public.profile_status), public.list_pending_profiles(bigint,int4), public.count_pending_profiles() to authenticated;
 grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
 revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
+revoke execute on function public.get_my_profile() from public, anon, service_role;
+grant execute on function public.get_my_profile() to authenticated;
 
 -- 열쇠고리 RPC 네 개. bytea가 PostgREST를 지나면 hex 문자열(`\x00ff`)이 되어 2배로 부푸므로
 -- 경계에서는 base64로 주고받고 컬럼은 bytea로 남긴다. 클라이언트 쓰기 경로가 이 세 함수뿐인

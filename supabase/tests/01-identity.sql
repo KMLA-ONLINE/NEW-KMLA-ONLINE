@@ -342,4 +342,146 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 내 profile (get_my_profile)
+--
+-- 클라이언트가 자기 행을 고르는 유일한 열쇠다. profiles_select는 본인 행을 이미 열어두지만
+-- auth_user_id가 컬럼 grant에서 빠져 있어, 이 함수가 없으면 로그인한 사람이 자기 profile.id를
+-- 알아낼 방법이 없다.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_user uuid := '77777777-7777-4777-8777-777777777777';
+  other_user uuid := '88888888-8888-4888-8888-888888888888';
+  owner_id bigint;
+  other_id bigint;
+  mine record;
+begin
+  insert into auth.users (id, email, raw_user_meta_data)
+  values
+    (owner_user, 'my-profile-owner@example.com', '{"name":"My Profile Owner"}'::jsonb),
+    (other_user, 'my-profile-other@example.com', '{"name":"My Profile Other"}'::jsonb);
+
+  select id into owner_id from public.profiles where auth_user_id = owner_user;
+  select id into other_id from public.profiles where auth_user_id = other_user;
+
+  -- 아직 온보딩 전(status='none')이라도 자기 행은 나와야 한다. 승인 대기 화면을 그리려면
+  -- 그 status를 읽어야 하는데, accepted를 요구하면 정확히 그 사람이 못 읽는다.
+  perform set_config('request.jwt.claim.sub', owner_user::text, true);
+  select * into mine from public.get_my_profile();
+  if mine.id <> owner_id or mine.status <> 'none' then
+    raise exception 'get_my_profile must return the caller row before onboarding';
+  end if;
+
+  perform public.submit_onboarding('내 프로필','student','300777'::char(6),3::int2,30::int2,'male','international','과학기술부',false,'01099998888','2008-07-07','소개글',777::int2);
+  -- 상대는 학생이 아니라 선생님으로 둔다. 학생이면 학번·기수 없이 accepted가 될 수 없다
+  -- (profiles_student_identity_check).
+  update public.profiles set type = 'teacher' where id = other_id;
+  update public.profiles set status = 'accepted' where id in (owner_id, other_id);
+
+  -- 정확히 한 행. 학교 전체가 accepted라 profiles_select로는 남의 행도 보이지만, 이 함수는
+  -- 호출자 본인으로 잠겨 있어야 한다.
+  if (select count(*) from public.get_my_profile()) <> 1 then
+    raise exception 'get_my_profile must return exactly one row';
+  end if;
+
+  select * into mine from public.get_my_profile();
+  if mine.name <> '내 프로필'
+    or mine.student_number <> '300777'
+    or mine.department <> '과학기술부'
+    or mine.track <> 'international'
+    or mine.dorm_room <> 777
+    or mine.status <> 'accepted'
+  then
+    raise exception 'get_my_profile must carry the onboarding fields';
+  end if;
+
+  -- 다른 사람이 부르면 그 사람의 행이 나온다. 인자가 없으니 남의 행을 요구할 방법 자체가 없다.
+  perform set_config('request.jwt.claim.sub', other_user::text, true);
+  select * into mine from public.get_my_profile();
+  if mine.id <> other_id then
+    raise exception 'get_my_profile must follow the caller, not a parameter';
+  end if;
+
+  -- 탈퇴한 껍데기는 내주지 않는다.
+  perform public.withdraw_profile();
+  if exists (select 1 from public.get_my_profile()) then
+    raise exception 'get_my_profile must not return a withdrawn profile';
+  end if;
+
+  -- 편집이 실제로 저장되는 필드는 컬럼 grant가 정한다. 화면이 무엇을 그리든 이 열 개가 전부다.
+  if not has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'gender', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'phone_number', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'birthday', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'description', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'cohort', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'class_no', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'track', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'department', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'dorm_room', 'UPDATE')
+  then
+    raise exception 'the profile edit form has no matching update grant';
+  end if;
+
+  -- 학번은 심사에서 신원을 대조한 값이고 unique다. 열리면 남의 학번을 선점할 수 있다.
+  -- role/status는 권한과 심사 결과라 각자 RPC가 유일한 문이고(set_app_admin, review_profile),
+  -- avatar_url/cover_image_url은 업로드된 object를 검증하는 finalize RPC만이 붙일 수 있다.
+  if has_column_privilege('authenticated', 'public.profiles', 'student_number', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'role', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'status', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'type', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'avatar_url', 'UPDATE')
+    or has_column_privilege('authenticated', 'public.profiles', 'cover_image_url', 'UPDATE')
+  then
+    raise exception 'a profile column that only the school or an RPC may set is client-writable';
+  end if;
+
+  -- grant를 넓혀도 무결성은 constraint가 계속 잡는다. 학생이 기수를 비우면 거절돼야 한다 --
+  -- 안 그러면 "학번은 있는데 기수가 없는 학생"이 만들어지고, 명부가 그 자리에서 깨진다.
+  perform set_config('request.jwt.claim.sub', owner_user::text, true);
+  begin
+    update public.profiles set cohort = null where id = owner_id;
+    raise exception 'a student must not be able to clear their cohort';
+  exception when check_violation then
+    null;
+  end;
+
+  -- 부서는 lookup FK다. 목록에 없는 이름은 들어가지 않는다.
+  begin
+    update public.profiles set department = '없는부서' where id = owner_id;
+    raise exception 'department must stay inside the lookup table';
+  exception when foreign_key_violation then
+    null;
+  end;
+
+  -- 반대로 정상적인 변경은 constraint를 통과해야 한다. 진급(기수는 그대로, 반이 바뀐다)과
+  -- 부서·방 이동이 이 모양이고, 새로 연 컬럼들이 실제로 쓰이는 경우가 정확히 이것이다.
+  update public.profiles set class_no = 4::int2, department = '도서부', dorm_room = 512::int2
+  where id = owner_id;
+  if not exists (
+    select 1 from public.profiles
+    where id = owner_id and class_no = 4 and department = '도서부' and dorm_room = 512
+  ) then
+    raise exception 'a legitimate school-field change was rejected';
+  end if;
+
+  -- avatar/cover는 update grant가 없다. 붙이는 문은 업로드된 object를 검증하는 finalize RPC뿐이다.
+  if not has_function_privilege('authenticated', 'public.finalize_avatar(text)', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.finalize_cover_image(text)', 'EXECUTE')
+  then
+    raise exception 'the image finalize path must stay open to authenticated';
+  end if;
+
+  -- db diff는 GRANT를 뱉지 않는다.
+  if has_function_privilege('anon', 'public.get_my_profile()', 'EXECUTE')
+    or has_function_privilege('service_role', 'public.get_my_profile()', 'EXECUTE')
+    or not has_function_privilege('authenticated', 'public.get_my_profile()', 'EXECUTE')
+  then
+    raise exception 'get_my_profile must be open to authenticated only';
+  end if;
+end
+$$;
+
 rollback;
