@@ -187,9 +187,6 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
     title: "매점 메뉴에 건강한 간식도 추가해 주세요",
     content: "샐러드나 과일 같은 간식도 있으면 좋겠어요. 다들 어떻게 생각하시나요?",
     author: null,
-    // 관리자 화면(?as=admin)에서 "익명 제한 취소"가 뜨는 걸 보여주는 대역 -- 실제로 정지 중인
-    // 글에만 뜬다(group-post-menu.tsx).
-    isAuthorAnonymitySuspended: true,
     isPinned: false,
     createdAt: "2026-07-10T07:00:00.000Z",
     images: [],

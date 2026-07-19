@@ -23,8 +23,6 @@ declare
   result_author jsonb;
   result_is_mine boolean;
   like_id bigint; my_react bigint;
-  suspend_target_pub uuid; suspend_target_id bigint;
-  result_suspended boolean;
 begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
@@ -94,61 +92,6 @@ begin
   if result_author is not null then raise exception 'anonymous author must not leak to other members'; end if;
   if result_is_mine is not false then raise exception 'is_mine must be false for another user post'; end if;
   perform set_config('request.jwt.claim.sub', user1::text, true);
-
-  -- -------------------------------------------------------------------------
-  -- 익명 제한 취소 메뉴는 실제로 정지 중일 때만 떠야 한다: is_author_anonymity_suspended가
-  -- get_post/list_space_posts/list_feed_posts에서 정지 전 false -> 정지 후 true -> 취소 후 다시
-  -- false로 움직이는지 찌른다. 이 값이 항상 false로 굳으면 관리자가 이미 정지된 사람에게 취소를
-  -- 못 쓰고, 항상 true면 정지 안 된 사람에게도 취소 버튼이 떠 무의미한 클릭을 유도한다.
-  -- -------------------------------------------------------------------------
-  perform set_config('request.jwt.claim.sub', user2::text, true);
-  suspend_target_pub := public.create_post_with_attachments(space1,'익명 정지 대상','본문','[]'::jsonb,null,true);
-  perform set_config('request.jwt.claim.sub', user1::text, true);
-  select post_id into suspend_target_id from public.get_post(suspend_target_pub);
-
-  select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
-  if result_suspended is not false then
-    raise exception 'is_author_anonymity_suspended must be false before any suspension';
-  end if;
-  select is_author_anonymity_suspended into result_suspended
-  from public.list_space_posts(space1,null,null,50) where pub_id=suspend_target_pub;
-  if result_suspended is not false then
-    raise exception 'list_space_posts must report is_author_anonymity_suspended=false before any suspension';
-  end if;
-
-  perform public.suspend_post_author_anonymity(suspend_target_id);
-
-  select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
-  if result_suspended is not true then
-    raise exception 'get_post must report is_author_anonymity_suspended=true after a suspension';
-  end if;
-  select is_author_anonymity_suspended into result_suspended
-  from public.list_space_posts(space1,null,null,50) where pub_id=suspend_target_pub;
-  if result_suspended is not true then
-    raise exception 'list_space_posts must report is_author_anonymity_suspended=true after a suspension';
-  end if;
-  select is_author_anonymity_suspended into result_suspended
-  from public.list_feed_posts(null,50) where pub_id=suspend_target_pub;
-  if result_suspended is not true then
-    raise exception 'list_feed_posts must report is_author_anonymity_suspended=true after a suspension';
-  end if;
-
-  -- 관리자가 아닌 멤버에게는 정지 중이어도 항상 false다. 그렇지 않으면 멤버 전원이 익명 글
-  -- 목록을 훑어 "지금 정지 중인 사람이 쓴 글"을 공짜로 골라낼 수 있다 -- 위 suspend_anonymity
-  -- 주석이 경고하는 "공짜 작성자 지도"와 같은 문제를 목록 read path에 다시 여는 셈이다.
-  perform set_config('request.jwt.claim.sub', user2::text, true);
-  select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
-  if result_suspended is not false then
-    raise exception 'is_author_anonymity_suspended must stay false for a non-manager viewer even while suspended';
-  end if;
-  perform set_config('request.jwt.claim.sub', user1::text, true);
-
-  perform public.undo_post_anonymity_suspension(suspend_target_id);
-
-  select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
-  if result_suspended is not false then
-    raise exception 'is_author_anonymity_suspended must be false again after the suspension is undone';
-  end if;
 
   -- -------------------------------------------------------------------------
   -- 트리밍: 작성 시 앞뒤 공백 제거 (수정 때만 트리밍되던 비대칭 봉쇄)

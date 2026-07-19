@@ -175,12 +175,6 @@ export type GroupPost = {
   content: string
   /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
   author: GroupPostAuthor | null
-  /**
-   * 이 글의 작성자가 지금 익명 정지 중인지(is_author_anonymity_suspended). "익명 제한 취소" 메뉴
-   * 항목을 이 값이 true일 때만 보여준다 -- 정지 중이 아닌데 취소 버튼이 떠 있으면 눌러도 아무
-   * 일도 안 나는 죽은 버튼이 된다. 신원은 여전히 안 샌다(suspend_anonymity의 유출 결정과 같은 선).
-   */
-  isAuthorAnonymitySuspended?: boolean
   /** 내가 쓴 글인지(author_id === 현재 프로필). 수정/삭제 메뉴 노출용. */
   isMine?: boolean
   /** posts.pinned_at 여부. "고정" 배지로 표시. */

@@ -1,7 +1,6 @@
 import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 
-import { GroupLeaveDialog } from "~/components/group/group-leave-dialog"
 import { GroupNotificationsDialog } from "~/components/group/group-notifications-dialog"
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { Button } from "~/components/ui/button"
@@ -42,7 +41,6 @@ export function GroupHeader({
   // space_type: group=공식, community=비공식. 공식이면 제목 옆에 인증 표시.
   const isOfficial = group.type === "group"
   const [notiOpen, setNotiOpen] = useState(false)
-  const [leaveOpen, setLeaveOpen] = useState(false)
 
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
@@ -113,20 +111,13 @@ export function GroupHeader({
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setNotiOpen(true)}>알림 설정</DropdownMenuItem>
-              {/* 공식 그룹(학생회·사감부 등)은 소속이지 취향 가입이 아니라서 나가기가 없다 --
-                재가입도 초대·승인이 아니라 소속 변경(전학·부서 이동)으로 처리된다. */}
-              {isOfficial ? null : (
-                <DropdownMenuItem variant="destructive" onSelect={() => setLeaveOpen(true)}>
-                  그룹 나가기
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem variant="destructive">그룹 나가기</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
       <GroupNotificationsDialog open={notiOpen} onOpenChange={setNotiOpen} />
-      <GroupLeaveDialog group={group} open={leaveOpen} onOpenChange={setLeaveOpen} />
     </section>
   )
 }

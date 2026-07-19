@@ -6,16 +6,6 @@ import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog"
 import { Button } from "~/components/ui/button"
 import {
   DropdownMenu,
@@ -29,10 +19,6 @@ import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupComment } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
-
-// 삭제·익명 제한은 되돌리기 어렵거나(삭제) 애먼 사람을 처벌할 수 있어서(익명 제한) 드롭다운에서
-// 바로 실행하지 않고 확인 모달을 한 번 거친다. group-post-menu.tsx와 같은 패턴.
-type ConfirmAction = "delete" | "suspend-anonymity" | null
 
 // 평면 댓글 목록을 parentId로 스레드화해 렌더한다. 대댓글은 부모 아래로 들여쓰며,
 // 임의 깊이를 재귀로 처리한다(comments.parent_id).
@@ -144,7 +130,6 @@ function GroupCommentItem({
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
 
   // 삭제된 댓글은 답글이 살아 있는 동안만 자리를 지킨다(없애면 답글 사슬이 끊긴다). 본문·작성자·
   // 반응·답글·메뉴는 전부 사라지고 자국만 남지만, 자식 답글은 그대로 이어서 렌더한다.
@@ -279,24 +264,22 @@ function GroupCommentItem({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {/* TODO(backend): 수정은 comments.content를 직접 update(컬럼 grant + 작성자 RLS로 이미
-                    열려 있다). 삭제는 확인 후 soft_delete_comment(id) RPC -- 본문을 비워 tombstone이
-                    원문을 흘리지 않게 한다. */}
+                    열려 있다). 삭제는 soft_delete_comment(id) RPC -- 본문을 비워 tombstone이 원문을
+                    흘리지 않게 한다. */}
                 {comment.isMine ? <DropdownMenuItem>수정</DropdownMenuItem> : null}
-                <DropdownMenuItem variant="destructive" onSelect={() => setConfirmAction("delete")}>
-                  삭제
-                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
 
                 {/* 익명 댓글에만. 관리자는 작성자가 누구인지 끝내 모르고 익명 권한만 뺏는다. */}
                 {canManage && comment.anonymousLabel ? (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal"></DropdownMenuLabel>
-                    {/* TODO(backend): 확인 후 suspend_comment_author_anonymity(id) /
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+                      작성자는 익명으로 남습니다
+                    </DropdownMenuLabel>
+                    {/* TODO(backend): suspend_comment_author_anonymity(id) / 
                         undo_comment_anonymity_suspension(id). 후자는 void다 -- 자세한 이유는
-                        group-post-menu.tsx의 같은 항목 주석 참고. 취소는 확인 모달 없음(처벌이 아니라서). */}
-                    <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
-                      익명 작성 제한
-                    </DropdownMenuItem>
+                        group-post-menu.tsx의 같은 항목 주석 참고. */}
+                    <DropdownMenuItem>익명 작성 제한</DropdownMenuItem>
                     <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
                   </>
                 ) : null}
@@ -305,31 +288,6 @@ function GroupCommentItem({
           ) : null}
         </div>
       </div>
-
-      {/* 백엔드 미연동: 확인해도 모달만 닫힌다. 실제 RPC는 위 TODO(backend) 참고. */}
-      <AlertDialog
-        open={confirmAction !== null}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
-      >
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction === "delete" ? "댓글을 삭제할까요?" : "익명 작성을 제한할까요?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction === "delete"
-                ? "삭제된 댓글은 복구할 수 없습니다."
-                : "작성자는 익명으로 남습니다. 이 그룹에서 일정 기간 익명으로 글을 쓸 수 없게 됩니다."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmAction(null)}>취소</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => setConfirmAction(null)}>
-              {confirmAction === "delete" ? "삭제" : "제한"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {replies.length > 0 || replying ? (
         <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>

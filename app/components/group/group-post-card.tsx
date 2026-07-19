@@ -108,7 +108,6 @@ export function GroupPostCard({
           isMine={post.isMine}
           isPinned={post.isPinned}
           isAnonymous={post.author === null}
-          isAnonymitySuspended={post.isAuthorAnonymitySuspended}
           canManage={canManage}
           canCurate={canCurate}
           editTo={`${postPath}/edit`}

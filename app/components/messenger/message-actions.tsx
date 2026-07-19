@@ -74,7 +74,7 @@ function MessageActionButton({
     <button
       type="button"
       className={cn(
-        "hover:bg-muted focus-visible:ring-ring/50 flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-3 text-center transition-colors outline-none focus-visible:ring-3",
+        "hover:bg-muted flex min-w-0 flex-col items-center px-3 py-3 text-center transition-colors",
         className
       )}
       onClick={onClick}
@@ -82,7 +82,7 @@ function MessageActionButton({
       <span className="bg-muted flex size-11 items-center justify-center rounded-full border">
         {icon}
       </span>
-      <span className="text-xs font-medium whitespace-nowrap">{label}</span>
+      <span className="text-xs font-medium">{label}</span>
     </button>
   )
 }
@@ -92,15 +92,14 @@ export function MessageActionPanel({
   open,
   onOpenChange,
   onReply,
-  onStartSelection,
+  onDelete,
   onTogglePin,
 }: {
   message: Message | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onReply: (message: Message) => void
-  /** 삭제를 바로 실행하지 않고 다중 선택 모드로 들어간다(해당 메시지가 먼저 선택된 채로). */
-  onStartSelection: (message: Message) => void
+  onDelete: (message: Message) => void
   onTogglePin: (message: Message) => void
 }) {
   if (!message || isDeletedMessage(message)) {
@@ -122,17 +121,10 @@ export function MessageActionPanel({
   }
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+    <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange} modal={false}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 fixed inset-0 z-50 bg-black/50 duration-100" />
-        {/* 롱프레스로 연 메시지 div는 포커스 불가능한 요소라 Radix의 기본 닫힘 포커스 복원(마지막
-            포커스였던 요소, 이를테면 작성창)이 부적절하다 -- 그대로 두면 패널을 닫자마자 작성창에
-            포커스가 튀며 키보드가 다시 열릴 수 있다. */}
-        <DialogPrimitive.Content
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          className="bg-card data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-6 fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto w-auto max-w-md rounded-xl border p-2 shadow-lg duration-150"
-        >
-          <div className="grid auto-cols-fr grid-flow-col">
+        <DialogPrimitive.Content className="bg-card data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-6 fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto w-auto max-w-md px-2 py-2 duration-150">
+          <div className="flex justify-between">
             <MessageActionButton
               icon={<ReplyIcon className="size-5" />}
               label="답장"
@@ -162,7 +154,7 @@ export function MessageActionPanel({
                 label="삭제"
                 className="text-destructive"
                 onClick={() => {
-                  onStartSelection(message)
+                  onDelete(message)
                   handleOpenChange(false)
                 }}
               />

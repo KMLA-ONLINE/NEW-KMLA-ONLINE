@@ -97,7 +97,6 @@ export default function GroupPostDetailPage() {
                     isMine={post.isMine}
                     isPinned={post.isPinned}
                     isAnonymous={post.author === null}
-                    isAnonymitySuspended={post.isAuthorAnonymitySuspended}
                     canManage={canManage}
                     canCurate={canCurate}
                     editTo="edit"

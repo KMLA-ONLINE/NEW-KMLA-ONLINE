@@ -1860,7 +1860,6 @@ export type Database = {
           content: string
           created_at: string
           is_anonymous: boolean
-          is_author_anonymity_suspended: boolean
           is_mine: boolean
           my_reaction_id: number
           pinned_at: string
@@ -1944,7 +1943,6 @@ export type Database = {
           content: string
           created_at: string
           is_anonymous: boolean
-          is_author_anonymity_suspended: boolean
           is_mine: boolean
           my_reaction_id: number
           pinned_at: string
@@ -2008,7 +2006,6 @@ export type Database = {
           content: string
           created_at: string
           is_anonymous: boolean
-          is_author_anonymity_suspended: boolean
           is_mine: boolean
           my_reaction_id: number
           pinned_at: string

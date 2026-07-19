@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
@@ -64,81 +64,8 @@ function getInitialMessagesByRoomId() {
   return Object.fromEntries(seedRooms.map((room) => [room.id, room.messages]))
 }
 
-// 반응 하나가 바뀌었다고 방 전체 메시지 목록을 다시 렌더시키지 않으려면(MessageBubble이 memo
-// 처리돼 있어도 핸들러가 매 렌더 selectedRoom을 새로 만들어 닫아버리면 소용없다), 이 변형들을
-// 순수 함수로 빼서 setMessagesByRoomId의 functional updater 안(늘 진짜 최신 previous를 받는다)
-// 에서만 적용한다. ref에 최신 메시지를 미러링해 두고 그걸 미리 읽어 계산하는 방식은 쓰지 않는다
-// -- ref는 커밋 후 useEffect에서만 갱신되므로, 같은 틱에 반응·삭제·핀이 연달아 들어오면 뒤의
-// 호출이 앞의 변경이 반영되기 전의 배열을 기준으로 계산해 덮어쓸 수 있다(lost update). .map()은
-// 바뀐 항목만 새 객체를 만들고 나머지는 같은 참조를 유지한다.
-function withReaction(messages: Message[], messageId: string, reaction: string): Message[] {
-  return messages.map((candidate) => {
-    if (candidate.id !== messageId) {
-      return candidate
-    }
-
-    const hasOwnReaction = candidate.reactions?.some(
-      (candidateReaction) => candidateReaction.userId === CURRENT_USER.id
-    )
-
-    return {
-      ...candidate,
-      reactions: hasOwnReaction
-        ? candidate.reactions!.map((candidateReaction) =>
-            candidateReaction.userId === CURRENT_USER.id
-              ? { ...candidateReaction, value: reaction }
-              : candidateReaction
-          )
-        : [...(candidate.reactions ?? []), { userId: CURRENT_USER.id, value: reaction }],
-    }
-  })
-}
-
-function withMessageDeleted(messages: Message[], messageId: string): Message[] {
-  return messages.map((candidate) =>
-    candidate.id === messageId &&
-    candidate.senderId === CURRENT_USER.id &&
-    !isDeletedMessage(candidate)
-      ? {
-          ...candidate,
-          deletedAt: new Date().toISOString(),
-          deletedBy: CURRENT_USER.id,
-          pinnedAt: undefined,
-          pinnedBy: undefined,
-        }
-      : candidate
-  )
-}
-
-function withMessagesDeleted(messages: Message[], messageIds: Set<string>): Message[] {
-  return messages.map((candidate) =>
-    messageIds.has(candidate.id) &&
-    candidate.senderId === CURRENT_USER.id &&
-    !isDeletedMessage(candidate)
-      ? {
-          ...candidate,
-          deletedAt: new Date().toISOString(),
-          deletedBy: CURRENT_USER.id,
-          pinnedAt: undefined,
-          pinnedBy: undefined,
-        }
-      : candidate
-  )
-}
-
-function withPinToggled(messages: Message[], messageId: string): Message[] {
-  return messages.map((candidate) => {
-    if (candidate.id !== messageId || isDeletedMessage(candidate)) {
-      return candidate
-    }
-
-    const shouldUnpin = isPinnedMessage(candidate)
-    return {
-      ...candidate,
-      pinnedAt: shouldUnpin ? undefined : new Date().toISOString(),
-      pinnedBy: shouldUnpin ? undefined : CURRENT_USER.id,
-    }
-  })
+function updateRoomSummaryMessages(room: RoomSummary, messages: Message[]): RoomSummary {
+  return getRoomSummary({ ...room, messages })
 }
 
 function readImageSize(src: string) {
@@ -247,15 +174,6 @@ export default function MessengerPage() {
   // 실패한 전송의 재시도 thunk. 메시지의 임시 id로 키를 잡는다 -- 재시도에 필요한 것(파일/본문/방)을
   // 클로저가 붙들고 있어, Message는 순수 데이터로 남는다.
   const pendingSendsRef = useRef(new Map<string, () => void>())
-  // openReply는 memo(MessageBubble)까지 안정된 참조로 내려가야(useCallback([])) 해서 selectedRoom을
-  // 직접 닫지 못한다 -- 대신 참가자 조회용으로 roomSummaries를 ref로 미러링해 읽는다. 이건 순수
-  // 조회(setReplyTo는 항상 통째로 덮어쓸 뿐 이전 값과 합치지 않는다)라 ref가 커밋 전이라 한 틱
-  // 뒤처져도 잃어버리는 데이터가 없다 -- 최악의 경우 답장 미리보기의 이름이 한 틱 늦게 갱신되는
-  // 정도다. 반면 메시지 배열 자체를 바꾸는 reactToMessage/deleteMessage/togglePinMessage는 같은
-  // 방식을 쓰지 않는다: 연달아 여러 변경이 들어오면 ref가 아직 갱신 전이라 뒤의 계산이 앞의
-  // 변경을 덮어쓸 수 있어서(진짜 데이터 손실), 아래 updateRoomMessages의 functional updater
-  // 안에서만 변형한다.
-  const roomSummariesRef = useRef(roomSummaries)
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -268,24 +186,10 @@ export default function MessengerPage() {
   const isSearchOpen = location.pathname.endsWith("/search")
   const selectedRoomId = roomId ?? null
 
-  // updateRoomMessages(위)는 roomSummaries에 lastMessage/lastMessageAt을 다시 동기화하지 않는다
-  // (그러려면 setMessagesByRoomId updater가 계산한 배열을 setRoomSummaries updater 쪽으로 ref나
-  // 지역변수를 거쳐 넘겨야 하는데, 그 경로 자체가 이번에 없애려는 lost-update 위험을 재도입한다).
-  // 대신 채팅 목록에 보여줄 값은 항상 messagesByRoomId에서 그때그때 새로 파생한다 -- 소스가
-  // 하나(messagesByRoomId)뿐이라 두 state 사이의 동기화 실패가 아예 발생할 수 없다.
-  const roomsWithLastMessage = useMemo(
-    () =>
-      roomSummaries.map((room) => {
-        const lastMessage = getLastMessage({ messages: messagesByRoomId[room.id] ?? [] })
-        return { ...room, lastMessage, lastMessageAt: lastMessage?.createdAt }
-      }),
-    [roomSummaries, messagesByRoomId]
-  )
-
   const normalizedSearchValue = searchValue.trim().toLowerCase()
   const filteredRooms = normalizedSearchValue
-    ? roomsWithLastMessage.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
-    : roomsWithLastMessage
+    ? roomSummaries.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
+    : roomSummaries
 
   const selectedRoomSummary = roomSummaries.find((room) => room.id === selectedRoomId) ?? null
   const selectedRoom = selectedRoomSummary
@@ -325,10 +229,6 @@ export default function MessengerPage() {
     },
     []
   )
-
-  useEffect(() => {
-    roomSummariesRef.current = roomSummaries
-  }, [roomSummaries])
 
   // The search param only records that the viewer is open, and on which photo.
   // Moving between photos afterwards is the viewer's own business: a router
@@ -375,111 +275,100 @@ export default function MessengerPage() {
     navigate(`/messenger/${selectedRoom.id}`)
   }
 
-  // roomId 방의 메시지 배열을 transform으로 변형한다. previous[roomId]는 setMessagesByRoomId가
-  // React의 업데이트 큐에서 직접 받는 값이라, 같은 틱에 이 함수가 여러 번 호출돼도(반응 -> 삭제
-  // 처럼 연달아) 매번 "그 직전 호출까지 반영된" 배열을 기준으로 계산한다 -- ref를 미리 읽어두는
-  // 방식과 달리 lost update가 생길 수 없다. lastMessage/lastMessageAt은 여기서 굳이 다시 계산해
-  // roomSummaries에 동기화해 두지 않는다(그러려면 이 함수가 반환한 배열을 다른 state의 updater
-  // 안으로 그대로 들고 가야 하는데, 두 setState 호출 사이에는 그럴 방법이 없다 -- 있다면 그것도
-  // 결국 어딘가의 ref나 지역변수를 매개로 하게 되어 같은 문제가 재발한다). 대신 채팅 목록에
-  // 보여줄 값은 아래 roomsWithLastMessage에서 messagesByRoomId로부터 그때그때 파생한다.
-  const updateRoomMessages = useCallback(
-    (roomId: string, transform: (messages: Message[]) => Message[]) => {
-      setMessagesByRoomId((previous) => {
-        const roomMessages = previous[roomId]
-        if (!roomMessages) {
-          return previous
-        }
-
-        return { ...previous, [roomId]: transform(roomMessages) }
-      })
-      setRoomSummaries((previousRooms) =>
-        previousRooms.map((room) => (room.id === roomId ? { ...room, unreadCount: 0 } : room))
+  const setSelectedRoomMessages = (roomId: string, messages: Message[]) => {
+    setMessagesByRoomId((previousMessagesByRoomId) => ({
+      ...previousMessagesByRoomId,
+      [roomId]: messages,
+    }))
+    setRoomSummaries((previousRooms) =>
+      previousRooms.map((room) =>
+        room.id === roomId ? updateRoomSummaryMessages({ ...room, unreadCount: 0 }, messages) : room
       )
-    },
-    []
-  )
+    )
+  }
 
-  // openReply는 memo(MessageBubble)까지 안정된 참조로 내려가야(useCallback([])) 해서 selectedRoom을
-  // 직접 닫지 못한다 -- 대신 참가자 조회용으로 roomSummariesRef를 읽는다(위 주석 참고: 순수 조회라
-  // 안전하다). getMessageAuthor는 participants만 보므로 messages는 타입을 맞추기 위한 빈 배열이면
-  // 충분하다.
-  const openReply = useCallback((roomId: string, message: Message) => {
-    if (isDeletedMessage(message)) {
+  const openReply = (message: Message) => {
+    if (!selectedRoom || isDeletedMessage(message)) {
       return
     }
-
-    const roomSummary = roomSummariesRef.current.find((room) => room.id === roomId)
-    if (!roomSummary) {
-      return
-    }
-
-    const author = getMessageAuthor({ ...roomSummary, messages: [] }, message)
+    const author = getMessageAuthor(selectedRoom, message)
     setReplyTo({
       messageId: message.id,
       author: author.name,
       text: getReplyText(message),
     })
-  }, [])
+  }
 
-  const reactToMessage = useCallback(
-    (roomId: string, message: Message, reaction: string) => {
-      if (isDeletedMessage(message)) {
-        return
-      }
-
-      updateRoomMessages(roomId, (messages) => withReaction(messages, message.id, reaction))
-    },
-    [updateRoomMessages]
-  )
-
-  const deleteMessage = useCallback(
-    (roomId: string, message: Message) => {
-      if (message.senderId !== CURRENT_USER.id || isDeletedMessage(message)) {
-        return
-      }
-
-      updateRoomMessages(roomId, (messages) => withMessageDeleted(messages, message.id))
-      setReplyTo((previousReplyTo) =>
-        previousReplyTo?.messageId === message.id ? null : previousReplyTo
-      )
-    },
-    [updateRoomMessages]
-  )
-
-  // 모바일/태블릿 다중 선택 삭제 모드(room-pane.tsx)의 확정 액션. 위 deleteMessage와 같은 규칙
-  // (본인 메시지 + 아직 안 지워진 것만)을 여기서도 다시 검사한다 -- 선택 UI가 걸러주더라도
-  // 이 함수가 최종 방어선이어야 한다.
-  //
-  // TODO(backend): 각 id에 대해 soft_delete_message(id) RPC를 호출한다(sender만 통과, 첨부는
-  // cleanup 큐로, 모두에게 삭제된 것으로 표시 -- supabase/schemas/05-chat.sql:914). 단건 RPC뿐이라
-  // Promise.all로 병렬 호출하고, 실패한 id만 골라 재시도/에러 토스트를 붙여야 한다.
-  const deleteMessages = (messageIds: string[]) => {
-    if (!selectedRoomId || messageIds.length === 0) {
+  const reactToMessage = (message: Message, reaction: string) => {
+    if (!selectedRoom || isDeletedMessage(message)) {
       return
     }
 
-    const idsToDelete = new Set(messageIds)
-    updateRoomMessages(selectedRoomId, (messages) => withMessagesDeleted(messages, idsToDelete))
-
-    setReplyTo((previousReplyTo) =>
-      previousReplyTo && idsToDelete.has(previousReplyTo.messageId) ? null : previousReplyTo
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            reactions: candidate.reactions?.some(
+              (candidateReaction) => candidateReaction.userId === CURRENT_USER.id
+            )
+              ? candidate.reactions.map((candidateReaction) =>
+                  candidateReaction.userId === CURRENT_USER.id
+                    ? { ...candidateReaction, value: reaction }
+                    : candidateReaction
+                )
+              : [...(candidate.reactions ?? []), { userId: CURRENT_USER.id, value: reaction }],
+          }
+        : candidate
     )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
   }
 
-  const togglePinMessage = useCallback(
-    (roomId: string, message: Message) => {
-      if (isDeletedMessage(message)) {
-        return
-      }
+  const deleteMessage = (message: Message) => {
+    if (!selectedRoom || message.senderId !== CURRENT_USER.id || isDeletedMessage(message)) {
+      return
+    }
 
-      updateRoomMessages(roomId, (messages) => withPinToggled(messages, message.id))
-    },
-    [updateRoomMessages]
-  )
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            deletedAt: new Date().toISOString(),
+            deletedBy: CURRENT_USER.id,
+            pinnedAt: undefined,
+            pinnedBy: undefined,
+          }
+        : candidate
+    )
 
-  // 특정 방의 특정 메시지 status만 갱신한다. updateRoomMessages와 마찬가지로 functional
-  // updater라, 전송 중에 방을 바꾸거나 여러 전송이 겹쳐도 항상 최신 상태 위에 안전하게 얹힌다.
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
+
+    if (replyTo?.messageId === message.id) {
+      setReplyTo(null)
+    }
+  }
+
+  const togglePinMessage = (message: Message) => {
+    if (!selectedRoom || isDeletedMessage(message)) {
+      return
+    }
+
+    const shouldUnpin = isPinnedMessage(message)
+    const nextMessages = selectedRoom.messages.map((candidate) =>
+      candidate.id === message.id
+        ? {
+            ...candidate,
+            pinnedAt: shouldUnpin ? undefined : new Date().toISOString(),
+            pinnedBy: shouldUnpin ? undefined : CURRENT_USER.id,
+          }
+        : candidate
+    )
+
+    setSelectedRoomMessages(selectedRoom.id, nextMessages)
+  }
+
+  // 특정 방의 특정 메시지 status만 갱신한다. 전체 배열 교체(setSelectedRoomMessages)와 달리 함수형
+  // 업데이트라, 전송 중에 방을 바꾸거나 여러 전송이 겹쳐도 항상 최신 상태 위에 안전하게 얹힌다.
   const patchMessageStatus = (
     roomId: string,
     messageId: string,
@@ -518,9 +407,9 @@ export default function MessengerPage() {
       })
   }
 
-  const retryMessage = useCallback((message: Message) => {
+  const retryMessage = (message: Message) => {
     pendingSendsRef.current.get(message.id)?.()
-  }, [])
+  }
 
   const sendMessage = (draft: string) => {
     const nextContent = draft.trim()
@@ -541,7 +430,7 @@ export default function MessengerPage() {
       status: "sending",
     }
 
-    updateRoomMessages(roomId, (currentMessages) => [...currentMessages, nextMessage])
+    setSelectedRoomMessages(roomId, [...selectedRoom.messages, nextMessage])
     runSend(roomId, nextMessage.id, () => mockPerformSend(nextMessage))
     setReplyTo(null)
     if (fileInputRef.current) {
@@ -602,7 +491,7 @@ export default function MessengerPage() {
       })
     })
 
-    updateRoomMessages(targetRoomId, (currentMessages) => [...currentMessages, ...nextMessages])
+    setSelectedRoomMessages(targetRoomId, [...selectedRoom.messages, ...nextMessages])
     nextMessages.forEach((message) =>
       runSend(targetRoomId, message.id, () => mockPerformSend(message))
     )
@@ -683,7 +572,6 @@ export default function MessengerPage() {
               onReply={openReply}
               onReact={reactToMessage}
               onDelete={deleteMessage}
-              onDeleteMany={deleteMessages}
               onTogglePin={togglePinMessage}
               onRetry={retryMessage}
               onSend={sendMessage}
@@ -735,7 +623,7 @@ export default function MessengerPage() {
             compact={true}
             onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
             onOpenMessage={openSearchResult}
-            onUnpinMessage={(message) => togglePinMessage(selectedRoom.id, message)}
+            onUnpinMessage={togglePinMessage}
           />
         ) : null}
 
@@ -788,7 +676,6 @@ export default function MessengerPage() {
                 onReply={openReply}
                 onReact={reactToMessage}
                 onDelete={deleteMessage}
-                onDeleteMany={deleteMessages}
                 onTogglePin={togglePinMessage}
                 onRetry={retryMessage}
                 onSend={sendMessage}
@@ -832,7 +719,7 @@ export default function MessengerPage() {
                 room={selectedRoom}
                 onBack={() => navigate(`/messenger/${selectedRoom.id}/details`)}
                 onOpenMessage={openSearchResult}
-                onUnpinMessage={(message) => togglePinMessage(selectedRoom.id, message)}
+                onUnpinMessage={togglePinMessage}
               />
             ) : null}
 
