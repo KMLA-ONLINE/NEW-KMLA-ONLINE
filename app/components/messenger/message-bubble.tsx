@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   CheckIcon,
   EllipsisIcon,
@@ -91,10 +91,7 @@ function SelectionCircle({ selected, onToggle }: { selected: boolean; onToggle: 
   )
 }
 
-// 방에 메시지가 늘어날수록 부모(RoomPane/MessageList)의 롱프레스·반응·선택 상태 변경이 매번
-// 전체 목록을 다시 실행시키지 않도록 memo 처리한다 -- props가 대부분 참조 안정적이라 실제로
-// props가 바뀐 버블 하나만 다시 그려진다.
-export const MessageBubble = memo(function MessageBubble({
+export function MessageBubble({
   message,
   author,
   reactionTypes,
@@ -605,4 +602,4 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
     </div>
   )
-})
+}

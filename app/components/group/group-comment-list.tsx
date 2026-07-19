@@ -6,17 +6,15 @@ import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog"
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -310,29 +308,31 @@ function GroupCommentItem({
       </div>
 
       {/* 백엔드 미연동: 확인해도 모달만 닫힌다. 실제 RPC는 위 TODO(backend) 참고. */}
-      <AlertDialog
+      <Dialog
         open={confirmAction !== null}
         onOpenChange={(open) => !open && setConfirmAction(null)}
       >
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
               {confirmAction === "delete" ? "댓글을 삭제할까요?" : "익명 작성을 제한할까요?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
+            </DialogTitle>
+            <DialogDescription>
               {confirmAction === "delete"
                 ? "삭제된 댓글은 복구할 수 없습니다."
                 : "작성자는 익명으로 남습니다. 이 그룹에서 일정 기간 익명으로 글을 쓸 수 없게 됩니다."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmAction(null)}>취소</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => setConfirmAction(null)}>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmAction(null)}>
+              취소
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => setConfirmAction(null)}>
               {confirmAction === "delete" ? "삭제" : "제한"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {replies.length > 0 || replying ? (
         <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
