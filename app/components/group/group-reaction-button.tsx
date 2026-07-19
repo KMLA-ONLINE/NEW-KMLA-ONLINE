@@ -91,8 +91,6 @@ export function GroupReactionButton({
       onPointerLeave={handleContainerPointerLeave}
     >
       {open ? (
-        // TODO(a11y): 지금은 fixed 백드롭 바깥클릭으로만 닫힌다. Radix Popover로 바꿔 Escape·
-        // 포커스 트랩·바깥클릭·stacking을 일괄 처리하는 게 좋다(댓글 반응 피커도 동일 패턴).
         <>
           <button
             type="button"
