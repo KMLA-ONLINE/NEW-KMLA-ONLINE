@@ -1,6 +1,7 @@
 import { Button } from "~/components/ui/button"
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -54,9 +55,9 @@ export function GroupLeaveDialog({
               <AlertDialogCancel onClick={() => onOpenChange(false)}>취소</AlertDialogCancel>
               {/* TODO(backend): 확인 시 leave_space(group.id) RPC. space_members 행을 지우고
                 member_count를 줄인다. 성공하면 그룹 목록/피드로 리다이렉트해야 한다. */}
-              <Button type="button" variant="destructive" onClick={() => onOpenChange(false)}>
+              <AlertDialogAction variant="destructive" onClick={() => onOpenChange(false)}>
                 나가기
-              </Button>
+              </AlertDialogAction>
             </>
           )}
         </AlertDialogFooter>
