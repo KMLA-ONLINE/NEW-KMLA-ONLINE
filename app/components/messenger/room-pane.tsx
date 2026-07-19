@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowDownIcon, ArrowLeftIcon, InfoIcon, PhoneIcon, PinIcon } from "lucide-react"
 
 import { MessageActionPanel } from "~/components/messenger/message-actions"
@@ -6,6 +6,16 @@ import { MessageComposer } from "~/components/messenger/message-composer"
 import { MessageList } from "~/components/messenger/message-list"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog"
 import {
   getMessageAuthor,
   getPinnedMessages,
@@ -31,6 +41,7 @@ export function RoomPane({
   onReply,
   onReact,
   onDelete,
+  onDeleteMany,
   onTogglePin,
   onRetry,
   onSend,
@@ -47,10 +58,15 @@ export function RoomPane({
   onAttachImage: () => void
   onAttachFile: () => void
   onClearReply: () => void
-  onReply: (message: Message) => void
-  onReact: (message: Message, reaction: string) => void
-  onDelete: (message: Message) => void
-  onTogglePin: (message: Message) => void
+  /** roomId를 첫 인자로 받는다 -- 위 messenger.tsx 핸들러들이 memo(MessageBubble)까지 안정된
+   * 참조로 내려가도록 selectedRoom 대신 ref로 최신 state를 읽어서, 렌더마다 새로 만들어지는
+   * 방 객체를 아예 인자로 받지 않게 설계되어 있다. */
+  onReply: (roomId: string, message: Message) => void
+  onReact: (roomId: string, message: Message, reaction: string) => void
+  onDelete: (roomId: string, message: Message) => void
+  /** 모바일/태블릿 다중 선택 삭제 확정 시 호출(선택된 id 목록). */
+  onDeleteMany: (messageIds: string[]) => void
+  onTogglePin: (roomId: string, message: Message) => void
   onRetry: (message: Message) => void
   onSend: (draft: string) => boolean
   focusedMessageId?: string | null
@@ -65,22 +81,89 @@ export function RoomPane({
   const [isActionPanelOpen, setIsActionPanelOpen] = useState(false)
   const [activeActionMessage, setActiveActionMessage] = useState<Message | null>(null)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  // 모바일/태블릿 다중 삭제 선택 모드. room.id가 바뀌면 RoomPane 자체가 key로 리마운트되므로
+  // (messenger.tsx의 <RoomPane key={selectedRoom.id}>) 방을 옮기면 이 상태는 자동으로 초기화된다.
+  const [isSelectingMessages, setIsSelectingMessages] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set())
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
 
-  const openActionPanel = (message: Message) => {
+  // messenger.tsx의 onReply/onReact/onDelete/onTogglePin은 이제 roomId를 첫 인자로 받는(그리고
+  // useCallback([])로 고정된) 핸들러다. MessageList/MessageActionPanel은 여전히 "이 방 안에서의"
+  // (message, ...) 시그니처만 안다 -- 여기서 room.id를 끼워 넣어 그 모양으로 맞춰준다. room.id는
+  // 문자열 값이라 RoomPane이 다시 렌더돼도 같은 room이 떠 있는 한 deps 비교에서 그대로 안정적이다.
+  const handleReply = useCallback(
+    (message: Message) => onReply(room.id, message),
+    [room.id, onReply]
+  )
+  const handleReact = useCallback(
+    (message: Message, reaction: string) => onReact(room.id, message, reaction),
+    [room.id, onReact]
+  )
+  const handleDelete = useCallback(
+    (message: Message) => onDelete(room.id, message),
+    [room.id, onDelete]
+  )
+  const handleTogglePin = useCallback(
+    (message: Message) => onTogglePin(room.id, message),
+    [room.id, onTogglePin]
+  )
+
+  // MessageList가 MessageBubble을 memo 처리해 롱프레스 한 번에 목록 전체가 다시 실행되지
+  // 않게 하려면, 여기서 만들어 내려보내는 콜백들도 매 렌더 새 참조가 아니라 안정된 참조여야
+  // 한다(그렇지 않으면 memo의 얕은 비교가 매번 "달라짐"으로 판정해 무의미해진다).
+  const openActionPanel = useCallback((message: Message) => {
     if (isDeletedMessage(message)) {
       return
     }
 
     setActiveActionMessage(message)
     setIsActionPanelOpen(true)
-  }
+  }, [])
 
-  const handleActionPanelChange = (nextOpen: boolean) => {
+  const handleActionPanelChange = useCallback((nextOpen: boolean) => {
     setIsActionPanelOpen(nextOpen)
 
     if (!nextOpen) {
       setActiveActionMessage(null)
     }
+  }, [])
+
+  const closeActionPanel = useCallback(
+    () => handleActionPanelChange(false),
+    [handleActionPanelChange]
+  )
+
+  // 액션패널의 "삭제"는 이제 바로 지우지 않고, 누른 메시지를 미리 선택해 둔 채로 선택 모드에
+  // 들어간다. 실제 삭제는 하단 고정 버튼 -> 확인 모달을 거쳐야 실행된다.
+  const startMessageSelection = (message: Message) => {
+    handleActionPanelChange(false)
+    setIsSelectingMessages(true)
+    setSelectedMessageIds(new Set([message.id]))
+  }
+
+  const toggleMessageSelection = useCallback((messageId: string) => {
+    setSelectedMessageIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(messageId)) {
+        next.delete(messageId)
+      } else {
+        next.add(messageId)
+      }
+      return next
+    })
+  }, [])
+
+  // 뒤로가기·취소·모달 닫기 모두 여기로 모인다 -- 부분 상태(선택은 남고 모달만 닫힘) 없이
+  // 항상 일반 채팅 화면으로 완전히 돌아간다.
+  const exitMessageSelection = () => {
+    setIsSelectingMessages(false)
+    setSelectedMessageIds(new Set())
+    setIsConfirmingDelete(false)
+  }
+
+  const confirmSelectedDeletion = () => {
+    onDeleteMany([...selectedMessageIds])
+    exitMessageSelection()
   }
 
   useEffect(() => {
@@ -166,46 +249,61 @@ export function RoomPane({
   return (
     <section className="bg-muted/40 flex h-full min-h-0 flex-col p-0 md:p-3">
       <div className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-none md:rounded-2xl md:border">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            {showBackButton && onBack ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Back to chat list"
-                onClick={onBack}
-              >
-                <ArrowLeftIcon />
-              </Button>
-            ) : null}
-            <Avatar size="lg">
-              <AvatarFallback>{room.initials}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-sm font-semibold sm:text-base">{room.name}</h2>
-              </div>
-              <p className="text-muted-foreground truncate text-xs">{subtitle}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {room.type === "direct" ? (
-              <Button variant="ghost" size="icon-sm" aria-label="Start voice call">
-                <PhoneIcon />
-              </Button>
-            ) : null}
+        {isSelectingMessages ? (
+          <header className="relative flex shrink-0 items-center justify-center border-b px-3 py-2.5 sm:px-4 sm:py-3">
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Conversation info"
-              onClick={onOpenDetail}
+              aria-label="선택 모드 종료"
+              className="absolute left-3"
+              onClick={exitMessageSelection}
             >
-              <InfoIcon />
+              <ArrowLeftIcon />
             </Button>
-          </div>
-        </header>
+            <h2 className="text-sm font-semibold sm:text-base">메시지 삭제</h2>
+          </header>
+        ) : (
+          <header className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              {showBackButton && onBack ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Back to chat list"
+                  onClick={onBack}
+                >
+                  <ArrowLeftIcon />
+                </Button>
+              ) : null}
+              <Avatar size="lg">
+                <AvatarFallback>{room.initials}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-sm font-semibold sm:text-base">{room.name}</h2>
+                </div>
+                <p className="text-muted-foreground truncate text-xs">{subtitle}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              {room.type === "direct" ? (
+                <Button variant="ghost" size="icon-sm" aria-label="Start voice call">
+                  <PhoneIcon />
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Conversation info"
+                onClick={onOpenDetail}
+              >
+                <InfoIcon />
+              </Button>
+            </div>
+          </header>
+        )}
 
-        {latestPinnedMessage ? (
+        {!isSelectingMessages && latestPinnedMessage ? (
           <div className="border-b px-3 py-2 sm:px-4">
             <button
               type="button"
@@ -235,18 +333,21 @@ export function RoomPane({
               <MessageList
                 room={room}
                 reactionTypes={reactionTypes}
-                onReply={onReply}
-                onReact={onReact}
-                onDelete={onDelete}
-                onTogglePin={onTogglePin}
+                onReply={handleReply}
+                onReact={handleReact}
+                onDelete={handleDelete}
+                onTogglePin={handleTogglePin}
                 onRetry={onRetry}
                 onOpenActions={openActionPanel}
                 activeMobileActionMessageId={
                   isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
                 }
-                onCloseActions={() => handleActionPanelChange(false)}
+                onCloseActions={closeActionPanel}
                 focusedMessageId={focusedMessageId}
                 onFocusedMessageHandled={onFocusedMessageHandled}
+                isSelectionMode={isSelectingMessages}
+                selectedMessageIds={selectedMessageIds}
+                onToggleMessageSelection={toggleMessageSelection}
               />
             ) : null}
           </div>
@@ -268,19 +369,53 @@ export function RoomPane({
           message={activeActionMessage}
           open={isActionPanelOpen}
           onOpenChange={handleActionPanelChange}
-          onReply={onReply}
-          onDelete={onDelete}
-          onTogglePin={onTogglePin}
+          onReply={handleReply}
+          onStartSelection={startMessageSelection}
+          onTogglePin={handleTogglePin}
         />
 
-        <MessageComposer
-          replyTo={replyTo}
-          onAttachImage={onAttachImage}
-          onAttachFile={onAttachFile}
-          onClearReply={onClearReply}
-          onSend={onSend}
-        />
+        {isSelectingMessages ? (
+          <footer className="bg-card/95 shrink-0 border-t px-3 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
+            <Button
+              type="button"
+              variant="destructive"
+              className="w-full"
+              disabled={selectedMessageIds.size === 0}
+              onClick={() => setIsConfirmingDelete(true)}
+            >
+              삭제 ({selectedMessageIds.size}개)
+            </Button>
+          </footer>
+        ) : (
+          <MessageComposer
+            replyTo={replyTo}
+            onAttachImage={onAttachImage}
+            onAttachFile={onAttachFile}
+            onClearReply={onClearReply}
+            onSend={onSend}
+          />
+        )}
       </div>
+
+      {/* 뒤로가기·취소·바깥 클릭으로 모달을 닫는 것 모두 exitMessageSelection으로 모아, 선택만
+        남고 모달만 닫히는 중간 상태 없이 항상 일반 채팅 화면으로 돌아가게 한다. */}
+      <AlertDialog
+        open={isConfirmingDelete}
+        onOpenChange={(open) => !open && exitMessageSelection()}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{selectedMessageIds.size}개의 메시지를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>모두에게서 삭제되며 복구할 수 없습니다.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={exitMessageSelection}>취소</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmSelectedDeletion}>
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }

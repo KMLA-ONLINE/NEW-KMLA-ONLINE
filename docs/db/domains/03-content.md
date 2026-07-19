@@ -28,6 +28,10 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한    | X    | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래)                       |
 | `search_posts(query, space_id)`                               | space 멤버        | X    | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다                                                           |
 
+셋(`list_space_posts`/`list_feed_posts`/`get_post`)은 모두 `is_author_anonymity_suspended`도 함께 내린다 — 이 글의 작성자가 **지금** 익명 정지 중인지. 클라이언트가 "익명 제한 취소" 메뉴 항목을 이 값이 `true`일 때만 보여주는 데 쓴다(정지 안 된 글에 취소 버튼을 상시로 띄우면 죽은 버튼이자 "정지 이력 없음"을 노출하는 셈이 된다).
+
+**`can_manage_space`가 아니면 이 값은 항상 `false`다.** 멤버 전원에게 상시로 뿌리면 누구나 익명 글 목록을 훑어 "지금 정지 중인 사람이 쓴 글"을 공짜로 골라낼 수 있다 — 아래 "익명 악용" 절이 `suspend_*`의 응답에 대해 명시적으로 감수하기로 한 유출(같은 사람인지 연결)을, 그 행동(정지 실행)에 드는 비용 없이 통째로 열어주는 셈이라 훨씬 나쁘다. 관리자에게만 보여도 그 연결 위험 자체는 남지만, 그건 이미 정지를 실행할 수 있는 바로 그 사람이라 새로운 위협면이 아니다.
+
 ### 글과 첨부
 
 | 함수                                                          | 인증                | 쓰기 | 목적                                                                              |

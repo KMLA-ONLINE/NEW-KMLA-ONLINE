@@ -1,15 +1,29 @@
 import { MoreHorizontalIcon } from "lucide-react"
+import { useState } from "react"
 import { Link } from "react-router"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog"
 import { Button } from "~/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
+
+// 삭제·익명 제한은 되돌리기 어렵거나(삭제) 애먼 사람을 처벌할 수 있어서(익명 제한) 드롭다운에서
+// 바로 실행하지 않고 확인 모달을 한 번 거친다. group-member-list.tsx의 소유권 이양 확인과 같은 패턴.
+type ConfirmAction = "delete" | "suspend-anonymity" | null
 
 // 게시물 ⋯ 메뉴. 권한이 **두 층**이라 항목마다 다른 걸 본다:
 // - 수정: 작성자 본인만(posts_update가 author_id=current_profile_id())
@@ -24,6 +38,7 @@ export function GroupPostMenu({
   isMine,
   isPinned,
   isAnonymous,
+  isAnonymitySuspended,
   canManage,
   canCurate,
   editTo,
@@ -32,70 +47,104 @@ export function GroupPostMenu({
   isPinned?: boolean
   /** 익명 글인지(author가 null). 익명 제한 항목은 익명 글에만 뜬다. */
   isAnonymous?: boolean
+  /**
+   * 이 글의 작성자가 지금 익명 정지 중인지(get_post/list_space_posts/list_feed_posts의
+   * is_author_anonymity_suspended). "익명 제한 취소"는 이 값이 true일 때만 뜬다 -- 정지 중이
+   * 아닌 글에 취소 버튼을 띄우면 눌러도 아무 일도 안 나는 죽은 버튼이 된다.
+   */
+  isAnonymitySuspended?: boolean
   /** owner/admin (can_manage_space). 남의 글 삭제·익명 제한. */
   canManage?: boolean
   /** owner/admin/manager (can_curate_space). 남의 글도 고정할 수 있다. */
   canCurate?: boolean
   editTo: string
 }) {
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
+
   if (!isMine && !canCurate) return null
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          className="text-muted-foreground"
-          aria-label="게시물 옵션"
-        >
-          <MoreHorizontalIcon className="size-4" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {isMine ? (
-          <DropdownMenuItem asChild>
-            <Link to={editTo}>수정</Link>
-          </DropdownMenuItem>
-        ) : null}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            aria-label="게시물 옵션"
+          >
+            <MoreHorizontalIcon className="size-4" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {isMine ? (
+            <DropdownMenuItem asChild>
+              <Link to={editTo}>수정</Link>
+            </DropdownMenuItem>
+          ) : null}
 
-        {/* TODO(backend): action에서 set_post_pinned(id, pinned) RPC. can_curate_space(매니저 포함)만
+          {/* TODO(backend): action에서 set_post_pinned(id, pinned) RPC. can_curate_space(매니저 포함)만
             통과하고 pinned_at/pinned_by는 서버가 찍는다(컬럼 grant로는 남의 글을 못 고정해서 RPC로 뒀다). */}
-        {canCurate ? <DropdownMenuItem>{isPinned ? "고정 해제" : "고정"}</DropdownMenuItem> : null}
+          {canCurate ? (
+            <DropdownMenuItem>{isPinned ? "고정 해제" : "고정"}</DropdownMenuItem>
+          ) : null}
 
-        {/* 매니저는 남의 글을 못 지운다(soft_delete_post는 작성자 또는 can_manage_space). 그래서
+          {/* 매니저는 남의 글을 못 지운다(soft_delete_post는 작성자 또는 can_manage_space). 그래서
             내 글이 아닌데 canManage도 아니면 -- 즉 매니저가 남의 글을 볼 때 -- 삭제는 안 띄운다. */}
-        {isMine || canManage ? (
-          <>
-            {isMine && canCurate ? <DropdownMenuSeparator /> : null}
-            {/* TODO(backend): action에서 soft_delete_post(id) RPC. 작성자 또는 관리자를 함수가 직접
-                검사하고, 첨부 blob은 삭제 큐로 넘어간다. */}
-            <DropdownMenuItem variant="destructive">삭제</DropdownMenuItem>
-          </>
-        ) : null}
+          {isMine || canManage ? (
+            <>
+              {isMine && canCurate ? <DropdownMenuSeparator /> : null}
+              {/* TODO(backend): 확인 후 action에서 soft_delete_post(id) RPC. 작성자 또는 관리자를 함수가
+                직접 검사하고, 첨부 blob은 삭제 큐로 넘어간다. */}
+              <DropdownMenuItem variant="destructive" onSelect={() => setConfirmAction("delete")}>
+                삭제
+              </DropdownMenuItem>
+            </>
+          ) : null}
 
-        {/* 익명 악용 대응. 관리자는 이 글의 작성자가 누구인지 끝내 알 수 없고, 그 사람의 익명 권한만
+          {/* 익명 악용 대응. 관리자는 이 글의 작성자가 누구인지 끝내 알 수 없고, 그 사람의 익명 권한만
             뺏는다. 밴이 아닌 이유: 밴은 목록을 관리자가 봐야 하고, 그러면 새로 뜬 한 명이 곧 작성자라
             익명이 깨진다. 익명 정지는 스스로 만료돼서 관리자가 볼 이유가 없다.
             형량은 서버가 정한다(1→2→4→8일…) -- 초범인지 상습범인지 관리자는 모르니 고를 수가 없다. */}
-        {canManage && isAnonymous ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-              작성자는 익명으로 남습니다
-            </DropdownMenuLabel>
-            {/* TODO(backend): suspend_post_author_anonymity(id). 응답의 suspended_days로
-                "N일간 익명 작성을 제한했습니다" 토스트를 띄운다. */}
-            <DropdownMenuItem>익명 작성 제한</DropdownMenuItem>
-            {/* TODO(backend): undo_post_anonymity_suspension(id). 현재 정지를 풀고 누범 단계를 하나
-                되돌린다("이번 건 없던 일로") -- 전과 말소가 아니라서 상습범이 초범으로 안 돌아간다.
-                void다: 무엇을 취소했는지 알려주면 아무도 다치지 않는 공짜 probe가 되어 익명 글을
-                작성자별로 묶을 수 있다(정지는 애먼 사람을 처벌하는 비용이 들지만 취소는 공짜다). */}
-            <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {canManage && isAnonymous ? (
+            <>
+              <DropdownMenuSeparator />
+              {/* TODO(backend): 확인 후 suspend_post_author_anonymity(id). 응답의 suspended_days로
+      "N일간 익명 작성을 제한했습니다" 토스트를 띄운다. */}
+              <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
+                익명 작성 제한
+              </DropdownMenuItem>
+              {isAnonymitySuspended ? <DropdownMenuItem>익명 제한 취소</DropdownMenuItem> : null}
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* 백엔드 미연동: 확인해도 모달만 닫힌다. 실제 RPC는 위 TODO(backend) 참고. */}
+      <AlertDialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+      >
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === "delete" ? "게시물을 삭제할까요?" : "익명 작성을 제한할까요?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === "delete"
+                ? "삭제된 게시물은 복구할 수 없습니다."
+                : "작성자는 익명으로 남습니다. 이 그룹에서 일정 기간 익명으로 글을 쓸 수 없게 됩니다."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmAction(null)}>취소</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => setConfirmAction(null)}>
+              {confirmAction === "delete" ? "삭제" : "제한"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
