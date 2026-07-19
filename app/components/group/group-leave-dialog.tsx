@@ -1,14 +1,12 @@
 import { Button } from "~/components/ui/button"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import type { GroupSpace } from "~/lib/group/types"
 
 // joinPolicy별로 "나가면 다시 어떻게 들어오는지"가 갈린다 -- 안내 없이 나가면 비공개 그룹은
@@ -33,35 +31,37 @@ export function GroupLeaveDialog({
   const isOwner = group.viewerRole === "owner"
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-md">
-        <AlertDialogHeader>
-          <AlertDialogTitle>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
             {isOwner ? "소유권을 먼저 넘겨야 해요" : `"${group.name}"에서 나가시겠어요?`}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
+          </DialogTitle>
+          <DialogDescription>
             {isOwner
               ? "그룹장은 소유권을 다른 멤버에게 넘긴 뒤에야 그룹을 나갈 수 있어요. 멤버 목록에서 소유권을 이양해 주세요."
               : REJOIN_HINT[group.joinPolicy]}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
           {isOwner ? (
             <Button type="button" onClick={() => onOpenChange(false)}>
               확인
             </Button>
           ) : (
             <>
-              <AlertDialogCancel onClick={() => onOpenChange(false)}>취소</AlertDialogCancel>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                취소
+              </Button>
               {/* TODO(backend): 확인 시 leave_space(group.id) RPC. space_members 행을 지우고
                 member_count를 줄인다. 성공하면 그룹 목록/피드로 리다이렉트해야 한다. */}
-              <AlertDialogAction variant="destructive" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="destructive" onClick={() => onOpenChange(false)}>
                 나가기
-              </AlertDialogAction>
+              </Button>
             </>
           )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

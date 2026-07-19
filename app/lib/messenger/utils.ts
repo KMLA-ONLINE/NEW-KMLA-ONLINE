@@ -84,7 +84,7 @@ export function getPinnedMessages(room: Room): Message[] {
     .sort((first, second) => (second.pinnedAt ?? "").localeCompare(first.pinnedAt ?? ""))
 }
 
-export function getLastMessage(room: { messages: Message[] }) {
+export function getLastMessage(room: Room) {
   for (let index = room.messages.length - 1; index >= 0; index -= 1) {
     const message = room.messages[index]
 
