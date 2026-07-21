@@ -9,6 +9,11 @@ import {
 } from "~/lib/profile/mock-data"
 import type { MyProfile } from "~/lib/profile/types"
 
+export const handle = {
+  showMobileHeader: false,
+  mobileContentEdge: "inset",
+}
+
 /** 편집 모달(자식 라우트)이 부모가 읽은 profile을 받는 문. 자기가 다시 읽지 않는다. */
 export type ProfileOutletContext = { profile: MyProfile }
 

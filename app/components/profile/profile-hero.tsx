@@ -106,10 +106,10 @@ export function ProfileHero({
   const meta = metaFacts(profile)
 
   return (
-    <section className="bg-card animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both overflow-hidden rounded-xl border duration-500">
+    <section className="bg-card animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both overflow-hidden rounded-xl border-0 duration-500 sm:border">
       {/* 커버가 없으면 그라디언트가 그대로 배너가 된다 -- 빈 회색 사각형보다 낫다. 데스크톱에선
           넓어진 열을 시원하게 받도록 배너를 더 높인다. */}
-      <div className="from-primary/30 to-primary/5 relative h-36 w-full overflow-hidden bg-linear-to-br sm:h-52 lg:h-60">
+      <div className="from-primary/30 to-primary/5 relative h-48 w-full overflow-hidden bg-linear-to-br sm:h-52 lg:h-60">
         {cover ? <img src={cover} alt="" className="size-full object-cover" /> : null}
         {isMe ? (
           // TODO(backend): uploadProfileCover(supabase, file). accept는 선택창 힌트일 뿐이라
@@ -120,7 +120,7 @@ export function ProfileHero({
               variant="outline"
               size="sm"
               onClick={() => coverInputRef.current?.click()}
-              className="absolute right-3 bottom-3 shadow-sm"
+              className="absolute top-3 right-3 shadow-sm sm:top-auto sm:bottom-3"
             >
               <ImageIcon data-icon="inline-start" aria-hidden="true" />
               <span className="max-sm:sr-only">커버 사진</span>
@@ -141,98 +141,97 @@ export function ProfileHero({
         ) : null}
       </div>
 
-      {/* 헤더 행과 소개글을 감싸는 패딩. 소개글은 이 행 밖(아래)에 둔다 -- 행 안에 두면 긴
-          소개가 행 높이를 밀어 아바타·버튼의 items-end 정렬이 그 높이에 딸려간다. */}
-      <div className="p-4 sm:p-5">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
-          <div className="relative -mt-16 w-fit shrink-0 sm:-mt-24">
-            <Avatar className="ring-card size-28 ring-4 sm:size-36">
-              {/* 이름이 바로 옆에 있으니 장식이다 -- 스크린리더가 같은 말을 두 번 읽지 않게 alt는 비운다. */}
-              {avatar ? <AvatarImage src={avatar} alt="" className="object-cover" /> : null}
-              <AvatarFallback className="text-3xl font-semibold">
-                {profileInitials(profile.name)}
-              </AvatarFallback>
-            </Avatar>
-            {isMe ? (
-              // TODO(backend): uploadAvatar(supabase, file). 커버와 같은 accept로 막고, mimetype
-              // 최종 검증은 finalize RPC가 맡는다.
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="프로필 사진 변경"
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="ring-card absolute right-0 bottom-1 rounded-full shadow-sm ring-2"
-                >
-                  <ImageIcon className="size-4" aria-hidden="true" />
-                </Button>
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) replaceAvatar(URL.createObjectURL(file))
-                    // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
-                    event.target.value = ""
-                  }}
-                />
-              </>
-            ) : null}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-2xl font-bold">{profile.name}</h1>
-              {/* 학생은 앱의 기본값이라 굳이 라벨을 달지 않는다. 선생님·졸업생만 표시한다. */}
-              {profile.type === "student" ? null : (
-                <Badge variant={profile.type === "teacher" ? "teacher" : "secondary"}>
-                  {PROFILE_TYPE_LABEL[profile.type]}
-                </Badge>
-              )}
-              {profile.role === "admin" ? (
-                <Badge variant="destructive" className="gap-1">
-                  <ShieldCheckIcon
-                    data-icon="inline-start"
-                    className="size-3.5"
-                    aria-hidden="true"
+      <div className="bg-card relative -mt-8 rounded-t-3xl p-4 sm:mt-0 sm:rounded-none sm:bg-transparent sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-5">
+          <div className="flex min-w-0 items-start gap-3 sm:contents">
+            <div className="relative -mt-12 w-fit shrink-0 sm:-mt-24">
+              <Avatar className="ring-card size-28 ring-4 sm:size-36">
+                {/* 이름이 바로 옆에 있으니 장식이다 -- 스크린리더가 같은 말을 두 번 읽지 않게 alt는 비운다. */}
+                {avatar ? <AvatarImage src={avatar} alt="" className="object-cover" /> : null}
+                <AvatarFallback className="text-3xl font-semibold">
+                  {profileInitials(profile.name)}
+                </AvatarFallback>
+              </Avatar>
+              {isMe ? (
+                // TODO(backend): uploadAvatar(supabase, file). 커버와 같은 accept로 막고, mimetype
+                // 최종 검증은 finalize RPC가 맡는다.
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="프로필 사진 변경"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="ring-card absolute right-0 bottom-1 rounded-full shadow-sm ring-2"
+                  >
+                    <ImageIcon className="size-4" aria-hidden="true" />
+                  </Button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (file) replaceAvatar(URL.createObjectURL(file))
+                      // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
+                      event.target.value = ""
+                    }}
                   />
-                  관리자
-                </Badge>
+                </>
               ) : null}
             </div>
 
-            {identity.length > 0 ? (
-              <p className="text-muted-foreground mt-1.5 text-sm">{identity.join(" · ")}</p>
-            ) : null}
+            <div className="min-w-0 flex-1 sm:pt-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-2xl font-bold">{profile.name}</h1>
+                {/* 학생은 앱의 기본값이라 굳이 라벨을 달지 않는다. 선생님·졸업생만 표시한다. */}
+                {profile.type === "student" ? null : (
+                  <Badge variant={profile.type === "teacher" ? "teacher" : "secondary"}>
+                    {PROFILE_TYPE_LABEL[profile.type]}
+                  </Badge>
+                )}
+                {profile.role === "admin" ? (
+                  <Badge variant="destructive" className="gap-1">
+                    <ShieldCheckIcon
+                      data-icon="inline-start"
+                      className="size-3.5"
+                      aria-hidden="true"
+                    />
+                    관리자
+                  </Badge>
+                ) : null}
+              </div>
 
-            {/* 부서·방 메타 스트립. 이름 밑 빈자리를 채워 헤더에 무게를 준다 -- 소속 요약이 "누구"라면
-              이 줄은 "어디서 뭘 하는지"다. 둘 다 없으면(값이 비면) 줄이 통째로 빠진다. */}
-            {meta.length > 0 ? (
-              <dl className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                {meta.map((fact, index) => (
-                  <div key={fact.label} className="flex items-center gap-1.5">
-                    {index > 0 ? <span aria-hidden="true" className="bg-border h-3 w-px" /> : null}
-                    <fact.icon className="size-4 shrink-0" aria-hidden="true" />
-                    <dt className="sr-only">{fact.label}</dt>
-                    <dd>{fact.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
-            {/* 이메일이 아니라 전화번호다. 이메일은 로그인 수단이라 계정 설정에 속하고, 학교 명부에서
-              사람을 실제로 찾을 때 쓰는 건 번호다. 없는 사람도 있으므로(선택값) 없으면 줄이 빠진다. */}
-            {profile.phone_number ? (
-              <a
-                href={`tel:${profile.phone_number}`}
-                className="text-muted-foreground hover:text-foreground mt-2 flex w-fit items-center gap-1.5 text-sm transition-colors"
-              >
-                <PhoneIcon className="size-4 shrink-0" aria-hidden="true" />
-                <span className="truncate">{formatPhoneNumber(profile.phone_number)}</span>
-              </a>
-            ) : null}
+              {identity.length > 0 ? (
+                <p className="text-muted-foreground mt-1.5 text-sm">{identity.join(" · ")}</p>
+              ) : null}
+
+              {meta.length > 0 ? (
+                <dl className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  {meta.map((fact, index) => (
+                    <div key={fact.label} className="flex items-center gap-1.5">
+                      {index > 0 ? (
+                        <span aria-hidden="true" className="bg-border h-3 w-px" />
+                      ) : null}
+                      <fact.icon className="size-4 shrink-0" aria-hidden="true" />
+                      <dt className="sr-only">{fact.label}</dt>
+                      <dd>{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+
+              {profile.phone_number ? (
+                <a
+                  href={`tel:${profile.phone_number}`}
+                  className="text-muted-foreground hover:text-foreground mt-2 flex w-fit items-center gap-1.5 text-sm transition-colors"
+                >
+                  <PhoneIcon className="size-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{formatPhoneNumber(profile.phone_number)}</span>
+                </a>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex gap-2 sm:pb-1">

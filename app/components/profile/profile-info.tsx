@@ -3,6 +3,7 @@ import { SchoolIcon, UserRoundIcon, type LucideIcon } from "lucide-react"
 import { Card, CardContent } from "~/components/ui/card"
 import { formatProfileValue } from "~/lib/profile/format"
 import type { MyProfile } from "~/lib/profile/types"
+import { cn } from "~/lib/utils"
 
 // 이전 화면에는 "전공"도 있었는데 그런 컬럼은 스키마에 없다 -- 저장될 곳이 없는 칸이었다.
 // 학번을 뺀 나머지는 편집 모달에서 고칠 수 있다(진급·전과·부서 이동으로 실제로 바뀐다).
@@ -58,16 +59,21 @@ function FactCard({
   fields,
   profile,
   delay,
+  className,
 }: {
   title: string
   icon: LucideIcon
   fields: readonly { field: Parameters<typeof formatProfileValue>[1]; label: string }[]
   profile: MyProfile
   delay: number
+  className?: string
 }) {
   return (
     <Card
-      className="animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-0 duration-500"
+      className={cn(
+        "animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-0 shadow-none ring-0 duration-500 sm:shadow-xs sm:ring-1",
+        className
+      )}
       style={{ animationDelay: `${delay}ms` }}
     >
       <CardContent className="flex flex-col gap-4 p-4 sm:p-5">
@@ -75,7 +81,7 @@ function FactCard({
           <Icon className="size-4" aria-hidden="true" />
           {title}
         </h2>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
+        <dl className="grid gap-4 sm:grid-cols-2">
           {fields.map((item) => (
             <Fact
               key={item.field}
