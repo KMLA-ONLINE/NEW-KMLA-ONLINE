@@ -49,10 +49,6 @@
 - In Markdown prose, write ranges as `1 ~ 100`, never `1~100`. Two unspaced tildes pair up into strikethrough syntax and the preview swallows everything between them. A hyphen (`1-100`) is safe either way.
 - In `docs/db/domains/`, arrange RPC and trigger tables by caller flow under headings, never by SQL declaration or alphabetic order. The canonical grouping rule is in `docs/db/README.md`.
 
-## Windows patching(codex)
-
-- If `apply_patch` fails with `windows sandbox ... apply deny-read ACLs`, do not retry it or the `apply_patch.bat` wrapper. Use the Codex patch engine directly with one UTF-8 PATCH argument only when the runner exposes it; otherwise report the tool limitation instead of attempting an unverified workaround.
-
 ## Imports / Aliases
 
 - The only verified TS path alias is `~/* -> app/*` in `tsconfig.json`.

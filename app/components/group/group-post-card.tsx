@@ -10,6 +10,7 @@ import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
+import { RichText } from "~/components/rich-text/rich-text"
 import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupPost } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
@@ -134,7 +135,9 @@ export function GroupPostCard({
             (clampable || expanded) && "pointer-coarse:cursor-pointer"
           )}
         >
-          <Twemoji text={post.content} />
+          {/* 미리보기라 인라인 서식(굵게/기울임)만: 제목 블록이 3줄 클램프에 끼지 않게 하고,
+              바깥 <p>가 그대로 한 요소로 남아 clamp 측정이 어긋나지 않는다. */}
+          <RichText text={post.content} mode="inline" />
         </p>
         {clampable || expanded ? (
           <button

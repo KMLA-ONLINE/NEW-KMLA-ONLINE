@@ -7,6 +7,7 @@ import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
+import { GroupContentEditor } from "~/components/group/group-content-editor"
 import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
@@ -145,12 +146,7 @@ export default function GroupEditPostPage() {
                   placeholder="제목"
                   className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
                 />
-                <textarea
-                  ref={contentRef}
-                  defaultValue={post.content}
-                  placeholder="내용을 입력하세요…"
-                  className="placeholder:text-muted-foreground min-h-40 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-6 outline-none"
-                />
+                <GroupContentEditor contentRef={contentRef} defaultValue={post.content} />
 
                 <GroupAttachmentPreview images={previewImages} files={previewFiles} />
               </div>
