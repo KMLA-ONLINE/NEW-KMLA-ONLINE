@@ -100,7 +100,7 @@ export default function GroupDiscoverPage() {
           {/* 결과와 같은(가라앉은) 검색어를 쓴다 -- 방금 친 글자를 쓰면 아직 그 결과가 아닌데
               "'코딩'과 맞는 그룹이 없습니다"라고 말하게 된다. */}
           <p>
-            {settled ? `“${settled}”와 맞는 그룹이 없습니다.` : "더 들어갈 비공식 그룹이 없습니다."}
+            {settled ? `“${settled}”와 맞는 그룹이 없습니다.` : "표시할 비공식 그룹이 없습니다."}
           </p>
           {hiddenMatches > 0 ? (
             <p>

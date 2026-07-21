@@ -74,7 +74,7 @@ function ReauthGate({ onUnlock }: { onUnlock: () => void }) {
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <LockIcon className="text-muted-foreground size-4" aria-hidden />
-            <h2 className="text-sm font-semibold">비밀번호를 입력해주세요</h2>
+            <h2 className="text-sm font-semibold">관리자 확인</h2>
           </div>
           <p className="text-muted-foreground text-xs">
             관리자 명단 확인을 위해 비밀번호를 입력해주세요.

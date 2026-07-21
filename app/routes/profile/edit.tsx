@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { CameraIcon, ImageIcon, XIcon } from "lucide-react"
+import { ImageIcon, XIcon } from "lucide-react"
 
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
 import { useModalClose } from "~/hooks/use-modal-close"
@@ -59,6 +59,43 @@ export default function ProfileEditPage() {
   const { isConfirmingDiscard, allowNextClose, confirmDiscard, cancelDiscard } =
     useCloseConfirmation(checkIsDirty)
 
+  // setup.tsx(온보딩)와 같은 입력 제약을 저장 전에 화면에서 건다 -- 안 그러면 나중에 백엔드를
+  // 붙였을 때 DB의 check(profiles_phone_number_check 등)가 조용히 거절하고, 사용자는 "왜 안 되지"만
+  // 남는다. 폼은 uncontrolled이라(위 주석 참고) 값은 DOM이 들고, 여기서는 형식 오류 메시지와
+  // 저장 가능 여부만 DOM에서 파생한다. sanitize(숫자만·자릿수 컷)는 각 입력의 onChange가 직접 한다.
+  const formRef = useRef<HTMLFormElement>(null)
+  const [phoneError, setPhoneError] = useState("")
+  const [cohortError, setCohortError] = useState("")
+  const [canSave, setCanSave] = useState(true)
+
+  const validate = () => {
+    const form = formRef.current
+    if (!form) return
+    const read = (name: string) =>
+      (form.elements.namedItem(name) as HTMLInputElement | null)?.value.trim() ?? ""
+
+    const name = read("name")
+    const phone = read("phone_number")
+    // 학생이 아니면 기수 칸 자체가 없다(namedItem은 null -> "").
+    const cohort = read("cohort")
+    const classNo = read("class_no")
+    const dormRoom = read("dorm_room")
+
+    const phoneOk = !phone || /^\d{10,11}$/.test(phone)
+    const cohortOk = !isStudent || /^\d{2}$/.test(cohort)
+    const classNoOk = !classNo || (Number(classNo) >= 1 && Number(classNo) <= 10)
+    const dormRoomOk = !dormRoom || Number(dormRoom) >= 1
+
+    setCanSave(Boolean(name) && phoneOk && cohortOk && classNoOk && dormRoomOk)
+  }
+
+  // 첫 렌더에서도 defaultValue들이 규칙을 만족하는지 확인해 저장 버튼 상태를 맞춘다.
+  useEffect(() => {
+    validate()
+    // 마운트 시 한 번만. validate는 DOM에서 읽으므로 의존성이 없다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && close()}>
@@ -74,6 +111,7 @@ export default function ProfileEditPage() {
             <DialogDescription className="sr-only">프로필 정보를 수정합니다.</DialogDescription>
             <Button
               size="sm"
+              disabled={!canSave}
               onClick={() => {
                 allowNextClose()
                 close()
@@ -85,9 +123,13 @@ export default function ProfileEditPage() {
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <form
+              ref={formRef}
               className="grid gap-5"
               aria-label="프로필 편집 양식"
-              onChange={() => setIsDirty(true)}
+              onChange={() => {
+                setIsDirty(true)
+                validate()
+              }}
             >
               {/* 사진은 프로필 화면의 커버·아바타 위에서 바꾼다. 여기서는 그 자리로 보내기만 한다 --
                   같은 동작을 두 곳에 두면 한쪽이 낡는다. */}
@@ -145,15 +187,33 @@ export default function ProfileEditPage() {
                 </Field>
 
                 <Field label="전화번호" htmlFor="phone_number">
+                  {/* 하이픈은 아예 못 넣게 숫자만 남긴다 -- profiles_phone_number_check가 `^\+?[0-9]{8,15}$`라
+                      `010-1234-5678`을 그대로 보내면 DB가 거절한다. 앱 규칙은 setup과 같은 10~11자리. */}
                   <Input
                     id="phone_number"
                     name="phone_number"
                     type="tel"
-                    inputMode="tel"
+                    inputMode="numeric"
+                    maxLength={11}
                     defaultValue={profile.phone_number ?? ""}
                     placeholder="01012345678"
                     autoComplete="tel"
+                    aria-invalid={!!phoneError}
+                    onChange={(event) => {
+                      const digits = event.target.value.replace(/\D/g, "").slice(0, 11)
+                      event.target.value = digits
+                      setPhoneError(
+                        digits && !/^\d{10,11}$/.test(digits)
+                          ? "전화번호는 10~11자리 숫자여야 합니다."
+                          : ""
+                      )
+                    }}
                   />
+                  {phoneError ? (
+                    <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                      {phoneError}
+                    </p>
+                  ) : null}
                 </Field>
               </div>
 
@@ -163,16 +223,28 @@ export default function ProfileEditPage() {
                 {isStudent ? (
                   <>
                     <Field label="기수" htmlFor="cohort">
+                      {/* setup과 같은 규칙: 2자리 숫자. 숫자만 남기고 2자리에서 자른다. */}
                       <Input
                         id="cohort"
                         name="cohort"
-                        type="number"
                         inputMode="numeric"
-                        min={1}
-                        max={100}
+                        maxLength={2}
                         required
                         defaultValue={profile.cohort ?? ""}
+                        aria-invalid={!!cohortError}
+                        onChange={(event) => {
+                          const digits = event.target.value.replace(/\D/g, "").slice(0, 2)
+                          event.target.value = digits
+                          setCohortError(
+                            digits && !/^\d{2}$/.test(digits) ? "기수는 2자리 숫자여야 합니다." : ""
+                          )
+                        }}
                       />
+                      {cohortError ? (
+                        <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                          {cohortError}
+                        </p>
+                      ) : null}
                     </Field>
 
                     <Field label="계열" htmlFor="track">
@@ -195,13 +267,16 @@ export default function ProfileEditPage() {
                 ) : null}
 
                 <Field label="반" htmlFor="class_no">
+                  {/* 기수와 같은 방식으로 숫자만 2자리까지. 범위(1~10)는 validate가 저장 전에 본다. */}
                   <Input
                     id="class_no"
                     name="class_no"
-                    type="number"
                     inputMode="numeric"
-                    min={1}
+                    maxLength={2}
                     defaultValue={profile.class_no ?? ""}
+                    onChange={(event) => {
+                      event.target.value = event.target.value.replace(/\D/g, "").slice(0, 2)
+                    }}
                   />
                 </Field>
 
@@ -321,7 +396,7 @@ function DiscardConfirm({
 function PhotoShortcut() {
   return (
     <div className="bg-muted/40 text-muted-foreground flex items-start gap-2.5 rounded-lg p-3 text-xs">
-      <CameraIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <ImageIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <p>
         프로필 사진과 커버 사진은 프로필 화면의 사진 위{" "}
         <ImageIcon className="inline size-3.5 align-text-bottom" aria-hidden="true" /> 버튼에서
