@@ -7,20 +7,11 @@ import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
+import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -114,9 +105,9 @@ export default function GroupNewPostPage() {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
             {/* 아바타를 눌러 익명 ↔ 실명 전환. 작성할 때만 정할 수 있고 올린 뒤엔 못 바꾼다
-              (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다.
-              그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
-              거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
+                (is_anonymous가 update 컬럼 grant에 없다) -- 그래서 수정 화면엔 이 토글이 없다.
+                그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
+                거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
             <div className="flex items-center gap-3">
               {canPostAnonymously ? (
                 <GroupAnonymousToggle
@@ -140,7 +131,7 @@ export default function GroupNewPostPage() {
             </div>
 
             {/* shadcn Input/Textarea 대신 plain 요소 -- Textarea의 field-sizing-content가
-              입력마다 레이아웃을 재계산해 렉을 유발한다(messenger 컴포저도 같은 이유로 회피). */}
+                입력마다 레이아웃을 재계산해 렉을 유발한다(messenger 컴포저도 같은 이유로 회피). */}
             <input
               ref={titleRef}
               type="text"
@@ -171,22 +162,11 @@ export default function GroupNewPostPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={isConfirmingDiscard} onOpenChange={(open) => !open && cancelDiscard()}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>저장하지 않고 나갈까요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              지금까지 작성한 내용이 사라지며 복구할 수 없습니다.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelDiscard}>계속 작성</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={confirmDiscard}>
-              나가기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <GroupDiscardDialog
+        open={isConfirmingDiscard}
+        onCancel={cancelDiscard}
+        onDiscard={confirmDiscard}
+      />
     </>
   )
 }

@@ -7,20 +7,11 @@ import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
+import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
 import { useFileDrop } from "~/hooks/use-file-drop"
 import { useModalClose } from "~/hooks/use-modal-close"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "~/components/ui/alert-dialog"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -120,8 +111,7 @@ export default function GroupEditPostPage() {
             <DialogTitle className="flex-1 text-base">게시물 수정</DialogTitle>
             <DialogDescription className="sr-only">게시물을 수정합니다.</DialogDescription>
             {/* TODO(backend): update_post RPC 연동 시 성공 응답을 받은 뒤에만 close()를 부른다.
-                실패하면 모달을 닫지 않고 에러 토스트만 보여준 채 제목/본문/첨부/카테고리(draft)를
-                그대로 유지해, 사용자가 다시 시도하거나 고쳐 쓸 수 있게 한다. */}
+                실패하면 모달을 닫지 않고 수정 중인 값을 그대로 유지해야 한다. */}
             <Button
               size="sm"
               onClick={() => {
@@ -137,9 +127,9 @@ export default function GroupEditPostPage() {
             <>
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
                 {/* 여기엔 익명 토글이 없다. is_anonymous는 작성 시점에만 정해지고 update 컬럼
-                  grant에서 빠져 있어 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에
-                  실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
-                  글이 익명이면(author가 null) 그 사실만 보여준다. */}
+                    grant에서 빠져 있어 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에
+                    실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
+                    글이 익명이면(author가 null) 그 사실만 보여준다. */}
                 <div className="flex items-center gap-3">
                   <GroupAuthorAvatar name="나" anonymous={isAnonymous} size="lg" />
                   <div className="text-sm leading-tight">
@@ -186,22 +176,14 @@ export default function GroupEditPostPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={isConfirmingDiscard} onOpenChange={(open) => !open && cancelDiscard()}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>저장하지 않고 나갈까요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              수정한 내용이 사라지며 복구할 수 없습니다.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelDiscard}>계속 작성</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={confirmDiscard}>
-              나가기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <GroupDiscardDialog
+        open={isConfirmingDiscard}
+        onCancel={cancelDiscard}
+        onDiscard={confirmDiscard}
+        title="수정을 취소할까요?"
+        description="변경한 내용이 저장되지 않고 사라져요."
+        discardLabel="변경 취소"
+      />
     </>
   )
 }

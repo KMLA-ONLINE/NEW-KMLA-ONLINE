@@ -9,10 +9,8 @@ import type { GroupPostReactor } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
-// 상단 필터 버튼 한 칸. -mb-px로 버튼 아래 테두리를 헤더의 border-b 위에 겹쳐, 활성 밑줄이 구분선에
+// 상단 필터 탭 한 칸. -mb-px로 버튼 아래 테두리를 헤더의 border-b 위에 겹쳐, 활성 밑줄이 구분선에
 // 딱 붙게 한다(페북과 같은 밑줄 탭). Radix Tabs의 line 변형은 밑줄을 5px 띄워 이 배치와 안 맞는다.
-// 진짜 Tabs가 아니라 목록을 필터링하는 토글 버튼일 뿐이다(화살표 키 이동 등 tab 역할이 요구하는
-// 키보드 동작을 구현하지 않았다) -- 그래서 role="tab"/tablist 대신 aria-pressed/group을 쓴다.
 function ReactionTab({
   active,
   onClick,
@@ -25,7 +23,8 @@ function ReactionTab({
   return (
     <button
       type="button"
-      aria-pressed={active}
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={cn(
         "-mb-px flex flex-none items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors",
@@ -102,7 +101,7 @@ export function GroupReactionListDialog({
 
         <div className="flex shrink-0 items-center border-b pr-2">
           <div
-            role="group"
+            role="tablist"
             aria-label="반응 종류"
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden px-2"
           >
