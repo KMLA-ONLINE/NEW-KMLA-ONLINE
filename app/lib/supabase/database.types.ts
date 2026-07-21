@@ -1850,6 +1850,33 @@ export type Database = {
           wrapped_user_key: string
         }[]
       }
+      get_my_profile: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          birthday: string
+          class_no: number
+          cohort: number
+          cover_image_url: string
+          created_at: string
+          department: string
+          description: string
+          dorm_room: number
+          gender: Database["public"]["Enums"]["profile_gender"]
+          id: number
+          is_reenrolled: boolean
+          name: string
+          onboarding_completed_at: string
+          phone_number: string
+          role: Database["public"]["Enums"]["app_role"]
+          status: Database["public"]["Enums"]["profile_status"]
+          status_updated_at: string
+          student_number: string
+          track: Database["public"]["Enums"]["profile_track"]
+          type: Database["public"]["Enums"]["profile_type"]
+          updated_at: string
+        }[]
+      }
       get_post: {
         Args: { p_pub_id: string }
         Returns: {

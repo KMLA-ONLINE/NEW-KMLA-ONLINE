@@ -17,7 +17,8 @@ import { ThemeSelect } from "~/components/menu/theme-select"
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { mockAppAdmins, mockPendingProfiles } from "~/lib/admin/mock-data"
-import { mockProfile } from "~/lib/profile/mock-data"
+import { profileInitials } from "~/lib/profile/format"
+import { mockProfile, mockProfileEmail } from "~/lib/profile/mock-data"
 import { cn } from "~/lib/utils"
 
 function MenuSection({ title, children }: { title: string; children: ReactNode }) {
@@ -101,21 +102,28 @@ export default function MenuPage() {
         className="bg-card hover:bg-muted/60 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors"
       >
         <Avatar className="size-12">
-          <AvatarFallback className="text-base">{mockProfile.initials}</AvatarFallback>
+          <AvatarFallback className="text-base">{profileInitials(mockProfile.name)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">
             {mockProfile.name}
-            <span className="text-muted-foreground ml-1.5 font-normal">{mockProfile.cohort}기</span>
+            {/* 기수는 학생에게만 있다(선생님·졸업생은 null). 없으면 아무것도 그리지 않는다. */}
+            {mockProfile.cohort === null ? null : (
+              <span className="text-muted-foreground ml-1.5 font-normal">
+                {mockProfile.cohort}기
+              </span>
+            )}
           </p>
-          <p className="text-muted-foreground truncate text-xs">{mockProfile.email}</p>
+          <p className="text-muted-foreground truncate text-xs">{mockProfileEmail}</p>
         </div>
         <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
       </Link>
 
       <MenuSection title="계정">
-        <MenuRow icon={UserRoundIcon} label="프로필 편집" to="/profile/edit" />
-        <MenuRow icon={KeyRoundIcon} label="비밀번호 변경" to="/profile/password" />
+        {/* 편집은 프로필 위에 뜨는 모달이라 프로필로 보낸다 -- /profile이 내 id로 redirect하고,
+            거기서 "프로필 편집" 버튼이 모달을 연다. */}
+        <MenuRow icon={UserRoundIcon} label="프로필" to="/profile" />
+        <MenuRow icon={KeyRoundIcon} label="비밀번호 변경" to="/menu/password" />
         <MenuRow icon={BellIcon} label="알림 설정" to="/menu/notifications" />
       </MenuSection>
 

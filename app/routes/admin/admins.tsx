@@ -55,7 +55,7 @@ type Confirmation = {
 // 못한다(세션 토큰으로 RPC를 직접 부르면 그만이다). 그걸 진짜로 막으려면 재인증 사실이 서버에
 // 남아야 하고 -- AAL 클레임이나 짧은 수명의 nonce -- 그건 별도 작업이다.
 //
-// TODO(backend): 비밀번호는 우리 서버를 지나가면 안 된다(profile/password와 같은 이유). 브라우저가
+// TODO(backend): 비밀번호는 우리 서버를 지나가면 안 된다(menu/password와 같은 이유). 브라우저가
 // masterKey에서 authHash를 유도해 supabase.auth.signInWithPassword로 재검증하고, 성공하면 그때
 // 화면을 연다. 지금은 아무 값이나 통과한다.
 function ReauthGate({ onUnlock }: { onUnlock: () => void }) {
@@ -74,7 +74,7 @@ function ReauthGate({ onUnlock }: { onUnlock: () => void }) {
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <LockIcon className="text-muted-foreground size-4" aria-hidden />
-            <h2 className="text-sm font-semibold">비밀번호를 입력해주세요</h2>
+            <h2 className="text-sm font-semibold">관리자 확인</h2>
           </div>
           <p className="text-muted-foreground text-xs">
             관리자 명단 확인을 위해 비밀번호를 입력해주세요.

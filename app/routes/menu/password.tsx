@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { ArrowLeftIcon, CheckCircle2, Loader2 } from "lucide-react"
-import { Link, useNavigate } from "react-router"
+import { CheckCircle2, Loader2 } from "lucide-react"
+import { useNavigate } from "react-router"
 
+import { MenuSubHeader } from "~/components/menu/menu-sub-header"
 import { WrongPasswordError } from "~/lib/crypto/account"
 import { changeVaultPassword } from "~/lib/crypto/vault"
 import { createClient } from "~/lib/supabase/client"
@@ -82,15 +83,11 @@ export default function ProfilePasswordPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-lg flex-col gap-4">
-      <Button asChild variant="ghost" className="w-fit px-0 hover:bg-transparent">
-        <Link to="/profile">
-          <ArrowLeftIcon className="size-4" />
-        </Link>
-      </Button>
+      <MenuSubHeader title="비밀번호 변경" />
 
       <Card className="border-border/70 shadow-xs">
+        {/* 제목은 MenuSubHeader가 이미 이고 있다. 카드에 또 달면 같은 말이 두 번 뜬다. */}
         <CardHeader>
-          <h1 className="font-heading text-2xl leading-normal font-medium">비밀번호 변경</h1>
           <CardDescription>현재 비밀번호로 확인한 뒤 새 비밀번호로 바꿉니다.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -100,8 +97,8 @@ export default function ProfilePasswordPage() {
                 <CheckCircle2 className="size-7" aria-hidden="true" />
               </div>
               <p className="text-foreground text-sm font-medium">비밀번호가 변경되었습니다.</p>
-              <Button onClick={() => navigate("/profile")} className="h-10 w-full">
-                프로필로 돌아가기
+              <Button onClick={() => navigate("/menu")} className="h-10 w-full">
+                메뉴로 돌아가기
               </Button>
             </div>
           ) : session === undefined ? (

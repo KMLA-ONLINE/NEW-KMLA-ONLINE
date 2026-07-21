@@ -31,6 +31,7 @@ Source: [`supabase/schemas/01-identity.sql`](../../../supabase/schemas/01-identi
 
 | 함수                                 | 인증                                                     | 쓰기 | 목적                                                        |
 | ------------------------------------ | -------------------------------------------------------- | ---- | ----------------------------------------------------------- |
+| `get_my_profile()`                   | 본인 profile (accepted 불필요, soft-delete 제외)         | X    | 호출자 본인 행 1개. 인자가 없다 — 남의 행을 요구할 방법 자체가 없다 |
 | `submit_onboarding(...)`             | 본인 profile (`none`/`rejected` 상태만, accepted 불필요) | O    | onboarding 정보 저장, status →`pending`                     |
 | `finalize_avatar(storage_path)`      | 본인 profile                                             | O    | 업로드된 avatar object 검증 후`avatar_url` 연결             |
 | `finalize_cover_image(storage_path)` | 본인 profile                                             | O    | 업로드된 profile cover object 검증 후`cover_image_url` 연결 |
@@ -70,6 +71,21 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 `track`은 국내반/국제반 배정이라 학생에게만 요구한다. 선생님·졸업생은 `track` 없이 온보딩할 수 있다.
 
+## 본인이 고칠 수 있는 필드
+
+승인 이후의 profile 편집은 RPC가 아니라 **컬럼 단위 update grant**가 가른다 (`profiles_update` 정책이 행을 본인으로 잠그고, grant가 컬럼을 자른다).
+
+- 열려 있음: `name`, `gender`, `phone_number`, `birthday`, `description`, `cohort`, `class_no`, `track`, `department`, `dorm_room`
+- 닫혀 있음: `student_number`, `role`, `status`, `type`, `avatar_url`, `cover_image_url`, `is_reenrolled`
+
+`student_number`만 학교 정보 중 유일하게 닫혀 있다. 심사에서 신원을 대조한 값이고 unique 제약이 걸려 있어, 열어두면 남의 학번을 선점하거나 심사받은 신원과 다른 사람이 될 수 있다. 나머지 학교 필드는 진급·전과·부서 이동으로 실제로 바뀌는 값이라 매번 관리자를 거치게 하지 않는다.
+
+grant를 넓혀도 무결성은 constraint가 계속 잡는다 — 학생은 `cohort`/`track`을 null로 비울 수 없고(`profiles_student_identity_check`, `profiles_track_required_check`), `cohort`는 1 ~ 100, `class_no`·`dorm_room`은 양수, `department`는 `profile_departments` FK 안의 이름이어야 한다.
+
+`avatar_url`/`cover_image_url`은 update grant가 없다. 업로드된 object를 검증해 붙이는 `finalize_avatar`/`finalize_cover_image`가 유일한 문이다.
+
+프로필 화면(`/profile/:profileId`)은 본인과 남을 같은 라우트로 그린다. 편집 컨트롤만 본인 여부로 갈리므로, `get_my_profile()`의 `id`와 URL의 `:profileId`를 비교하는 것이 그 판정이다 — 화면 혼자서는 계산할 수 없는 값이다.
+
 ## Private helper
 
 | 함수                                        | 용도                                                                                                                                                                            |
@@ -95,6 +111,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 ## 주의
 
 - profile 생성 경로는 Auth trigger뿐이다. user metadata는 이름 외에 role/status 판정에 쓰지 않는다.
+- **`get_my_profile()`이 없으면 클라이언트는 자기 행을 고를 수 없다.** `profiles_select`는 본인 행을 이미 열어두지만 `auth_user_id`가 컬럼 grant에서 빠져 있어 `where auth_user_id = auth.uid()`를 쓸 수 없고, `profiles.id`는 로그인만으로 알 수 없다. 이 함수는 그 한 칸만 메운다 — 돌려주는 컬럼 집합이 select 컬럼 grant와 같아서(`auth_user_id`·`status_updated_by` 제외) 새로 여는 정보는 없다.
 - **app admin은 admin끼리 늘리고 줄인다.** `profiles.role`은 update grant에 없어서 `set_app_admin`/`unset_app_admin`이 유일한 문이다. 첫 한 명만 예외로 `bootstrap_first_app_admin`(service_role, admin이 0명일 때만)이 세운다.
 - **마지막 admin은 강등되지 않는다.** 0명이 되는 순간 다시 세우는 길이 service_role뿐이라 앱 안에서 복구할 수 없다. 동시에 서로를 내리는 경합도 같은 구멍으로 새므로 `unset_app_admin`은 bootstrap과 **같은 키**의 advisory lock으로 직렬화한다 — 둘이 각자 "나 말고 한 명 더 있네"를 보고 통과하면 결과는 0명이다.
 - 강등은 임명의 짝이면서 **탈퇴의 전제**이기도 하다. `withdraw_profile`이 admin의 탈퇴를 거부하므로, 강등이 없으면 한번 admin이 된 사람은 계정을 지울 수 없다.

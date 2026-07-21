@@ -73,7 +73,7 @@ export default function AdminApprovalsPage() {
         />
         <p className="text-muted-foreground text-sm">
           {queue.length > 0
-            ? "오래 기다린 신청이 위에 있습니다."
+            ? "신청일 순으로 표시됩니다."
             : "새로 가입한 사람의 학교 정보를 확인하고 승인합니다."}
         </p>
       </div>
@@ -124,8 +124,7 @@ export default function AdminApprovalsPage() {
           {/* 거절은 차단이 아니다 -- submit_onboarding이 'rejected' 상태에서 다시 들어온다.
               심사자가 이걸 알아야 거절 버튼을 누를 수 있다. */}
           <p className="text-muted-foreground text-xs">
-            거절해도 다시 신청할 수 있습니다. 정보가 잘못된 경우 거절하면 신청자가 수정해서 다시
-            제출합니다.
+            거절된 사용자는 정보를 수정해 다시 신청할 수 있습니다.
           </p>
         </>
       )}

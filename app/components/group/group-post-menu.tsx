@@ -64,7 +64,10 @@ export function GroupPostMenu({
 
   return (
     <>
-      <DropdownMenu>
+      {/* 삭제·익명 제한 AlertDialog와 수정 라우트 Dialog를 여는 메뉴라 non-modal이다. 메뉴와
+          뒤이어 열리는 모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이
+          풀리지 않아 페이지 전체가 클릭 불가가 된다. */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
