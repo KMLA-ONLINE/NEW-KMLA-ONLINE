@@ -60,6 +60,7 @@ function Card({ children }: { children: React.ReactNode }) {
 export default function CreateSpacePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const groupsHomeTo = searchParams.size > 0 ? `/groups?${searchParams}` : "/groups"
 
   // 개발용 미리보기. TODO(backend): 로더가 profiles.role='admin'을 내려준다. 공식 그룹은 app
   // admin만 만든다 -- 이름이 곧 권위라(spaces_active_group_name_key) 아무나 '학생회'를 선점하면
@@ -92,7 +93,7 @@ export default function CreateSpacePage() {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Link
-          to="/groups"
+          to={groupsHomeTo}
           className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm transition-colors"
         >
           <ChevronLeftIcon className="size-4" aria-hidden />
@@ -226,7 +227,7 @@ export default function CreateSpacePage() {
       </Card>
 
       <div className="flex justify-end gap-2 px-4 sm:px-0">
-        <Button type="button" variant="ghost" onClick={() => navigate("/groups")}>
+        <Button type="button" variant="ghost" onClick={() => navigate(groupsHomeTo)}>
           취소
         </Button>
         <Button type="button" onClick={submit} disabled={!canSubmit}>

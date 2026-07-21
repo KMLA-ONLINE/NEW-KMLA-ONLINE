@@ -89,13 +89,35 @@ alter table public.profiles
     or type <> 'student'
     or (student_number is not null and cohort is not null)
   ),
-  -- Track is the student's 국내반/국제반 stream, so only students carry one.
-  -- Same exemption as profiles_student_identity_check above.
+  -- Track is a 국내반/국제반 stream. DB는 학생에게만 필수로 강제하고, 졸업생은 학적 정보를
+  -- 보존할 수 있다. 학생 제약만 profiles_student_identity_check와 같은 예외를 둔다.
   add constraint profiles_track_required_check check (
     deleted_at is not null
     or status = 'none'
     or type <> 'student'
     or track is not null
+  ),
+  -- 역할이 달라지면 의미도 달라지는 칼럼은 빈 값으로 고정한다. 그렇지 않으면 직접 UPDATE나
+  -- 온보딩 RPC 호출로 화면에 없는 정보가 남아, 역할을 바꾼 뒤에도 예전 학적이 섞인다.
+  add constraint profiles_type_field_shape_check check (
+    deleted_at is not null
+    or type = 'student'
+    or (
+      type = 'teacher'
+      and student_number is null
+      and class_no is null
+      and cohort is null
+      and gender is null
+      and track is null
+      and department is null
+      and dorm_room is null
+    )
+    or (
+      type = 'alumni'
+      and class_no is null
+      and department is null
+      and dorm_room is null
+    )
   ),
   add constraint profiles_name_check check (char_length(btrim(name)) between 1 and 50),
   add constraint profiles_description_check check (
@@ -215,6 +237,21 @@ as $$
     from private.profile_auth_map as p
     where p.auth_user_id = (select auth.uid())
       and p.status = 'accepted'
+      and p.deleted_at is null
+  )
+$$;
+
+create function private.is_teacher()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists(
+    select 1 from public.profiles p
+    where p.auth_user_id = (select auth.uid())
+      and p.type = 'teacher'
       and p.deleted_at is null
   )
 $$;
@@ -430,6 +467,7 @@ grant usage on schema public, private to authenticated;
 grant execute on function private.current_profile_id() to authenticated;
 grant execute on function private.has_active_profile() to authenticated;
 grant execute on function private.is_accepted_user() to authenticated;
+grant execute on function private.is_teacher() to authenticated;
 
 grant select on table public.profile_departments, public.permissions, public.user_permissions to authenticated;
 -- profiles만 컬럼 단위다. auth_user_id(내부 auth UUID)와 status_updated_by는 뺀다. 후자는

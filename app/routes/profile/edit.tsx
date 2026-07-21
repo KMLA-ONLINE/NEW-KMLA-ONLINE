@@ -47,8 +47,10 @@ export default function ProfileEditPage() {
   const { profile } = useProfileContext()
   // 딥링크로 들어오면 돌아갈 히스토리가 없다. 그때는 프로필 본문으로 replace 이동한다.
   const close = useModalClose("..")
-  // 학생만 기수·계열을 갖는다. 선생님·졸업생에게는 그 두 칸이 애초에 존재하지 않는다.
+  // 기수·계열은 재학생과 졸업생이, 부서·반·방은 재학생만 갖는다.
   const isStudent = profile.type === "student"
+  const isTeacher = profile.type === "teacher"
+  const hasCohortAndTrack = profile.type === "student" || profile.type === "alumni"
 
   // 칸이 열 개라 각각 ref로 원래 값과 대조하는 대신, 폼 전체의 변경 이벤트 하나로 dirty를 잡는다.
   // Select(Radix)는 native input이 아니라 ref 대조가 애초에 통하지 않기도 한다. 되돌려 놓아도
@@ -76,13 +78,13 @@ export default function ProfileEditPage() {
 
     const name = read("name")
     const phone = read("phone_number")
-    // 학생이 아니면 기수 칸 자체가 없다(namedItem은 null -> "").
+    // 재학생·졸업생이 아니면 기수 칸 자체가 없다(namedItem은 null -> "").
     const cohort = read("cohort")
     const classNo = read("class_no")
     const dormRoom = read("dorm_room")
 
     const phoneOk = !phone || /^\d{10,11}$/.test(phone)
-    const cohortOk = !isStudent || /^\d{2}$/.test(cohort)
+    const cohortOk = !hasCohortAndTrack || /^\d{2}$/.test(cohort)
     const classNoOk = !classNo || (Number(classNo) >= 1 && Number(classNo) <= 10)
     const dormRoomOk = !dormRoom || Number(dormRoom) >= 1
 
@@ -159,23 +161,25 @@ export default function ProfileEditPage() {
               </Field>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="성별" htmlFor="gender">
-                  {/* 성별은 온보딩에서도 선택값이라 비어 있을 수 있다. defaultValue가 undefined면
-                      placeholder가 그대로 남는다. */}
-                  <Select
-                    name="gender"
-                    defaultValue={profile.gender ?? undefined}
-                    onValueChange={() => setIsDirty(true)}
-                  >
-                    <SelectTrigger id="gender" className="w-full">
-                      <SelectValue placeholder="선택 안 함" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">{GENDER_LABEL.male}</SelectItem>
-                      <SelectItem value="female">{GENDER_LABEL.female}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
+                {!isTeacher ? (
+                  <Field label="성별" htmlFor="gender">
+                    {/* 성별은 온보딩에서도 선택값이라 비어 있을 수 있다. defaultValue가 undefined면
+                        placeholder가 그대로 남는다. */}
+                    <Select
+                      name="gender"
+                      defaultValue={profile.gender ?? undefined}
+                      onValueChange={() => setIsDirty(true)}
+                    >
+                      <SelectTrigger id="gender" className="w-full">
+                        <SelectValue placeholder="선택 안 함" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="male">{GENDER_LABEL.male}</SelectItem>
+                        <SelectItem value="female">{GENDER_LABEL.female}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
 
                 <Field label="생일" htmlFor="birthday">
                   <Input
@@ -220,7 +224,7 @@ export default function ProfileEditPage() {
               <SectionDivider label="학교" />
 
               <div className="grid gap-5 sm:grid-cols-2">
-                {isStudent ? (
+                {hasCohortAndTrack ? (
                   <>
                     <Field label="기수" htmlFor="cohort">
                       {/* setup과 같은 규칙: 2자리 숫자. 숫자만 남기고 2자리에서 자른다. */}
@@ -266,52 +270,60 @@ export default function ProfileEditPage() {
                   </>
                 ) : null}
 
-                <Field label="반" htmlFor="class_no">
-                  {/* 기수와 같은 방식으로 숫자만 2자리까지. 범위(1~10)는 validate가 저장 전에 본다. */}
-                  <Input
-                    id="class_no"
-                    name="class_no"
-                    inputMode="numeric"
-                    maxLength={2}
-                    defaultValue={profile.class_no ?? ""}
-                    onChange={(event) => {
-                      event.target.value = event.target.value.replace(/\D/g, "").slice(0, 2)
-                    }}
-                  />
-                </Field>
+                {isStudent ? (
+                  <>
+                    <Field label="부서" htmlFor="department">
+                      {/* 자유 입력이 아니라 lookup FK다(profile_departments). 목록 밖의 이름은 DB가
+                          거절하므로 텍스트 입력을 주면 안 된다. */}
+                      <Select
+                        name="department"
+                        defaultValue={profile.department ?? undefined}
+                        onValueChange={() => setIsDirty(true)}
+                      >
+                        <SelectTrigger id="department" className="w-full">
+                          <SelectValue placeholder="선택 안 함" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mockProfileDepartments.map((department) => (
+                            <SelectItem key={department.name} value={department.name}>
+                              {department.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </>
+                ) : null}
 
-                <Field label="방" htmlFor="dorm_room">
-                  <Input
-                    id="dorm_room"
-                    name="dorm_room"
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    placeholder="305"
-                    defaultValue={profile.dorm_room ?? ""}
-                  />
-                </Field>
+                {isStudent ? (
+                  <>
+                    <Field label="반" htmlFor="class_no">
+                      {/* 기수와 같은 방식으로 숫자만 2자리까지. 범위(1~10)는 validate가 저장 전에 본다. */}
+                      <Input
+                        id="class_no"
+                        name="class_no"
+                        inputMode="numeric"
+                        maxLength={2}
+                        defaultValue={profile.class_no ?? ""}
+                        onChange={(event) => {
+                          event.target.value = event.target.value.replace(/\D/g, "").slice(0, 2)
+                        }}
+                      />
+                    </Field>
 
-                <Field label="부서" htmlFor="department">
-                  {/* 자유 입력이 아니라 lookup FK다(profile_departments). 목록 밖의 이름은 DB가
-                      거절하므로 텍스트 입력을 주면 안 된다. */}
-                  <Select
-                    name="department"
-                    defaultValue={profile.department ?? undefined}
-                    onValueChange={() => setIsDirty(true)}
-                  >
-                    <SelectTrigger id="department" className="w-full">
-                      <SelectValue placeholder="선택 안 함" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockProfileDepartments.map((department) => (
-                        <SelectItem key={department.name} value={department.name}>
-                          {department.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
+                    <Field label="방" htmlFor="dorm_room">
+                      <Input
+                        id="dorm_room"
+                        name="dorm_room"
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        placeholder="305"
+                        defaultValue={profile.dorm_room ?? ""}
+                      />
+                    </Field>
+                  </>
+                ) : null}
               </div>
             </form>
           </div>

@@ -55,9 +55,14 @@ export async function clientAction({ request }: Route.ClientActionArgs) {
   const name = readText("name")
   const profileType = readText("type") as ProfileType | null
   const gender = readText("gender")
+  const needsGender = profileType !== "teacher"
 
-  if (!name || !profileType || !gender) {
-    return { error: "이름, 구분, 성별을 모두 입력해 주세요." }
+  if (!name || !profileType || (needsGender && !gender)) {
+    return {
+      error: needsGender
+        ? "이름, 구분, 성별을 모두 입력해 주세요."
+        : "이름과 구분을 입력해 주세요.",
+    }
   }
 
   return { success: true as const, name }
@@ -203,6 +208,8 @@ export default function Setup() {
   const isStudent = formData.type === "student"
   const isAlumni = formData.type === "alumni"
   const isTeacher = formData.type === "teacher"
+  const needsGender = !isTeacher
+  const needsCohort = isStudent || isAlumni
 
   useEffect(() => {
     return () => {
@@ -229,7 +236,9 @@ export default function Setup() {
     setAvatarPreview(file ? URL.createObjectURL(file) : "")
   }
 
-  const canProceedFromProfile = Boolean(formData.name.trim() && formData.type && formData.gender)
+  const canProceedFromProfile = Boolean(
+    formData.name.trim() && formData.type && (!needsGender || formData.gender)
+  )
   const hasValidPhoneNumber = !formData.phoneNumber || /^\d{10,11}$/.test(formData.phoneNumber)
   const hasBirthdayInput = Boolean(formData.birthYear || formData.birthMonth || formData.birthDay)
   const hasValidBirthday = isValidBirthday(
@@ -237,9 +246,7 @@ export default function Setup() {
     formData.birthMonth,
     formData.birthDay
   )
-  // profiles_track_required_check demands a track of every student. Teachers are
-  // exempt, and an alumnus is asked for the same reason they are asked for a
-  // cohort: it is the class they were in.
+  // 계열은 재학생·졸업생 모두의 학적 정보다. 부서·반·방만 재학생 전용이다.
   const needsTrack = isStudent || isAlumni
   const canProceedFromDetails =
     (!needsTrack || Boolean(formData.track)) &&
@@ -287,10 +294,10 @@ export default function Setup() {
         otp,
         name: formData.name.trim(),
         type: formData.type,
-        gender: formData.gender,
+        gender: needsGender ? formData.gender : "",
         track: needsTrack ? formData.track : "",
         studentNumber: isStudent ? formData.studentNumber : "",
-        cohort: needsTrack ? formData.cohort : "",
+        cohort: needsCohort ? formData.cohort : "",
         classNo: isStudent ? formData.classNo : "",
         dormRoom: isStudent ? formData.dormRoom : "",
         phoneNumber: isAlumni ? "" : formData.phoneNumber,
@@ -360,25 +367,27 @@ export default function Setup() {
                   </Select>
                 </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="gender">
-                    성별 <RequiredMark />
-                  </Label>
-                  <Select
-                    value={formData.gender}
-                    onValueChange={(value) => updateField("gender", value)}
-                  >
-                    <SelectTrigger id="gender" className="w-full">
-                      <SelectValue placeholder="성별을 선택하세요" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="male">남성</SelectItem>
-                        <SelectItem value="female">여성</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {needsGender ? (
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="gender">
+                      성별 <RequiredMark />
+                    </Label>
+                    <Select
+                      value={formData.gender}
+                      onValueChange={(value) => updateField("gender", value)}
+                    >
+                      <SelectTrigger id="gender" className="w-full">
+                        <SelectValue placeholder="성별을 선택하세요" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="male">남성</SelectItem>
+                          <SelectItem value="female">여성</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
 
                 <Button
                   type="button"
@@ -394,7 +403,9 @@ export default function Setup() {
                     aria-live="polite"
                     className="text-destructive text-center text-xs"
                   >
-                    이름, 구분, 성별을 모두 입력해야 다음 단계로 넘어갈 수 있습니다.
+                    {needsGender
+                      ? "이름, 구분, 성별을 모두 입력해야 다음 단계로 넘어갈 수 있습니다."
+                      : "이름과 구분을 모두 입력해야 다음 단계로 넘어갈 수 있습니다."}
                   </p>
                 )}
               </div>
@@ -457,7 +468,7 @@ export default function Setup() {
                   </>
                 )}
 
-                {(isStudent || isAlumni) && (
+                {needsCohort && (
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="cohort">
                       기수 <RequiredMark />

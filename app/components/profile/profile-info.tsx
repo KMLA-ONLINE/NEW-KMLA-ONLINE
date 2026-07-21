@@ -15,6 +15,8 @@ const SCHOOL_FIELDS = [
   { field: "class_no", label: "반" },
 ] as const
 
+const ALUMNI_SCHOOL_FIELDS = [{ field: "student_number", label: "학번" }] as const
+
 const PERSONAL_FIELDS = [
   { field: "birthday", label: "생일" },
   { field: "phone_number", label: "전화번호" },
@@ -33,7 +35,7 @@ export function ProfileInfo({ profile }: { profile: MyProfile }) {
       <FactCard
         title="학교"
         icon={SchoolIcon}
-        fields={SCHOOL_FIELDS}
+        fields={profile.type === "alumni" ? ALUMNI_SCHOOL_FIELDS : SCHOOL_FIELDS}
         profile={profile}
         delay={80}
       />

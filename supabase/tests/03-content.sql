@@ -35,7 +35,7 @@ begin
   select id into profile2 from public.profiles where auth_user_id = user2;
   select id into profile3 from public.profiles where auth_user_id = user3;
   select id into profile4 from public.profiles where auth_user_id = user4;
-  update public.profiles set type='teacher', track='domestic', status='accepted'
+  update public.profiles set type='teacher', status='accepted'
   where id in (profile1, profile2, profile3, profile4);
 
   -- space1: user1 owner, user2 member. other_space: user3 owner (= space1 비멤버).

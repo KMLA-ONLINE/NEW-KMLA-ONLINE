@@ -1,9 +1,6 @@
 import {
   BedDoubleIcon,
   Building2Icon,
-  GlobeIcon,
-  GraduationCapIcon,
-  HouseIcon,
   ImageIcon,
   MessageCircleIcon,
   PencilIcon,
@@ -57,31 +54,23 @@ function useImageDraft(initial: string | null) {
  * 본인이 아니면 업로드도 편집 버튼도 없다. 같은 화면을 남의 프로필에도 쓰기 때문에, 이 분기가
  * "내 프로필 화면"과 "남의 프로필 화면"이 갈라지지 않게 붙잡는 유일한 지점이다.
  */
-type IdentityPill = { icon: ComponentType<{ className?: string }> | null; label: string }
-
 /**
- * 이름 아래에 뜨는 소속 요약. 기수·계열·성별은 학번·부서처럼 표에 눕혀두기엔 그 사람을 가장
- * 먼저 말해주는 값이라, 아래 정보 카드에서 빼 이름 옆으로 끌어올렸다(중복을 만들지 않으려 카드
- * 쪽에서는 지웠다). null인 값은 빠지므로 -- 학생이 아니면 세 칸이 다 비어 -- pill 줄 자체가
- * 렌더되지 않는다. 성별엔 마땅한 아이콘이 없어 라벨만 둔다.
+ * 이름 바로 아래의 간결한 소속 요약. 상태가 아닌 사실 정보는 칩으로 분절하지 않고 한 줄에서 읽힌다.
  */
-function identityPills(profile: MyProfile): IdentityPill[] {
-  const pills: IdentityPill[] = []
-  if (profile.cohort !== null) pills.push({ icon: GraduationCapIcon, label: `${profile.cohort}기` })
-  if (profile.track !== null)
-    pills.push({
-      icon: profile.track === "international" ? GlobeIcon : HouseIcon,
-      label: TRACK_LABEL[profile.track],
-    })
-  if (profile.gender !== null) pills.push({ icon: null, label: GENDER_LABEL[profile.gender] })
-  return pills
+function identityFacts(profile: MyProfile): string[] {
+  const facts: string[] = []
+  if (profile.cohort !== null) facts.push(`${profile.cohort}기`)
+  if (profile.type !== "teacher" && profile.track !== null) facts.push(TRACK_LABEL[profile.track])
+  if (profile.type !== "teacher" && profile.gender !== null)
+    facts.push(GENDER_LABEL[profile.gender])
+  return facts
 }
 
 type MetaFact = { icon: ComponentType<{ className?: string }>; label: string; value: string }
 
 /**
  * 이름 밑 한 줄에 아이콘과 함께 눕는 소속 사실. 부서·방은 기숙사 학교에서 "저 사람이 뭘 하고
- * 어디 사는지"라, pill(정체성 요약)과 정보 표(나머지 신상) 사이에서 헤더의 빈자리를 채운다.
+ * 어디 사는지"라, 정체성 요약과 정보 표(나머지 신상) 사이에서 헤더의 빈자리를 채운다.
  * 여기로 끌어올린 만큼 학교 카드에서는 지웠다 -- 같은 값을 두 곳에 두지 않는다.
  */
 function metaFacts(profile: MyProfile): MetaFact[] {
@@ -98,11 +87,13 @@ export function ProfileHero({
   avatarUrl,
   coverUrl,
   isMe,
+  editTo,
 }: {
   profile: MyProfile
   avatarUrl: string | null
   coverUrl: string | null
   isMe: boolean
+  editTo: string
 }) {
   const [cover, replaceCover] = useImageDraft(coverUrl)
   const [avatar, replaceAvatar] = useImageDraft(avatarUrl)
@@ -111,7 +102,7 @@ export function ProfileHero({
   const coverInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
 
-  const pills = identityPills(profile)
+  const identity = identityFacts(profile)
   const meta = metaFacts(profile)
 
   return (
@@ -197,35 +188,27 @@ export function ProfileHero({
               <h1 className="truncate text-2xl font-bold">{profile.name}</h1>
               {/* 학생은 앱의 기본값이라 굳이 라벨을 달지 않는다. 선생님·졸업생만 표시한다. */}
               {profile.type === "student" ? null : (
-                <Badge variant="secondary">{PROFILE_TYPE_LABEL[profile.type]}</Badge>
+                <Badge variant={profile.type === "teacher" ? "teacher" : "secondary"}>
+                  {PROFILE_TYPE_LABEL[profile.type]}
+                </Badge>
               )}
               {profile.role === "admin" ? (
-                <Badge variant="secondary" className="gap-1">
-                  <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
+                <Badge variant="destructive" className="gap-1">
+                  <ShieldCheckIcon
+                    data-icon="inline-start"
+                    className="size-3.5"
+                    aria-hidden="true"
+                  />
                   관리자
                 </Badge>
               ) : null}
             </div>
 
-            {/* 소속 pill. 기수·계열·성별은 기숙사 학교에선 그 사람을 한 줄로 말해주는 값이라,
-              아래 표까지 눈을 내리지 않아도 이름 바로 밑에서 읽힌다. 학생이 아니면 셋 다 비어
-              줄 자체가 사라진다. */}
-            {pills.length > 0 ? (
-              <ul className="mt-2 flex flex-wrap gap-1.5">
-                {pills.map((pill) => (
-                  <li key={pill.label}>
-                    <Badge variant="secondary" className="h-6 gap-1 px-2.5">
-                      {pill.icon ? (
-                        <pill.icon className="text-muted-foreground size-3.5" aria-hidden="true" />
-                      ) : null}
-                      {pill.label}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+            {identity.length > 0 ? (
+              <p className="text-muted-foreground mt-1.5 text-sm">{identity.join(" · ")}</p>
             ) : null}
 
-            {/* 부서·방 메타 스트립. 이름 밑 빈자리를 채워 헤더에 무게를 준다 -- pill이 "누구"라면
+            {/* 부서·방 메타 스트립. 이름 밑 빈자리를 채워 헤더에 무게를 준다 -- 소속 요약이 "누구"라면
               이 줄은 "어디서 뭘 하는지"다. 둘 다 없으면(값이 비면) 줄이 통째로 빠진다. */}
             {meta.length > 0 ? (
               <dl className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -256,7 +239,7 @@ export function ProfileHero({
             {isMe ? (
               <Button asChild className="h-10 max-sm:flex-1">
                 {/* 모달이다. 라우트로 두면 주소가 남아 뒤로가기로 닫히고, 새로고침해도 열린 채다. */}
-                <Link to="edit">
+                <Link to={editTo}>
                   <PencilIcon className="size-4" aria-hidden="true" />
                   프로필 편집
                 </Link>

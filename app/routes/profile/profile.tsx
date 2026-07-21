@@ -1,8 +1,12 @@
-import { Outlet, useOutletContext, useParams } from "react-router"
+import { Outlet, useOutletContext, useParams, useSearchParams } from "react-router"
 
 import { ProfileHero } from "~/components/profile/profile-hero"
 import { ProfileInfo } from "~/components/profile/profile-info"
-import { mockProfile, mockProfileAvatarUrl, mockProfileCoverUrl } from "~/lib/profile/mock-data"
+import {
+  mockProfileAvatarUrl,
+  mockProfileCoverUrl,
+  mockProfileForPreview,
+} from "~/lib/profile/mock-data"
 import type { MyProfile } from "~/lib/profile/types"
 
 /** 편집 모달(자식 라우트)이 부모가 읽은 profile을 받는 문. 자기가 다시 읽지 않는다. */
@@ -26,22 +30,25 @@ export type ProfileOutletContext = { profile: MyProfile }
  */
 export default function ProfilePage() {
   const { profileId } = useParams()
-  // 목이라 누구를 요청하든 같은 사람이 나온다. 대신 id가 내 것과 같은지로 본인 여부를 가려서,
-  // 남의 프로필 화면(/profile/2)이 어떻게 보이는지도 지금 확인할 수 있다.
-  const isMe = Number(profileId) === mockProfile.id
+  const [searchParams] = useSearchParams()
+  const profile = mockProfileForPreview(searchParams.get("as"))
+  // 목이라 누구를 요청하든 선택한 변형이 나온다. 대신 id가 내 것과 같은지로 본인 여부를 가려서,
+  // 남의 프로필 화면(/profile/2)과 역할별 디자인을 함께 확인할 수 있다.
+  const isMe = Number(profileId) === profile.id
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <ProfileHero
-        profile={mockProfile}
+        profile={profile}
         avatarUrl={mockProfileAvatarUrl}
         coverUrl={mockProfileCoverUrl}
         isMe={isMe}
+        editTo={searchParams.size > 0 ? `edit?${searchParams}` : "edit"}
       />
-      <ProfileInfo profile={mockProfile} />
+      <ProfileInfo profile={profile} />
 
       {/* 편집 모달이 여기 뜬다. 본문은 그대로 뒤에 남는다. */}
-      <Outlet context={{ profile: mockProfile } satisfies ProfileOutletContext} />
+      <Outlet context={{ profile } satisfies ProfileOutletContext} />
     </main>
   )
 }

@@ -67,9 +67,11 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 - 공통 필수: `name`, `type`
 - 학생(`type = 'student'`) 필수: `student_number`, `cohort`, `track`
-- `department`, `gender`, `class_no`, `phone_number`, `birthday`, `description`, `dorm_room`, `is_reenrolled`는 DB상 선택값이다. 단, `is_reenrolled`는 값이 없으면 `false`로 저장된다.
+- 선생님(`type = 'teacher'`): `student_number`, `class_no`, `cohort`, `gender`, `track`, `department`, `dorm_room`은 모두 `NULL`
+- 졸업생(`type = 'alumni'`): `class_no`, `department`, `dorm_room`은 `NULL`; 학번·기수·성별·계열은 보존할 수 있다.
+- `phone_number`, `birthday`, `description`, `is_reenrolled`는 DB상 선택값이다. 단, `is_reenrolled`는 값이 없으면 `false`로 저장된다.
 
-`track`은 국내반/국제반 배정이라 학생에게만 요구한다. 선생님·졸업생은 `track` 없이 온보딩할 수 있다.
+`track`은 국내반/국제반 배정이다. DB는 학생에게만 필수로 강제하고 졸업생 값도 허용한다. 앱 온보딩은 학생·졸업생 모두에게 `track`을 받으며, 선생님에게는 받지 않는다.
 
 ## 본인이 고칠 수 있는 필드
 
@@ -80,7 +82,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 `student_number`만 학교 정보 중 유일하게 닫혀 있다. 심사에서 신원을 대조한 값이고 unique 제약이 걸려 있어, 열어두면 남의 학번을 선점하거나 심사받은 신원과 다른 사람이 될 수 있다. 나머지 학교 필드는 진급·전과·부서 이동으로 실제로 바뀌는 값이라 매번 관리자를 거치게 하지 않는다.
 
-grant를 넓혀도 무결성은 constraint가 계속 잡는다 — 학생은 `cohort`/`track`을 null로 비울 수 없고(`profiles_student_identity_check`, `profiles_track_required_check`), `cohort`는 1 ~ 100, `class_no`·`dorm_room`은 양수, `department`는 `profile_departments` FK 안의 이름이어야 한다.
+grant를 넓혀도 무결성은 constraint가 계속 잡는다 — 학생은 `cohort`/`track`을 null로 비울 수 없고(`profiles_student_identity_check`, `profiles_track_required_check`), 역할별로 허용되지 않는 칼럼은 `profiles_type_field_shape_check`가 `NULL`로 강제한다. `cohort`는 1 ~ 100, `class_no`·`dorm_room`은 양수, `department`는 `profile_departments` FK 안의 이름이어야 한다.
 
 `avatar_url`/`cover_image_url`은 update grant가 없다. 업로드된 object를 검증해 붙이는 `finalize_avatar`/`finalize_cover_image`가 유일한 문이다.
 
@@ -93,6 +95,7 @@ grant를 넓혀도 무결성은 constraint가 계속 잡는다 — 학생은 `co
 | `private.current_profile_id()`              | 현재 auth user의 profile id                                                                                                                                                     |
 | `private.has_active_profile()`              | 현재 auth user가 soft-delete되지 않은 profile을 가졌는지. Storage upload policy가 비공개 auth UUID를 직접 읽지 않도록 쓴다                                                     |
 | `private.is_accepted_user()`                | 현재 사용자가 accepted + non-deleted인지                                                                                                                                        |
+| `private.is_teacher()`                      | 현재 사용자가 non-deleted 선생님인지. spaces의 검색·자발적 가입 정책이 사용                                                                                                      |
 | `private.is_app_admin()`                    | 현재 사용자가 accepted admin인지                                                                                                                                                |
 | `private.has_permission(key)`               | accepted + 해당 permission 보유 여부                                                                                                                                            |
 | `private.require_current_profile(accepted)` | active profile 강제, 없으면 예외. RPC 공통 가드                                                                                                                                 |

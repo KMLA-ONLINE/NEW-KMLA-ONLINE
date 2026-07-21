@@ -30,7 +30,7 @@ begin
   end if;
 
   update public.profiles
-  set type = 'teacher', track = 'domestic', status = 'accepted'
+  set type = 'teacher', status = 'accepted'
   where id in (profile1, profile2);
 
   perform set_config('request.jwt.claim.sub', user1::text, true);
@@ -403,6 +403,22 @@ begin
   if mine.id <> other_id then
     raise exception 'get_my_profile must follow the caller, not a parameter';
   end if;
+
+  -- 역할마다 화면에 없는 값은 DB에서도 남길 수 없다. 선생님 성별이나 졸업생 반이 직접
+  -- UPDATE로 섞이면 나중에 역할을 다시 바꿨을 때 잘못된 학적 정보가 되살아난다.
+  begin
+    update public.profiles set gender = 'male' where id = other_id;
+    raise exception 'a teacher must not carry gender';
+  exception when check_violation then
+    null;
+  end;
+
+  begin
+    update public.profiles set type = 'alumni', class_no = 1 where id = other_id;
+    raise exception 'an alumnus must not carry a class number';
+  exception when check_violation then
+    null;
+  end;
 
   -- 탈퇴한 껍데기는 내주지 않는다.
   perform public.withdraw_profile();

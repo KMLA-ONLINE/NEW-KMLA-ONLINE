@@ -1,7 +1,7 @@
 import type { MyProfile } from "~/lib/profile/types"
 
-// 프로필 화면과 메뉴의 계정 블록이 같은 사람을 보여준다. 두 곳에 각자 두면 이름 하나 고칠 때
-// 한쪽이 낡은 채로 남으므로, 로더가 붙을 때까지 그 한 사람은 여기 산다.
+// 프로필 화면과 메뉴의 계정 블록이 같은 기본 사람을 보여준다. 디자인 검토용 변형도 이곳에서
+// 관리해, URL 쿼리만으로 학생·교사·졸업생·관리자 상태를 바꿔 볼 수 있다.
 //
 // 모양은 `get_my_profile()`이 내주는 행 그대로다 -- 타입이 생성된 RPC 반환 행에서 나오므로
 // (MyProfile), 컬럼명을 지어내거나 "2시간 전" 같은 표시용 문자열을 섞으면 타입이 먼저 깨진다.
@@ -32,6 +32,58 @@ export const mockProfile: MyProfile = {
   status_updated_at: "2026-03-03T08:40:00.000Z",
   created_at: "2026-03-01T09:00:00.000Z",
   updated_at: null,
+}
+
+// 모두 같은 id를 써 `/profile/1?as=…`에서 본인 프로필의 편집 상태까지 함께 검토할 수 있다.
+// 실제 로더가 붙으면 이 변형들은 제거하고 DB가 내려주는 type·role을 그대로 쓴다.
+export const mockTeacherProfile: MyProfile = {
+  ...mockProfile,
+  name: "박선생",
+  type: "teacher",
+  student_number: null,
+  class_no: null,
+  cohort: null,
+  track: null,
+  department: null,
+  dorm_room: null,
+  gender: null,
+  birthday: "1987-05-12",
+  description: "국어와 글쓰기를 가르칩니다.",
+}
+
+export const mockAlumniProfile: MyProfile = {
+  ...mockProfile,
+  name: "이민족",
+  type: "alumni",
+  student_number: "201000",
+  class_no: null,
+  cohort: 25,
+  track: "domestic",
+  department: null,
+  dorm_room: null,
+  gender: "male",
+  birthday: "2004-09-18",
+  description: "KMLA 25기 졸업생입니다.",
+}
+
+export const mockAdminProfile: MyProfile = {
+  ...mockProfile,
+  name: "최관리",
+  role: "admin",
+  description: "KMLA Online을 관리합니다.",
+}
+
+export function mockProfileForPreview(preview: string | null): MyProfile {
+  switch (preview) {
+    case "teacher":
+      return mockTeacherProfile
+    case "alumni":
+      return mockAlumniProfile
+    case "admin":
+      return mockAdminProfile
+    default:
+      return mockProfile
+  }
 }
 
 // profiles에 이메일 컬럼은 없다. 로그인 계정(auth.users)의 값이라 프로필 조회와는 다른 곳에서 온다.

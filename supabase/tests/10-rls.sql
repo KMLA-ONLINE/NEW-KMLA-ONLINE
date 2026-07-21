@@ -28,6 +28,7 @@ declare
   outside_id bigint;
   post_id bigint;
   leaked bigint;
+  invite_token text;
 begin
   insert into auth.users (id, email) values
     (alice, 'rls-alice@example.com'),
@@ -123,6 +124,30 @@ begin
   -- -------------------------------------------------------------------------
   if exists (select 1 from public.space_members m where m.space_id = outside_id) then
     raise exception 'space_members leaked for a space the caller is not in';
+  end if;
+
+  -- 선생님은 멤버가 아닌 공개 공간을 검색하거나 스스로 가입할 수 없다. 초대장은 운영자가
+  -- 필요에 따라 보내는 흐름이므로 수락만은 가능하고, 수락한 뒤에는 해당 공간이 보인다.
+  if exists (select 1 from public.spaces where id = outside_id) then
+    raise exception 'a teacher must not discover a non-member space';
+  end if;
+  begin
+    perform public.join_space(outside_id);
+    raise exception 'a teacher must not self-join a non-member space';
+  exception when others then
+    if sqlerrm <> 'space not found' then raise; end if;
+  end;
+
+  reset role;
+  perform set_config('request.jwt.claim.sub', alice::text, true);
+  invite_token := public.create_space_invite(outside_id, bob_id);
+  perform set_config('request.jwt.claim.sub', bob::text, true);
+  set local role authenticated;
+  if public.accept_space_invite(invite_token) <> outside_id then
+    raise exception 'a teacher invitation must add the invited member';
+  end if;
+  if not exists (select 1 from public.spaces where id = outside_id) then
+    raise exception 'an invited teacher must see the space after joining';
   end if;
 
   reset role;

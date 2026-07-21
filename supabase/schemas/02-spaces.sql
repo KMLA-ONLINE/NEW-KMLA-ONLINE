@@ -281,7 +281,11 @@ create policy space_anonymity_suspensions_select on public.space_anonymity_suspe
   for select to authenticated using (user_id=private.current_profile_id());
 create policy spaces_select on public.spaces for select to authenticated using (
   deleted_at is null and (
-    (join_policy in ('public','request') and (select private.is_accepted_user()))
+    (
+      join_policy in ('public','request')
+      and (select private.is_accepted_user())
+      and not (select private.is_teacher())
+    )
     or private.is_space_member(id)
   )
 );
@@ -335,6 +339,9 @@ begin
   -- 이미 멤버/밴인 사람은 어차피 그 공간을 아는 사람이라 여기서 갈라도 새어 나갈 게 없다.
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id and banned_at is not null) then raise exception 'banned from this space'; end if;
   if exists(select 1 from public.space_members where space_id=p_space_id and user_id=caller_id) then return 'joined'; end if;
+  -- 선생님은 기존 공간을 스스로 찾아 들어가지 않는다. 초대 수락과 관리자의 가입 승인은
+  -- 별도 흐름이라 그대로 열어 둔다. 비멤버에게는 invite_only와 같은 응답으로 공간을 숨긴다.
+  if private.is_teacher() then raise exception 'space not found'; end if;
   -- 비멤버에게 invite_only는 존재 자체를 숨긴다(spaces_select가 숨기는 것과 같은 응답).
   if space_policy='invite_only' then raise exception 'space not found'; end if;
   if space_policy='request' then
