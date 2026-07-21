@@ -16,6 +16,7 @@ import { Input } from "~/components/ui/input"
 import { useDebouncedValue } from "~/hooks/use-debounced-value"
 import { normalizeSearch } from "~/lib/group/format"
 import type { GroupPost } from "~/lib/group/types"
+import { toPlainTextPreview } from "~/lib/rich-text/render"
 
 // 제목·본문을 정규화해 부분 일치(normalizeSearch = 공백 제거 + 소문자, DB trgm 인덱스와 같은 계약).
 // 원격 검색은 백엔드 붙일 때.
@@ -101,7 +102,9 @@ export function GroupSearchDialog({
                       ) : null}
                       <p className="line-clamp-1 text-sm font-medium">{post.title}</p>
                     </div>
-                    <p className="text-muted-foreground line-clamp-2 text-xs">{post.content}</p>
+                    <p className="text-muted-foreground line-clamp-2 text-xs">
+                      {toPlainTextPreview(post.content)}
+                    </p>
                     <div className="text-muted-foreground flex items-center gap-2 text-xs">
                       <span className="truncate">{post.author?.name ?? "익명"}</span>
                       <span aria-hidden="true">·</span>
