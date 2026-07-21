@@ -126,12 +126,12 @@ export function ProfileHero({
           <>
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               size="sm"
               onClick={() => coverInputRef.current?.click()}
               className="absolute right-3 bottom-3 shadow-sm"
             >
-              <ImageIcon className="size-4" aria-hidden="true" />
+              <ImageIcon data-icon="inline-start" aria-hidden="true" />
               <span className="max-sm:sr-only">커버 사진</span>
             </Button>
             <input
@@ -168,7 +168,7 @@ export function ProfileHero({
               <>
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="icon-sm"
                   aria-label="프로필 사진 변경"
                   onClick={() => avatarInputRef.current?.click()}
