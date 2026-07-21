@@ -30,21 +30,23 @@ const PERSONAL_FIELDS = [
 // 넓어진 만큼 그 아래도 가로 폭을 쓰게 한다(모바일에선 다시 한 열로 쌓인다).
 export function ProfileInfo({ profile }: { profile: MyProfile }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className={profile.type === "teacher" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2"}>
       {/* 히어로 다음으로 한 박자씩 늦게 떠올라, 화면이 통째로 튀지 않고 위에서 아래로 흐른다. */}
-      <FactCard
-        title="학교"
-        icon={SchoolIcon}
-        fields={profile.type === "alumni" ? ALUMNI_SCHOOL_FIELDS : SCHOOL_FIELDS}
-        profile={profile}
-        delay={80}
-      />
+      {profile.type !== "teacher" ? (
+        <FactCard
+          title="학교"
+          icon={SchoolIcon}
+          fields={profile.type === "alumni" ? ALUMNI_SCHOOL_FIELDS : SCHOOL_FIELDS}
+          profile={profile}
+          delay={80}
+        />
+      ) : null}
       <FactCard
         title="개인"
         icon={UserRoundIcon}
         fields={PERSONAL_FIELDS}
         profile={profile}
-        delay={160}
+        delay={profile.type === "teacher" ? 80 : 160}
       />
     </div>
   )
