@@ -24,7 +24,7 @@ export const mockProfile: MyProfile = {
   avatar_url: null,
   cover_image_url: null,
   birthday: "2009-03-01",
-  description: "소개글입니다. 소개글입니다. 소개글입니다.",
+  description: "소개글입니다. 소개글입니다. 소개글입니다. ",
   status: "accepted",
   dorm_room: 305,
   is_reenrolled: false,

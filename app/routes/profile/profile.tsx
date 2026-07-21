@@ -31,7 +31,7 @@ export default function ProfilePage() {
   const isMe = Number(profileId) === mockProfile.id
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <ProfileHero
         profile={mockProfile}
         avatarUrl={mockProfileAvatarUrl}
