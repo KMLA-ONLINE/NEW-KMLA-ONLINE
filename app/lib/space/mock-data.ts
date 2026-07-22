@@ -231,3 +231,7 @@ export const mockSpaces: SpaceSummary[] = [
     hasPendingRequest: true,
   },
 ]
+
+// 새 선생님 계정의 시작 상태. 선생님은 기존 그룹을 찾아 가입하는 대신, 필요한 사람을 초대할
+// 비공식 그룹을 직접 만든다. 실제 로더가 붙으면 내 space_members 행으로 바뀐다.
+export const mockTeacherSpaces: SpaceSummary[] = []

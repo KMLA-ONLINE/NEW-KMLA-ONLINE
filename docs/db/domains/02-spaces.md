@@ -16,6 +16,8 @@ Source: [`supabase/schemas/02-spaces.sql`](../../../supabase/schemas/02-spaces.s
 
 과거 `open`(가입 없이 참여)은 제거했다 — 멤버십이 참여의 유일한 기준이어야 `member_count`가 모든 공간에서 같은 뜻을 갖는다.
 
+선생님은 이미 멤버인 공간과 직접 만든 비공식(`community`) 공간만 조회한다. 기존 공간은 `public`·`request`라도 검색에 나오지 않고 `join_space`로 스스로 가입할 수도 없다. 다만 운영자가 보낸 초대는 수락할 수 있고, 이미 멤버가 된 뒤에는 다른 멤버와 같은 권한 모델을 따른다. `community` 생성은 accepted 사용자 모두에게 열려 있으므로 선생님도 공지용 비공식 공간을 만들면 owner로 운영할 수 있다.
+
 대기 요청은 `space_members`가 아니라 `space_join_requests`에 산다. 승인 전까지는 멤버가 아니므로 멤버십 불변식(owner 유일성, `member_count`)을 건드리지 않는다.
 
 ## 역할 (`member_role`)
@@ -73,7 +75,7 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 
 | 함수                                                          | 인증     | 목적                                                                           |
 | ------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------ |
-| `join_space(space_id)`                                        | accepted | `'joined'` 또는 `'requested'` 반환. invite_only·밴은 거부                      |
+| `join_space(space_id)`                                        | accepted | `'joined'` 또는 `'requested'` 반환. invite_only·밴·비멤버 선생님은 거부          |
 | `approve_join_request(space_id, user_id)`                     | 관리자   | 멤버 승격. 거절·요청취소는 `space_join_requests` 직접 delete                   |
 | `leave_space(space_id)`                                       | 멤버     | 본인 탈퇴 (owner는 이양 먼저)                                                  |
 | `create_space_invite(space_id, target_user_id?, expires_at?)` | 관리자   | 초대장 발급. **어떤 초대도 30일을 못 넘긴다**(미지정이면 30일)                 |

@@ -91,7 +91,10 @@ export function GroupHeader({
           </p>
         </div>
         <div className="flex items-center gap-1 pt-1">
-          <DropdownMenu>
+          {/* 알림 설정 Dialog와 나가기 AlertDialog를 여는 메뉴라 non-modal이다. 메뉴와 뒤이어
+              열리는 모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이
+              풀리지 않아 페이지 전체가 클릭 불가가 된다. */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon-sm"

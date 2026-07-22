@@ -6,8 +6,9 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 
+import { useImageDraft } from "~/hooks/use-image-draft"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import type { GroupCategory, GroupSpace } from "~/lib/group/types"
@@ -91,31 +92,6 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 // 아이콘은 space-images + finalize_space_image, 커버는 space-covers + finalize_space_cover(그
 // RPC들이 경로·소유·MIME을 다시 본다). 제거는 clear_space_image / clear_space_cover이고 멱등이라
 // 상태를 몰라도 안전하게 부를 수 있다.
-
-// 고른 파일을 objectURL로 미리 보여준다. 갈아끼울 때와 이 화면이 unmount될 때 모두 이전 URL을
-// 해제한다. SPA 탭 전환은 문서를 닫지 않으므로 마지막 URL을 cleanup하지 않으면 메모리에 남는다.
-// 파일 입력의 ref는 이 훅이 들지 않는다 -- 훅 밖으로 나간 ref를 렌더 중에 다시 읽는 모양이 되어
-// react-hooks가(정당하게) 잡는다. 입력을 그리는 쪽이 직접 든다.
-function useImageDraft(initial: string | null) {
-  const [url, setUrl] = useState(initial)
-  const objectUrlRef = useRef(initial?.startsWith("blob:") ? initial : null)
-
-  useEffect(
-    () => () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-    },
-    []
-  )
-
-  const replace = (next: string | null) =>
-    setUrl((current) => {
-      if (current?.startsWith("blob:")) URL.revokeObjectURL(current)
-      objectUrlRef.current = next?.startsWith("blob:") ? next : null
-      return next
-    })
-
-  return [url, replace] as const
-}
 
 function ImageControls({
   url,

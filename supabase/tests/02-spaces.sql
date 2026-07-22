@@ -206,7 +206,8 @@ begin
   select id into founder_id from public.profiles where auth_user_id = founder_user;
   select id into joiner_id from public.profiles where auth_user_id = joiner_user;
   update public.profiles set type = 'teacher', status = 'accepted'
-  where id in (admin_id, founder_id, joiner_id);
+  where id in (admin_id, founder_id);
+  update public.profiles set type = 'alumni', status = 'accepted' where id = joiner_id;
   perform public.bootstrap_first_app_admin(admin_id);
 
   -- 일반 사용자는 community만 만든다. group은 학교 조직을 옮긴 것이라 이름이 곧 권위다.

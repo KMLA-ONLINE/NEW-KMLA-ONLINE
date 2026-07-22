@@ -1,9 +1,11 @@
 import { useState } from "react"
-import { Link } from "react-router"
+import { Link, useSearchParams } from "react-router"
 
 import { SpaceDiscoverCard } from "~/components/space/space-discover-card"
 import { SpaceRow } from "~/components/space/space-row"
-import { mockSpaces } from "~/lib/space/mock-data"
+import { TeacherGroupsHome } from "~/components/space/teacher-groups-home"
+import { mockSpaces, mockTeacherSpaces } from "~/lib/space/mock-data"
+import { mockProfileForPreview } from "~/lib/profile/mock-data"
 import type { SpaceSummary } from "~/lib/space/types"
 import { cn } from "~/lib/utils"
 
@@ -29,6 +31,31 @@ function sortPinnedFirst(spaces: SpaceSummary[]) {
 }
 
 export default function GroupsPage() {
+  const [searchParams] = useSearchParams()
+
+  if (mockProfileForPreview(searchParams.get("as")).type === "teacher") {
+    return <TeacherGroupsPage />
+  }
+
+  return <MemberGroupsPage />
+}
+
+function TeacherGroupsPage() {
+  const [spaces, setSpaces] = useState(mockTeacherSpaces)
+
+  const togglePin = (pubId: string) =>
+    setSpaces((current) =>
+      current.map((space) =>
+        space.pubId === pubId
+          ? { ...space, pinnedAt: space.pinnedAt ? null : new Date().toISOString() }
+          : space
+      )
+    )
+
+  return <TeacherGroupsHome spaces={sortPinnedFirst(spaces)} onTogglePin={togglePin} />
+}
+
+function MemberGroupsPage() {
   const [tab, setTab] = useState<SpaceTab>("official")
   const [spaces, setSpaces] = useState(mockSpaces)
 

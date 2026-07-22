@@ -21,6 +21,7 @@ create table public.profiles (
   track public.profile_track null,
   department text null references public.profile_departments (name) on update cascade on delete set null,
   phone_number text null,
+  contact_email text null,
   avatar_url text null,
   cover_image_url text null,
   birthday date null,
@@ -82,6 +83,7 @@ alter table public.profiles
   add constraint profiles_class_no_check check (class_no is null or class_no > 0),
   add constraint profiles_student_number_check check (student_number is null or student_number ~ '^\d{6}$'),
   add constraint profiles_phone_number_check check (phone_number is null or phone_number ~ '^\+?[0-9]{8,15}$'),
+  add constraint profiles_contact_email_check check (contact_email is null or (contact_email = btrim(contact_email) and contact_email ~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$')),
   add constraint profiles_dorm_room_check check (dorm_room is null or dorm_room > 0),
   add constraint profiles_student_identity_check check (
     deleted_at is not null
@@ -89,13 +91,35 @@ alter table public.profiles
     or type <> 'student'
     or (student_number is not null and cohort is not null)
   ),
-  -- Track is the student's 국내반/국제반 stream, so only students carry one.
-  -- Same exemption as profiles_student_identity_check above.
+  -- Track is a 국내반/국제반 stream. DB는 학생에게만 필수로 강제하고, 졸업생은 학적 정보를
+  -- 보존할 수 있다. 학생 제약만 profiles_student_identity_check와 같은 예외를 둔다.
   add constraint profiles_track_required_check check (
     deleted_at is not null
     or status = 'none'
     or type <> 'student'
     or track is not null
+  ),
+  -- 역할이 달라지면 의미도 달라지는 칼럼은 빈 값으로 고정한다. 그렇지 않으면 직접 UPDATE나
+  -- 온보딩 RPC 호출로 화면에 없는 정보가 남아, 역할을 바꾼 뒤에도 예전 학적이 섞인다.
+  add constraint profiles_type_field_shape_check check (
+    deleted_at is not null
+    or type = 'student'
+    or (
+      type = 'teacher'
+      and student_number is null
+      and class_no is null
+      and cohort is null
+      and gender is null
+      and track is null
+      and department is null
+      and dorm_room is null
+    )
+    or (
+      type = 'alumni'
+      and class_no is null
+      and department is null
+      and dorm_room is null
+    )
   ),
   add constraint profiles_name_check check (char_length(btrim(name)) between 1 and 50),
   add constraint profiles_description_check check (
@@ -219,6 +243,21 @@ as $$
   )
 $$;
 
+create function private.is_teacher()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists(
+    select 1 from public.profiles p
+    where p.auth_user_id = (select auth.uid())
+      and p.type = 'teacher'
+      and p.deleted_at is null
+  )
+$$;
+
 revoke execute on function private.handle_auth_user_created() from public, anon, authenticated, service_role;
 revoke all on table private.profile_auth_map from public, anon, authenticated, service_role;
 revoke execute on function private.current_profile_id() from public, anon, authenticated, service_role;
@@ -257,9 +296,10 @@ begin
       cohort = null,
       gender = null,
       track = null,
-      department = null,
-      phone_number = null,
-      avatar_url = null,
+       department = null,
+       phone_number = null,
+       contact_email = null,
+       avatar_url = null,
       cover_image_url = null,
       birthday = null,
       description = null,
@@ -430,6 +470,7 @@ grant usage on schema public, private to authenticated;
 grant execute on function private.current_profile_id() to authenticated;
 grant execute on function private.has_active_profile() to authenticated;
 grant execute on function private.is_accepted_user() to authenticated;
+grant execute on function private.is_teacher() to authenticated;
 
 grant select on table public.profile_departments, public.permissions, public.user_permissions to authenticated;
 -- profiles만 컬럼 단위다. auth_user_id(내부 auth UUID)와 status_updated_by는 뺀다. 후자는
@@ -438,10 +479,22 @@ grant select on table public.profile_departments, public.permissions, public.use
 -- 있다. suspended_by/deleted_by/actor_id를 컬럼 grant로 가리는 것과 같은 원칙이다.
 grant select (
   id, name, role, type, student_number, class_no, cohort, gender, track, department,
-  phone_number, avatar_url, cover_image_url, birthday, description, status, dorm_room,
+  phone_number, contact_email, avatar_url, cover_image_url, birthday, description, status, dorm_room,
   is_reenrolled, onboarding_completed_at, status_updated_at, created_at, updated_at, deleted_at
 ) on table public.profiles to authenticated;
-grant update (name, gender, phone_number, birthday, description) on table public.profiles
+-- 본인이 고칠 수 있는 칸. student_number만 빠진다 -- 학번은 심사에서 신원을 대조한 값이고
+-- unique 제약이 걸려 있어, 바꿀 수 있게 두면 남의 학번을 선점하거나 심사받은 신원과 다른
+-- 사람이 될 수 있다. 나머지(기수·반·계열·부서·방)는 진급·전과·부서 이동으로 실제로 바뀌는
+-- 값이라 매번 관리자를 거치게 할 이유가 없다.
+--
+-- 여기서 열어도 무결성은 constraint가 계속 잡는다: 학생은 cohort/track을 null로 비울 수 없고
+-- (profiles_student_identity_check, profiles_track_required_check), cohort는 1 ~ 100,
+-- class_no·dorm_room은 양수, department는 profile_departments FK 안의 이름이어야 한다.
+-- role·status·type·avatar_url·cover_image_url은 계속 빠져 있다.
+grant update (
+  name, gender, phone_number, contact_email, birthday, description,
+  cohort, class_no, track, department, dorm_room
+) on table public.profiles
 to authenticated;
 
 -- 공개키만. 봉인된 blob은 public.get_my_key_vault()로만 나가고, 그 함수는 호출자 행으로
@@ -453,6 +506,54 @@ grant select, insert, update, delete
 on table public.profile_departments, public.profiles, public.user_keys, public.permissions, public.user_permissions
 to service_role;
 grant usage, select on sequence public.profiles_id_seq to service_role;
+
+-- 내 profile. profiles_select는 본인 행을 이미 열어두지만, 클라이언트에는 그 행을 *고를*
+-- 열쇠가 없다: auth_user_id가 컬럼 grant에서 빠져 있어 `where auth_user_id=auth.uid()`를 쓸 수
+-- 없고, profiles.id는 로그인만으로는 알 수 없다. 이 함수는 그 한 칸만 메운다.
+--
+-- 그래서 security definer지만 여는 것은 없다. 돌려주는 컬럼 집합이 authenticated의 select
+-- 컬럼 grant와 정확히 같고(auth_user_id·status_updated_by 제외), 조건은 호출자 본인 행 하나로
+-- 잠겨 있다 -- RLS가 이미 허용하는 것을 id 없이 부를 수 있게 만들 뿐이다.
+--
+-- accepted를 요구하지 않는다. status가 pending인 사람에게 대기 화면을 그리려면 그 status를
+-- 읽어야 하고, 본인 행은 status와 무관하게 profiles_select가 이미 열어둔다. 대신 탈퇴한
+-- 행(deleted_at)은 뺀다 -- 그건 anonymize된 껍데기다. profile이 없으면 0행이다.
+create function public.get_my_profile()
+returns table(
+  id bigint,
+  name text,
+  role public.app_role,
+  type public.profile_type,
+  student_number char(6),
+  class_no int2,
+  cohort int2,
+  gender public.profile_gender,
+  track public.profile_track,
+  department text,
+  phone_number text,
+  contact_email text,
+  avatar_url text,
+  cover_image_url text,
+  birthday date,
+  description text,
+  status public.profile_status,
+  dorm_room int2,
+  is_reenrolled boolean,
+  onboarding_completed_at timestamptz,
+  status_updated_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language sql stable security definer set search_path = '' as $$
+  select
+    p.id, p.name, p.role, p.type, p.student_number, p.class_no, p.cohort, p.gender, p.track,
+    p.department, p.phone_number, p.contact_email, p.avatar_url, p.cover_image_url, p.birthday, p.description,
+    p.status, p.dorm_room, p.is_reenrolled, p.onboarding_completed_at, p.status_updated_at,
+    p.created_at, p.updated_at
+  from public.profiles p
+  where p.auth_user_id = (select auth.uid())
+    and p.deleted_at is null
+$$;
 
 create function public.submit_onboarding(p_name text,p_type public.profile_type,p_student_number char(6),p_class_no int2,p_cohort int2,p_gender public.profile_gender,p_track public.profile_track,p_department text,p_is_reenrolled boolean,p_phone_number text,p_birthday date,p_description text,p_dorm_room int2)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -611,6 +712,8 @@ revoke execute on function public.submit_onboarding(text,public.profile_type,cha
 grant execute on function public.submit_onboarding(text,public.profile_type,char,int2,int2,public.profile_gender,public.profile_track,text,boolean,text,date,text,int2), public.review_profile(bigint,public.profile_status), public.review_profiles(bigint[],public.profile_status), public.list_pending_profiles(bigint,int4), public.count_pending_profiles() to authenticated;
 grant execute on function public.withdraw_profile(), public.finalize_avatar(text), public.finalize_cover_image(text) to authenticated;
 revoke execute on function public.finalize_avatar(text), public.finalize_cover_image(text) from public, anon, service_role;
+revoke execute on function public.get_my_profile() from public, anon, service_role;
+grant execute on function public.get_my_profile() to authenticated;
 
 -- 열쇠고리 RPC 네 개. bytea가 PostgREST를 지나면 hex 문자열(`\x00ff`)이 되어 2배로 부푸므로
 -- 경계에서는 base64로 주고받고 컬럼은 bytea로 남긴다. 클라이언트 쓰기 경로가 이 세 함수뿐인

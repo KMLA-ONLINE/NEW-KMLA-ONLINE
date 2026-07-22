@@ -1,6 +1,6 @@
 import { ChevronLeftIcon, SearchIcon } from "lucide-react"
 import { useState } from "react"
-import { Link } from "react-router"
+import { Link, Navigate, useSearchParams } from "react-router"
 
 import { SpaceDiscoverCard } from "~/components/space/space-discover-card"
 import { Checkbox } from "~/components/ui/checkbox"
@@ -11,6 +11,7 @@ import { normalizeSearch } from "~/lib/group/format"
 import { mockSpaces } from "~/lib/space/mock-data"
 
 export default function GroupDiscoverPage() {
+  const [searchParams] = useSearchParams()
   const [spaces, setSpaces] = useState(mockSpaces)
   const [query, setQuery] = useState("")
   // 이 화면의 이름이 "찾기"다 -- 기본은 아직 안 들어간 그룹만 보여준다. 끄면 내 그룹까지 훑는다.
@@ -48,6 +49,10 @@ export default function GroupDiscoverPage() {
   // 필터가 **검색에 걸린 것**을 숨기고 있으면 그 사실을 말해줘야 한다. 안 그러면 이미 가입한
   // 그룹을 검색한 사람이 0건을 보고 "그런 그룹 없나 보다" 하고 만다.
   const hiddenMatches = matching.length - results.length
+
+  if (searchParams.get("as") === "teacher") {
+    return <Navigate to="/groups?as=teacher" replace />
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
@@ -100,7 +105,7 @@ export default function GroupDiscoverPage() {
           {/* 결과와 같은(가라앉은) 검색어를 쓴다 -- 방금 친 글자를 쓰면 아직 그 결과가 아닌데
               "'코딩'과 맞는 그룹이 없습니다"라고 말하게 된다. */}
           <p>
-            {settled ? `“${settled}”와 맞는 그룹이 없습니다.` : "더 들어갈 비공식 그룹이 없습니다."}
+            {settled ? `“${settled}”와 맞는 그룹이 없습니다.` : "표시할 비공식 그룹이 없습니다."}
           </p>
           {hiddenMatches > 0 ? (
             <p>

@@ -38,7 +38,7 @@ begin
   select id into profile3 from public.profiles where auth_user_id = user3;
 
   update public.profiles
-  set type = 'teacher', track = 'domestic', status = 'accepted'
+  set type = 'teacher', status = 'accepted'
   where id in (profile1, profile2, profile3);
 
   perform set_config('request.jwt.claim.sub', user1::text, true);

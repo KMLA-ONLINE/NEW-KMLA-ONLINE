@@ -96,8 +96,11 @@ function MemberRow({
         {member.isMe ? <span className="text-muted-foreground font-normal"> (나)</span> : null}
       </span>
 
+      {/* 아래 역할 메뉴는 소유권 이양 AlertDialog를 여니 non-modal이다. 메뉴와 뒤이어 열리는
+          모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이 풀리지
+          않아 페이지 전체가 클릭 불가가 된다. */}
       {editable && viewerRole !== null ? (
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"

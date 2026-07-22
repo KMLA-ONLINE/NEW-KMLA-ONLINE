@@ -262,8 +262,11 @@ function GroupCommentItem({
 
           {/* 수정은 작성자 본인만이다 -- comments_update 정책이 author_id=current_profile_id()라
               관리자도 남의 댓글 본문은 못 고친다. 삭제만 모더레이션 대상(soft_delete_comment). */}
+          {/* 아래 메뉴는 삭제·익명 제한 AlertDialog를 여니 non-modal이다. 메뉴와 뒤이어 열리는
+              모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이 풀리지
+              않아 페이지 전체가 클릭 불가가 된다. */}
           {comment.isMine || canManage ? (
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
