@@ -37,7 +37,6 @@ export default function ProfileEditPage() {
   const { isConfirmingDiscard, allowNextClose, confirmDiscard, cancelDiscard } =
     useCloseConfirmation(checkIsDirty)
 
-  // 저장 전 DB 제약과 같은 형식만 확인한다.
   const formRef = useRef<HTMLFormElement>(null)
   const [phoneError, setPhoneError] = useState("")
   const [contactEmailError, setContactEmailError] = useState("")

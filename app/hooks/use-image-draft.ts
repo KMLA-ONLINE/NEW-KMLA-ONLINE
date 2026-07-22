@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 
-// 로컬 미리보기 object URL은 교체·초기화·unmount 때 해제한다.
 export function useImageDraft(initial: string | null, resetKey?: string | number) {
   const [url, setUrl] = useState(initial)
   const objectUrlRef = useRef(initial?.startsWith("blob:") ? initial : null)

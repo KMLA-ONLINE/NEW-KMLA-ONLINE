@@ -29,7 +29,6 @@ describe("coverCropRect", () => {
       offsetX: 0,
       offsetY: 0,
     })
-    // baseScale=0.2 → 표시 2000×1000의 세로를 프레임(200)에 맞춤. 가운데 1000px 폭이 프레임에 온다.
     expect(rect).toEqual({ x: 500, y: 0, width: 1000, height: 1000 })
   })
 
@@ -41,12 +40,10 @@ describe("coverCropRect", () => {
       frameHeight: 200,
       zoom: 1,
     }
-    // maxOffsetX=(2000*0.2-200)/2=100. 그 너머로 밀어도 x=0(왼쪽 끝)에서 멈춘다.
     const clamped = coverCropRect({ ...base, offsetX: 100_000, offsetY: 0 })
     const atLimit = coverCropRect({ ...base, offsetX: 100, offsetY: 0 })
     expect(clamped).toEqual(atLimit)
     expect(clamped.x).toBe(0)
-    // 반대로 밀면 오른쪽 끝(x=1000).
     expect(coverCropRect({ ...base, offsetX: -100_000, offsetY: 0 }).x).toBe(1000)
   })
 
@@ -63,7 +60,6 @@ describe("coverCropRect", () => {
     const tight = coverCropRect({ ...params, zoom: 2 })
     expect(tight.width).toBeLessThan(wide.width)
     expect(tight.width).toBe(500)
-    // 중심 유지: 500폭이 가운데(250..750)에 온다.
     expect(tight.x).toBe(250)
   })
 })
@@ -77,9 +73,9 @@ describe("coverFit", () => {
       frameHeight: 200,
       zoom: 1,
     })
-    expect(fit.baseScale).toBe(0.2) // max(200/2000, 200/1000)=max(0.1,0.2)
-    expect(fit.maxOffsetX).toBe(100) // (2000*0.2-200)/2
-    expect(fit.maxOffsetY).toBe(0) // 세로는 딱 맞아 pan 여유 없음
+    expect(fit.baseScale).toBe(0.2)
+    expect(fit.maxOffsetX).toBe(100)
+    expect(fit.maxOffsetY).toBe(0)
   })
 })
 

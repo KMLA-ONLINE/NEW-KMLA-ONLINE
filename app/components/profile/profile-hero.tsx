@@ -43,8 +43,6 @@ function metaFacts(profile: MyProfile): MetaFact[] {
   return facts
 }
 
-// meta·전화는 데스크톱에선 이름 컬럼 안, 모바일에선 그 아래 별도 줄로 위치가 갈린다. 배치만
-// 다르고 내용은 같아서, 표시 className만 바꿔 두 자리에 같은 컴포넌트를 건다.
 function MetaFacts({ facts, className }: { facts: MetaFact[]; className?: string }) {
   return (
     <dl

@@ -1,6 +1,5 @@
 import { GENDER_LABEL, TRACK_LABEL, type MyProfile } from "~/lib/profile/types"
 
-/** 아바타 폴백. 한글 이름은 성 한 글자가 관례라 앞 한 글자만 쓴다. */
 export function profileInitials(name: string): string {
   return name.trim().charAt(0) || "?"
 }

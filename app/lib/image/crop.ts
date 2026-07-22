@@ -1,5 +1,3 @@
-// 크롭은 압축 전 단계다. EXIF 방향을 미리보기와 같은 좌표계로 맞추고, WebP 재인코딩은 한 번만 한다.
-
 export type CropRect = { x: number; y: number; width: number; height: number }
 
 function clamp(value: number, min: number, max: number): number {
