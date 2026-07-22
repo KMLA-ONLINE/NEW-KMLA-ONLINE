@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react"
 
 import type { PostViewMode } from "~/components/group/use-post-view-mode"
+import { useVisitedPosts } from "~/components/group/use-visited-posts"
 import { GroupPostCard } from "~/components/group/group-post-card"
 import { GroupPostRow } from "~/components/group/group-post-row"
 import type { GroupPost } from "~/lib/group/types"
@@ -49,6 +50,8 @@ export function GroupPostFeed({
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
   canCurate?: boolean
 }) {
+  const { visitedPostIds, markVisited } = useVisitedPosts()
+
   if (posts.length === 0) {
     return (
       empty ?? (
@@ -66,7 +69,11 @@ export function GroupPostFeed({
         <ul className="divide-border/70 flex flex-col divide-y">
           {posts.map((post) => (
             <li key={post.id}>
-              <GroupPostRow post={post} />
+              <GroupPostRow
+                post={post}
+                isVisited={visitedPostIds.has(post.pubId)}
+                onVisit={() => markVisited(post.pubId)}
+              />
             </li>
           ))}
         </ul>
