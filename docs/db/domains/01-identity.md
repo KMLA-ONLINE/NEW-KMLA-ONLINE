@@ -69,7 +69,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 - 학생(`type = 'student'`) 필수: `student_number`, `cohort`, `track`
 - 선생님(`type = 'teacher'`): `student_number`, `class_no`, `cohort`, `gender`, `track`, `department`, `dorm_room`은 모두 `NULL`
 - 졸업생(`type = 'alumni'`): `class_no`, `department`, `dorm_room`은 `NULL`; 학번·기수·성별·계열은 보존할 수 있다.
-- `phone_number`, `birthday`, `description`, `is_reenrolled`는 DB상 선택값이다. 단, `is_reenrolled`는 값이 없으면 `false`로 저장된다.
+- `phone_number`, `contact_email`, `birthday`, `description`, `is_reenrolled`는 DB상 선택값이다. `contact_email`은 인증 이메일과 분리된 프로필 공개용 연락처이며, 비어 있으면 프로필에 표시하지 않는다. 단, `is_reenrolled`는 값이 없으면 `false`로 저장된다.
 
 `track`은 국내반/국제반 배정이다. DB는 학생에게만 필수로 강제하고 졸업생 값도 허용한다. 앱 온보딩은 학생·졸업생 모두에게 `track`을 받으며, 선생님에게는 받지 않는다.
 
@@ -77,7 +77,7 @@ DB constraint 기준으로 `submit_onboarding(...)` 이후 `status`가 `pending`
 
 승인 이후의 profile 편집은 RPC가 아니라 **컬럼 단위 update grant**가 가른다 (`profiles_update` 정책이 행을 본인으로 잠그고, grant가 컬럼을 자른다).
 
-- 열려 있음: `name`, `gender`, `phone_number`, `birthday`, `description`, `cohort`, `class_no`, `track`, `department`, `dorm_room`
+- 열려 있음: `name`, `gender`, `phone_number`, `contact_email`, `birthday`, `description`, `cohort`, `class_no`, `track`, `department`, `dorm_room`
 - 닫혀 있음: `student_number`, `role`, `status`, `type`, `avatar_url`, `cover_image_url`, `is_reenrolled`
 
 `student_number`만 학교 정보 중 유일하게 닫혀 있다. 심사에서 신원을 대조한 값이고 unique 제약이 걸려 있어, 열어두면 남의 학번을 선점하거나 심사받은 신원과 다른 사람이 될 수 있다. 나머지 학교 필드는 진급·전과·부서 이동으로 실제로 바뀌는 값이라 매번 관리자를 거치게 하지 않는다.

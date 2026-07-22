@@ -45,6 +45,10 @@ describe("profile ownership", () => {
     renderProfileAt(someoneElse)
     expect(screen.queryByRole("link", { name: "프로필 편집" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "프로필 사진 변경" })).not.toBeInTheDocument()
+
+    unmount()
+    renderProfileAt(`${someoneElse}/edit`)
+    expect(screen.queryByRole("dialog", { name: "프로필 편집" })).not.toBeInTheDocument()
   })
 })
 
@@ -54,7 +58,7 @@ describe("profile edit fields", () => {
   it("matches the update column grant", () => {
     renderProfileAt(`${mine}/edit`)
 
-    for (const label of ["이름", "소개", "생일", "전화번호", "기수", "반", "방"]) {
+    for (const label of ["이름", "소개", "생일", "전화번호", "연락처 이메일", "기수", "반", "방"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument()
     }
     for (const label of ["성별", "계열", "부서"]) {
@@ -66,6 +70,26 @@ describe("profile edit fields", () => {
     for (const label of ["학번", "전공", "이메일"]) {
       expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
     }
+  })
+
+  it("lets a teacher clear their birthday", () => {
+    renderProfileAt(`${mine}/edit?as=teacher`)
+
+    fireEvent.click(screen.getByRole("button", { name: "지우기" }))
+
+    expect(screen.getByLabelText("생일")).toHaveValue("")
+  })
+})
+
+describe("contact email", () => {
+  it("shows a profile contact email only when one is set", () => {
+    const { unmount } = renderProfileAt(`${mine}?as=teacher`)
+    expect(screen.getByText("연락처 이메일")).toBeInTheDocument()
+    expect(screen.getByText("park.teacher@kmlaonline.kr")).toBeInTheDocument()
+    unmount()
+
+    renderProfileAt(mine)
+    expect(screen.queryByText("연락처 이메일")).not.toBeInTheDocument()
   })
 })
 

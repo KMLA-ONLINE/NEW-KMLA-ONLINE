@@ -19,6 +19,7 @@ export type MyProfile = Omit<
   | "track"
   | "department"
   | "phone_number"
+  | "contact_email"
   | "avatar_url"
   | "cover_image_url"
   | "birthday"
@@ -35,6 +36,7 @@ export type MyProfile = Omit<
   track: MyProfileRow["track"] | null
   department: MyProfileRow["department"] | null
   phone_number: MyProfileRow["phone_number"] | null
+  contact_email: MyProfileRow["contact_email"] | null
   avatar_url: MyProfileRow["avatar_url"] | null
   cover_image_url: MyProfileRow["cover_image_url"] | null
   birthday: MyProfileRow["birthday"] | null
@@ -57,6 +59,7 @@ export type ProfileEditableField =
   | "name"
   | "gender"
   | "phone_number"
+  | "contact_email"
   | "birthday"
   | "description"
   | "cohort"

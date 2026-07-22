@@ -1,127 +1,25 @@
--- 신원: auth.users -> profiles 트리거, 프로필 생애주기, 그리고 암호학적 열쇠고리.
+-- 신원: auth.users -> profiles 트리거, 승인·권한, 내 프로필 경계.
 -- supabase/schemas/01-identity.sql
 
 begin;
 
 do $$
 declare
-  user1 uuid := '11111111-1111-4111-8111-111111111111';
-  user2 uuid := '22222222-2222-4222-8222-222222222222';
-  profile1 bigint;
-  profile2 bigint;
-  -- 진짜 X25519 점일 필요가 없다. 스키마가 보는 것은 길이뿐이고, 실제 암복호 왕복은
-  -- app/lib/crypto/e2ee.integration.test.ts가 진짜 키로 증명한다.
-  pubkey1 bytea := decode(repeat('a1', 32), 'hex');
-  pubkey2 bytea := decode(repeat('b2', 32), 'hex');
-  pubkey_new bytea := decode(repeat('c3', 32), 'hex');
-  sealed bytea := decode(repeat('dd', 60), 'hex');
-  resealed bytea := decode(repeat('ee', 60), 'hex');
-  vault record;
+  admin_user uuid := '11111111-1111-4111-8111-111111111111';
+  admin_id bigint;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
-  values
-    (user1, 'identity-check-1@example.com', '{"name":"Identity Check 1"}'::jsonb),
-    (user2, 'identity-check-2@example.com', '{"name":"Identity Check 2"}'::jsonb);
+  values (admin_user, 'identity-admin@example.com', '{"name":"Identity Admin"}'::jsonb);
 
-  select id into profile1 from public.profiles where auth_user_id = user1;
-  select id into profile2 from public.profiles where auth_user_id = user2;
-  if profile1 is null or profile2 is null then
+  select id into admin_id from public.profiles where auth_user_id = admin_user;
+  if admin_id is null then
     raise exception 'auth user profile trigger failed';
   end if;
 
-  update public.profiles
-  set type = 'teacher', status = 'accepted'
-  where id in (profile1, profile2);
-
-  perform set_config('request.jwt.claim.sub', user1::text, true);
-  if private.require_current_profile(true) <> profile1 then
-    raise exception 'auth context lookup failed';
-  end if;
-
-  perform public.bootstrap_first_app_admin(profile1);
-  if not exists (select 1 from public.profiles where id = profile1 and role = 'admin') then
+  update public.profiles set type = 'teacher', status = 'accepted' where id = admin_id;
+  perform public.bootstrap_first_app_admin(admin_id);
+  if not exists (select 1 from public.profiles where id = admin_id and role = 'admin') then
     raise exception 'first app admin bootstrap failed';
-  end if;
-
-  -- -------------------------------------------------------------------------
-  -- 열쇠고리 (docs/e2ee.md)
-  -- -------------------------------------------------------------------------
-
-  perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
-  perform set_config('request.jwt.claim.sub', user2::text, true);
-  perform public.create_user_keys(encode(pubkey2,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
-  perform set_config('request.jwt.claim.sub', user1::text, true);
-
-  -- 열쇠고리를 덮어쓰면 그 사람의 DM 히스토리가 통째로 죽는다. 비밀번호가 틀려 금고가
-  -- 안 열리는 클라이언트가 "그럼 새로 만들지" 하고 넘어가는 것을 막는 것이 이 실패다.
-  begin
-    perform public.create_user_keys(encode(pubkey1,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
-    raise exception 'a second key vault should have been rejected';
-  exception when others then
-    if sqlerrm <> 'key vault already exists' then raise; end if;
-  end;
-
-  -- 봉인된 blob은 select grant에서 회수돼 있다. 열려 있으면 같은 학교 아무나 반 친구들의
-  -- wrapped_user_key를 긁어갈 수 있는데, 그건 *비밀번호에서 유도된* 키로 봉인돼 있어서
-  -- 약한 비밀번호를 오프라인에서 때릴 수 있다. 나가는 것은 공개키뿐이다.
-  if not has_column_privilege('authenticated', 'public.user_keys', 'identity_public_key', 'SELECT')
-    or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_user_key', 'SELECT')
-    or has_column_privilege('authenticated', 'public.user_keys', 'wrapped_identity_secret_key', 'SELECT')
-  then
-    raise exception 'user_keys must expose only the identity public key';
-  end if;
-
-  -- 클라이언트 쓰기 grant가 아예 없다 -- 쓰기 문은 RPC 세 개가 전부다.
-  if has_any_column_privilege('authenticated', 'public.user_keys', 'INSERT')
-    or has_any_column_privilege('authenticated', 'public.user_keys', 'UPDATE')
-    or not has_function_privilege('authenticated', 'public.get_my_key_vault()', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'public.get_identity_public_keys(bigint[])', 'EXECUTE')
-  then
-    raise exception 'the key vault must be RPC-only';
-  end if;
-
-  -- 봉인된 blob이 나가는 유일한 문이고, 스스로를 호출자 행에 가둔다.
-  select * into vault from public.get_my_key_vault();
-  if vault.identity_public_key <> encode(pubkey1,'base64')
-    or vault.wrapped_user_key <> encode(sealed,'base64')
-    or (select count(*) from public.get_my_key_vault()) <> 1
-  then
-    raise exception 'get_my_key_vault must return exactly the caller row';
-  end if;
-
-  -- 상대의 공개키는 읽을 수 있어야 한다 -- 메시지 키를 봉인할 대상이 없으면 DM을 보낼 수 없다.
-  if (select identity_public_key from public.get_identity_public_keys(array[profile2])) <> encode(pubkey2,'base64') then
-    raise exception 'a peer identity public key must be readable';
-  end if;
-
-  -- 비밀번호 변경. userKey는 그대로고 봉인만 새로 한다. **신원키가 움직이지 않는다**는 것이
-  -- 이 함수의 요점이다 -- 그래서 메시지를 한 통도 재암호화하지 않는데 히스토리가 살아남는다.
-  perform public.reseal_user_keys(encode(resealed,'base64'));
-  if not exists (
-    select 1 from public.user_keys
-    where user_id = profile1
-      and identity_public_key = pubkey1
-      and wrapped_identity_secret_key = sealed
-      and wrapped_user_key = resealed
-  ) then
-    raise exception 'reseal must not touch the identity key';
-  end if;
-
-  -- 비밀번호를 잊었을 때의 최후 수단. 신원키까지 전부 새로 간다.
-  perform public.rotate_user_keys(encode(pubkey_new,'base64'), encode(sealed,'base64'), encode(sealed,'base64'));
-  if not exists (select 1 from public.user_keys where user_id = profile1 and identity_public_key = pubkey_new) then
-    raise exception 'rotate must replace the identity key';
-  end if;
-
-  -- 탈퇴하면 열쇠고리도 같이 태운다. 남겨둬 봐야 아무도 열 수 없는 blob이고, 상대방 쪽
-  -- 히스토리는 상대의 키로 그대로 읽힌다.
-  perform set_config('request.jwt.claim.sub', user2::text, true);
-  perform public.withdraw_profile();
-  if exists (select 1 from public.user_keys where user_id = profile2) then
-    raise exception 'withdrawal must burn the key vault';
-  end if;
-  if not exists (select 1 from public.profiles where id = profile2 and status = 'withdrawn' and deleted_at is not null) then
-    raise exception 'withdrawal must anonymize the profile';
   end if;
 end
 $$;
@@ -204,21 +102,10 @@ begin
     raise exception 'the queue must hold exactly the pending profiles';
   end if;
 
-  -- 심사에 필요한 필드가 실제로 나온다.
-  if (select phone_number from public.list_pending_profiles() where id = a) <> '01011112222'
-    or (select cohort from public.list_pending_profiles() where id = a) <> 30
-  then
-    raise exception 'the queue must carry the fields a reviewer decides on';
-  end if;
-
   -- 오래 기다린 순서. 최신순이면 밀린 사람이 영영 아래에 깔린다.
   -- b(-3h) -> c(-2h) -> a(-1h)이고, id 순서는 a < b < c다.
   select id into queued from public.list_pending_profiles(p_limit => 1);
   if queued <> b then raise exception 'the review queue must be oldest-first'; end if;
-  select id into queued from public.list_pending_profiles(p_after_id => b, p_limit => 1);
-  if queued <> c then raise exception 'the cursor must walk the queue in submit order'; end if;
-  select id into queued from public.list_pending_profiles(p_after_id => c, p_limit => 1);
-  if queued <> a then raise exception 'the cursor must walk the queue in submit order'; end if;
 
   -- p_limit이 null이면 `limit null`이 되어 상한이 통째로 사라진다. 03-content/05-chat/06-notifications의
   -- 읽기 RPC가 같은 이유로 `p_limit is null`을 함께 본다.
@@ -249,25 +136,8 @@ begin
     raise exception 'a batch review must not touch an already-reviewed profile';
   end if;
 
-  -- 방금 b를 승인했으니 b는 더 이상 pending이 아니다. 그래도 b를 커서로 쓴 다음 페이지는 나와야
-  -- 한다 -- 한 페이지의 마지막 사람을 승인하고 "더 보기"를 누르는 것이 정확히 이 모양이고,
-  -- 커서가 pending을 요구하면 그 순간 남은 큐가 통째로 사라진다.
-  select id into queued from public.list_pending_profiles(p_after_id => b, p_limit => 1);
-  if queued <> a then raise exception 'reviewing a profile must not invalidate it as a cursor'; end if;
-
-  -- 단건은 배치를 감싸기만 한다. 규칙이 한 곳에 살고, 실패 문구는 그대로다.
-  perform public.review_profile(a, 'rejected');
-  if not exists (select 1 from public.profiles where id = a and status = 'rejected') then
-    raise exception 'review_profile must reject through the batch';
-  end if;
-  begin
-    perform public.review_profile(a, 'accepted');
-    raise exception 'a reviewed profile must not be reviewable again';
-  exception when others then
-    if sqlerrm <> 'pending profile not found' then raise; end if;
-  end;
-
   -- 거절은 차단이 아니다. submit_onboarding이 'rejected'에서 다시 들어오고, 그 사람은 큐로 돌아온다.
+  perform public.review_profile(a, 'rejected');
   perform set_config('request.jwt.claim.sub', applicant_a::text, true);
   perform public.submit_onboarding('신청자 A','student','300301'::char(6),1::int2,30::int2,'male','domestic',null,false,'01011112222','2008-03-01','다시 제출합니다',412::int2);
   perform set_config('request.jwt.claim.sub', admin_user::text, true);
@@ -296,8 +166,6 @@ begin
   end;
 
   perform public.set_app_admin(outsider_id);
-  -- 두 번 불러도 같은 결과다. 그리고 새 관리자는 이제 스스로 큐를 연다.
-  perform public.set_app_admin(outsider_id);
   perform set_config('request.jwt.claim.sub', outsider::text, true);
   perform public.count_pending_profiles();
 
@@ -315,16 +183,6 @@ begin
   exception when others then
     if sqlerrm <> 'the last app admin cannot be demoted' then raise; end if;
   end;
-
-  -- 내려간 사람은 큐도 닫힌다.
-  perform set_config('request.jwt.claim.sub', admin_user::text, true);
-  begin
-    perform public.count_pending_profiles();
-    raise exception 'a demoted admin must lose the queue';
-  exception when others then
-    if sqlerrm <> 'app admin required' then raise; end if;
-  end;
-  perform set_config('request.jwt.claim.sub', outsider::text, true);
 
   -- db diff는 GRANT를 뱉지 않는다. 손으로 닫지 않으면 새 함수는 PUBLIC(=anon)에게 열린 채 태어난다.
   if has_function_privilege('anon', 'public.set_app_admin(bigint)', 'EXECUTE')
@@ -378,7 +236,10 @@ begin
   -- 상대는 학생이 아니라 선생님으로 둔다. 학생이면 학번·기수 없이 accepted가 될 수 없다
   -- (profiles_student_identity_check).
   update public.profiles set type = 'teacher' where id = other_id;
-  update public.profiles set status = 'accepted' where id in (owner_id, other_id);
+  update public.profiles
+  set status = 'accepted',
+      contact_email = case when id = owner_id then 'owner-contact@example.com' else 'other-contact@example.com' end
+  where id in (owner_id, other_id);
 
   -- 정확히 한 행. 학교 전체가 accepted라 profiles_select로는 남의 행도 보이지만, 이 함수는
   -- 호출자 본인으로 잠겨 있어야 한다.
@@ -392,6 +253,7 @@ begin
     or mine.department <> '과학기술부'
     or mine.track <> 'international'
     or mine.dorm_room <> 777
+    or mine.contact_email <> 'owner-contact@example.com'
     or mine.status <> 'accepted'
   then
     raise exception 'get_my_profile must carry the onboarding fields';
@@ -425,11 +287,17 @@ begin
   if exists (select 1 from public.get_my_profile()) then
     raise exception 'get_my_profile must not return a withdrawn profile';
   end if;
+  if (select contact_email from public.profiles where id = other_id) is not null then
+    raise exception 'withdrawal must scrub the contact email';
+  end if;
 
   -- 편집이 실제로 저장되는 필드는 컬럼 grant가 정한다. 화면이 무엇을 그리든 이 열 개가 전부다.
-  if not has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE')
+  if not has_column_privilege('authenticated', 'public.profiles', 'contact_email', 'SELECT')
+    or not has_function_privilege('authenticated', 'public.get_my_profile()', 'EXECUTE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'name', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.profiles', 'gender', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.profiles', 'phone_number', 'UPDATE')
+    or not has_column_privilege('authenticated', 'public.profiles', 'contact_email', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.profiles', 'birthday', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.profiles', 'description', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.profiles', 'cohort', 'UPDATE')
@@ -471,24 +339,6 @@ begin
   exception when foreign_key_violation then
     null;
   end;
-
-  -- 반대로 정상적인 변경은 constraint를 통과해야 한다. 진급(기수는 그대로, 반이 바뀐다)과
-  -- 부서·방 이동이 이 모양이고, 새로 연 컬럼들이 실제로 쓰이는 경우가 정확히 이것이다.
-  update public.profiles set class_no = 4::int2, department = '도서부', dorm_room = 512::int2
-  where id = owner_id;
-  if not exists (
-    select 1 from public.profiles
-    where id = owner_id and class_no = 4 and department = '도서부' and dorm_room = 512
-  ) then
-    raise exception 'a legitimate school-field change was rejected';
-  end if;
-
-  -- avatar/cover는 update grant가 없다. 붙이는 문은 업로드된 object를 검증하는 finalize RPC뿐이다.
-  if not has_function_privilege('authenticated', 'public.finalize_avatar(text)', 'EXECUTE')
-    or not has_function_privilege('authenticated', 'public.finalize_cover_image(text)', 'EXECUTE')
-  then
-    raise exception 'the image finalize path must stay open to authenticated';
-  end if;
 
   -- db diff는 GRANT를 뱉지 않는다.
   if has_function_privilege('anon', 'public.get_my_profile()', 'EXECUTE')

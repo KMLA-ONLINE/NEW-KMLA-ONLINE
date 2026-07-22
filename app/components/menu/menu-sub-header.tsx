@@ -6,7 +6,7 @@ import { Link } from "react-router"
 // 곳이 어디인지 화면 안에서도 말해 준다.
 export function MenuSubHeader({ title, aside }: { title: string; aside?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       <Link
         to="/menu"
         className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm transition-colors"

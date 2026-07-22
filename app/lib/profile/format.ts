@@ -28,15 +28,6 @@ export function formatBirthday(value: string): string {
   return `${year}년 ${Number(month)}월 ${Number(day)}일`
 }
 
-/** 이름 옆 한 줄. 학생이면 "30기 · 국제반 1반", 선생님·졸업생이면 비어 있을 수 있다. */
-export function formatAffiliation(profile: MyProfile): string {
-  const parts: string[] = []
-  if (profile.cohort !== null) parts.push(`${profile.cohort}기`)
-  if (profile.track !== null) parts.push(TRACK_LABEL[profile.track])
-  if (profile.class_no !== null) parts.push(`${profile.class_no}반`)
-  return parts.join(" · ")
-}
-
 /** 정보 카드의 값 한 칸. 비어 있으면 null을 주고, 렌더러가 "-"를 그린다. */
 export function formatProfileValue(
   profile: MyProfile,
@@ -50,6 +41,7 @@ export function formatProfileValue(
     | "gender"
     | "birthday"
     | "phone_number"
+    | "contact_email"
 ): string | null {
   switch (field) {
     case "student_number":
@@ -70,5 +62,7 @@ export function formatProfileValue(
       return profile.birthday === null ? null : formatBirthday(profile.birthday)
     case "phone_number":
       return profile.phone_number === null ? null : formatPhoneNumber(profile.phone_number)
+    case "contact_email":
+      return profile.contact_email
   }
 }

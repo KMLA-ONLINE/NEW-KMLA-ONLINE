@@ -13,6 +13,7 @@ export const mockProfile: MyProfile = {
   track: "international",
   department: "과학기술부",
   phone_number: "01000000000",
+  contact_email: null,
   avatar_url: null,
   cover_image_url: null,
   birthday: "2009-03-01",
@@ -38,6 +39,7 @@ export const mockTeacherProfile: MyProfile = {
   dorm_room: null,
   gender: null,
   birthday: "1987-05-12",
+  contact_email: "park.teacher@kmlaonline.kr",
   description: "국어와 글쓰기를 가르칩니다.",
 }
 

@@ -40,33 +40,45 @@ export default function ProfileEditPage() {
   // 저장 전 DB 제약과 같은 형식만 확인한다.
   const formRef = useRef<HTMLFormElement>(null)
   const [phoneError, setPhoneError] = useState("")
+  const [contactEmailError, setContactEmailError] = useState("")
   const [cohortError, setCohortError] = useState("")
+  const [track, setTrack] = useState(profile.track ?? "")
+  const [trackError, setTrackError] = useState("")
   const [canSave, setCanSave] = useState(true)
 
-  const validate = () => {
+  const validate = useCallback(() => {
     const form = formRef.current
-    if (!form) return
+    if (!form) return false
     const read = (name: string) =>
       (form.elements.namedItem(name) as HTMLInputElement | null)?.value.trim() ?? ""
 
     const name = read("name")
     const phone = read("phone_number")
+    const contactEmail = read("contact_email")
     const cohort = read("cohort")
     const classNo = read("class_no")
     const dormRoom = read("dorm_room")
 
     const phoneOk = !phone || /^\d{10,11}$/.test(phone)
+    const contactEmailOk = !contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)
     const cohortOk = !hasCohortAndTrack || /^\d{2}$/.test(cohort)
-    const classNoOk = !classNo || (Number(classNo) >= 1 && Number(classNo) <= 10)
-    const dormRoomOk = !dormRoom || Number(dormRoom) >= 1
+    const trackOk = !hasCohortAndTrack || /^(domestic|international)$/.test(track)
+    const classNoOk =
+      !classNo ||
+      (Number.isInteger(Number(classNo)) && Number(classNo) >= 1 && Number(classNo) <= 10)
+    const dormRoomOk = !dormRoom || (Number.isInteger(Number(dormRoom)) && Number(dormRoom) >= 1)
+    const isValid =
+      Boolean(name) && phoneOk && contactEmailOk && cohortOk && trackOk && classNoOk && dormRoomOk
 
-    setCanSave(Boolean(name) && phoneOk && cohortOk && classNoOk && dormRoomOk)
-  }
+    setContactEmailError(contactEmailOk ? "" : "올바른 이메일 주소를 입력해 주세요.")
+    setTrackError(trackOk ? "" : "계열을 선택해 주세요.")
+    setCanSave(isValid)
+    return isValid
+  }, [hasCohortAndTrack, track])
 
   useEffect(() => {
     validate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [validate])
 
   return (
     <>
@@ -81,26 +93,26 @@ export default function ProfileEditPage() {
             </Button>
             <DialogTitle className="flex-1 text-base">프로필 편집</DialogTitle>
             <DialogDescription className="sr-only">프로필 정보를 수정합니다.</DialogDescription>
-            <Button
-              size="sm"
-              disabled={!canSave}
-              onClick={() => {
-                allowNextClose()
-                close()
-              }}
-            >
+            <Button size="sm" type="submit" form="profile-edit-form" disabled={!canSave}>
               저장
             </Button>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             <form
+              id="profile-edit-form"
               ref={formRef}
               className="grid gap-5"
               aria-label="프로필 편집 양식"
               onChange={() => {
                 setIsDirty(true)
                 validate()
+              }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!validate()) return
+                allowNextClose()
+                close()
               }}
             >
               <PhotoShortcut />
@@ -147,7 +159,31 @@ export default function ProfileEditPage() {
                   </Field>
                 ) : null}
 
-                <Field label="생일" htmlFor="birthday">
+                <Field
+                  label="생일"
+                  htmlFor="birthday"
+                  action={
+                    isTeacher ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="-mr-2 h-7 px-2 text-xs"
+                        onClick={() => {
+                          const birthday = formRef.current?.elements.namedItem(
+                            "birthday"
+                          ) as HTMLInputElement | null
+                          if (!birthday?.value) return
+                          birthday.value = ""
+                          setIsDirty(true)
+                          validate()
+                        }}
+                      >
+                        지우기
+                      </Button>
+                    ) : undefined
+                  }
+                >
                   <Input
                     id="birthday"
                     name="birthday"
@@ -180,6 +216,25 @@ export default function ProfileEditPage() {
                   {phoneError ? (
                     <p role="alert" aria-live="polite" className="text-destructive text-xs">
                       {phoneError}
+                    </p>
+                  ) : null}
+                </Field>
+
+                <Field label="연락처 이메일" htmlFor="contact_email">
+                  <Input
+                    id="contact_email"
+                    name="contact_email"
+                    type="email"
+                    maxLength={254}
+                    defaultValue={profile.contact_email ?? ""}
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    spellCheck={false}
+                    aria-invalid={!!contactEmailError}
+                  />
+                  {contactEmailError ? (
+                    <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                      {contactEmailError}
                     </p>
                   ) : null}
                 </Field>
@@ -217,8 +272,11 @@ export default function ProfileEditPage() {
                     <Field label="계열" htmlFor="track">
                       <Select
                         name="track"
-                        defaultValue={profile.track ?? undefined}
-                        onValueChange={() => setIsDirty(true)}
+                        value={track}
+                        onValueChange={(value) => {
+                          setTrack(value)
+                          setIsDirty(true)
+                        }}
                         required
                       >
                         <SelectTrigger id="track" className="w-full">
@@ -229,6 +287,11 @@ export default function ProfileEditPage() {
                           <SelectItem value="international">{TRACK_LABEL.international}</SelectItem>
                         </SelectContent>
                       </Select>
+                      {trackError ? (
+                        <p role="alert" aria-live="polite" className="text-destructive text-xs">
+                          {trackError}
+                        </p>
+                      ) : null}
                     </Field>
                   </>
                 ) : null}
@@ -239,7 +302,10 @@ export default function ProfileEditPage() {
                       <Select
                         name="department"
                         defaultValue={profile.department ?? undefined}
-                        onValueChange={() => setIsDirty(true)}
+                        onValueChange={() => {
+                          setIsDirty(true)
+                          validate()
+                        }}
                       >
                         <SelectTrigger id="department" className="w-full">
                           <SelectValue placeholder="선택 안 함" />
@@ -275,11 +341,13 @@ export default function ProfileEditPage() {
                       <Input
                         id="dorm_room"
                         name="dorm_room"
-                        type="number"
                         inputMode="numeric"
-                        min={1}
+                        maxLength={4}
                         placeholder="305"
                         defaultValue={profile.dorm_room ?? ""}
+                        onChange={(event) => {
+                          event.target.value = event.target.value.replace(/\D/g, "").slice(0, 4)
+                        }}
                       />
                     </Field>
                   </>
@@ -361,11 +429,10 @@ function PhotoShortcut() {
   )
 }
 
-function SectionDivider({ label, hint }: { label: string; hint?: string }) {
+function SectionDivider({ label }: { label: string }) {
   return (
     <div className="border-t pt-4">
       <p className="text-sm font-semibold">{label}</p>
-      <p className="text-muted-foreground mt-0.5 text-xs">{hint}</p>
     </div>
   )
 }
@@ -373,15 +440,20 @@ function SectionDivider({ label, hint }: { label: string; hint?: string }) {
 function Field({
   label,
   htmlFor,
+  action,
   children,
 }: {
   label: string
   htmlFor: string
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
     <div className="grid gap-2">
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {action}
+      </div>
       {children}
     </div>
   )

@@ -21,6 +21,7 @@ create table public.profiles (
   track public.profile_track null,
   department text null references public.profile_departments (name) on update cascade on delete set null,
   phone_number text null,
+  contact_email text null,
   avatar_url text null,
   cover_image_url text null,
   birthday date null,
@@ -82,6 +83,7 @@ alter table public.profiles
   add constraint profiles_class_no_check check (class_no is null or class_no > 0),
   add constraint profiles_student_number_check check (student_number is null or student_number ~ '^\d{6}$'),
   add constraint profiles_phone_number_check check (phone_number is null or phone_number ~ '^\+?[0-9]{8,15}$'),
+  add constraint profiles_contact_email_check check (contact_email is null or (contact_email = btrim(contact_email) and contact_email ~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$')),
   add constraint profiles_dorm_room_check check (dorm_room is null or dorm_room > 0),
   add constraint profiles_student_identity_check check (
     deleted_at is not null
@@ -294,9 +296,10 @@ begin
       cohort = null,
       gender = null,
       track = null,
-      department = null,
-      phone_number = null,
-      avatar_url = null,
+       department = null,
+       phone_number = null,
+       contact_email = null,
+       avatar_url = null,
       cover_image_url = null,
       birthday = null,
       description = null,
@@ -476,7 +479,7 @@ grant select on table public.profile_departments, public.permissions, public.use
 -- 있다. suspended_by/deleted_by/actor_id를 컬럼 grant로 가리는 것과 같은 원칙이다.
 grant select (
   id, name, role, type, student_number, class_no, cohort, gender, track, department,
-  phone_number, avatar_url, cover_image_url, birthday, description, status, dorm_room,
+  phone_number, contact_email, avatar_url, cover_image_url, birthday, description, status, dorm_room,
   is_reenrolled, onboarding_completed_at, status_updated_at, created_at, updated_at, deleted_at
 ) on table public.profiles to authenticated;
 -- 본인이 고칠 수 있는 칸. student_number만 빠진다 -- 학번은 심사에서 신원을 대조한 값이고
@@ -489,7 +492,7 @@ grant select (
 -- class_no·dorm_room은 양수, department는 profile_departments FK 안의 이름이어야 한다.
 -- role·status·type·avatar_url·cover_image_url은 계속 빠져 있다.
 grant update (
-  name, gender, phone_number, birthday, description,
+  name, gender, phone_number, contact_email, birthday, description,
   cohort, class_no, track, department, dorm_room
 ) on table public.profiles
 to authenticated;
@@ -528,6 +531,7 @@ returns table(
   track public.profile_track,
   department text,
   phone_number text,
+  contact_email text,
   avatar_url text,
   cover_image_url text,
   birthday date,
@@ -543,7 +547,7 @@ returns table(
 language sql stable security definer set search_path = '' as $$
   select
     p.id, p.name, p.role, p.type, p.student_number, p.class_no, p.cohort, p.gender, p.track,
-    p.department, p.phone_number, p.avatar_url, p.cover_image_url, p.birthday, p.description,
+    p.department, p.phone_number, p.contact_email, p.avatar_url, p.cover_image_url, p.birthday, p.description,
     p.status, p.dorm_room, p.is_reenrolled, p.onboarding_completed_at, p.status_updated_at,
     p.created_at, p.updated_at
   from public.profiles p

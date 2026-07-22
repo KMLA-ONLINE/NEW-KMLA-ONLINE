@@ -7,36 +7,21 @@ import {
   PhoneIcon,
   ShieldCheckIcon,
 } from "lucide-react"
-import { useEffect, useRef, useState, type ComponentType } from "react"
+import { useRef, type ComponentType } from "react"
 import { Link } from "react-router"
 
+import { useImageCrop } from "~/hooks/use-image-crop"
+import { useImageDraft } from "~/hooks/use-image-draft"
+import { ImageCropper } from "~/components/image/image-cropper"
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { formatPhoneNumber, profileInitials } from "~/lib/profile/format"
 import { GENDER_LABEL, PROFILE_TYPE_LABEL, TRACK_LABEL, type MyProfile } from "~/lib/profile/types"
+import { cn } from "~/lib/utils"
 
-// Object URL은 교체·unmount 때 해제한다.
-function useImageDraft(initial: string | null) {
-  const [url, setUrl] = useState(initial)
-  const objectUrlRef = useRef(initial?.startsWith("blob:") ? initial : null)
-
-  useEffect(
-    () => () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-    },
-    []
-  )
-
-  const replace = (next: string | null) =>
-    setUrl((current) => {
-      if (current?.startsWith("blob:")) URL.revokeObjectURL(current)
-      objectUrlRef.current = next?.startsWith("blob:") ? next : null
-      return next
-    })
-
-  return [url, replace] as const
-}
+const AVATAR_CROP = { aspect: 1, maxOutputEdge: 512 }
+const COVER_CROP = { aspect: 3, maxOutputEdge: 1600 }
 
 function identityFacts(profile: MyProfile): string[] {
   const facts: string[] = []
@@ -58,6 +43,43 @@ function metaFacts(profile: MyProfile): MetaFact[] {
   return facts
 }
 
+// meta·전화는 데스크톱에선 이름 컬럼 안, 모바일에선 그 아래 별도 줄로 위치가 갈린다. 배치만
+// 다르고 내용은 같아서, 표시 className만 바꿔 두 자리에 같은 컴포넌트를 건다.
+function MetaFacts({ facts, className }: { facts: MetaFact[]; className?: string }) {
+  return (
+    <dl
+      className={cn(
+        "text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm",
+        className
+      )}
+    >
+      {facts.map((fact, index) => (
+        <div key={fact.label} className="flex items-center gap-1.5">
+          {index > 0 ? <span aria-hidden="true" className="bg-border h-3 w-px" /> : null}
+          <fact.icon className="size-4 shrink-0" aria-hidden="true" />
+          <dt className="sr-only">{fact.label}</dt>
+          <dd>{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function PhoneLink({ phoneNumber, className }: { phoneNumber: string; className?: string }) {
+  return (
+    <a
+      href={`tel:${phoneNumber}`}
+      className={cn(
+        "text-muted-foreground hover:text-foreground flex w-fit items-center gap-1.5 text-sm transition-colors",
+        className
+      )}
+    >
+      <PhoneIcon className="size-4 shrink-0" aria-hidden="true" />
+      <span className="truncate">{formatPhoneNumber(phoneNumber)}</span>
+    </a>
+  )
+}
+
 export function ProfileHero({
   profile,
   avatarUrl,
@@ -71,17 +93,24 @@ export function ProfileHero({
   isMe: boolean
   editTo: string
 }) {
-  const [cover, replaceCover] = useImageDraft(coverUrl)
-  const [avatar, replaceAvatar] = useImageDraft(avatarUrl)
+  const [cover, replaceCover] = useImageDraft(coverUrl, profile.id)
+  const [avatar, replaceAvatar] = useImageDraft(avatarUrl, profile.id)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  const avatarCrop = useImageCrop({
+    onCropped: (file) => replaceAvatar(URL.createObjectURL(file)),
+  })
+  const coverCrop = useImageCrop({
+    onCropped: (file) => replaceCover(URL.createObjectURL(file)),
+  })
 
   const identity = identityFacts(profile)
   const meta = metaFacts(profile)
 
   return (
-    <section className="bg-card animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both overflow-hidden rounded-xl border-0 duration-500 sm:border">
-      <div className="from-primary/30 to-primary/5 relative h-48 w-full overflow-hidden bg-linear-to-br sm:h-52 lg:h-60">
+    <section className="bg-card animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both overflow-hidden border-0 duration-500 motion-reduce:animate-none sm:border md:rounded-xl">
+      <div className="from-primary/30 to-primary/5 relative aspect-[3/1] w-full overflow-hidden bg-linear-to-br lg:aspect-auto lg:h-72">
         {cover ? <img src={cover} alt="" className="size-full object-cover" /> : null}
         {isMe ? (
           <>
@@ -102,7 +131,7 @@ export function ProfileHero({
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0]
-                if (file) replaceCover(URL.createObjectURL(file))
+                if (file) coverCrop.start(file)
                 event.target.value = ""
               }}
             />
@@ -112,9 +141,9 @@ export function ProfileHero({
 
       <div className="bg-card relative -mt-8 rounded-t-3xl p-4 sm:mt-0 sm:rounded-none sm:bg-transparent sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-5">
-          <div className="flex min-w-0 items-start gap-3 sm:contents">
+          <div className="flex min-w-0 items-start gap-4 sm:contents">
             <div className="relative -mt-12 w-fit shrink-0 sm:-mt-24">
-              <Avatar className="ring-card size-28 ring-4 sm:size-36">
+              <Avatar className="ring-card size-[6.5rem] ring-4 sm:size-[8.5rem]">
                 {avatar ? <AvatarImage src={avatar} alt="" className="object-cover" /> : null}
                 <AvatarFallback className="text-3xl font-semibold">
                   {profileInitials(profile.name)}
@@ -139,7 +168,7 @@ export function ProfileHero({
                     className="hidden"
                     onChange={(event) => {
                       const file = event.target.files?.[0]
-                      if (file) replaceAvatar(URL.createObjectURL(file))
+                      if (file) avatarCrop.start(file)
                       event.target.value = ""
                     }}
                   />
@@ -171,54 +200,18 @@ export function ProfileHero({
                 <p className="text-muted-foreground mt-1.5 text-sm">{identity.join(" · ")}</p>
               ) : null}
 
-              {meta.length > 0 ? (
-                <dl className="text-muted-foreground mt-2 hidden flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:flex">
-                  {meta.map((fact, index) => (
-                    <div key={fact.label} className="flex items-center gap-1.5">
-                      {index > 0 ? (
-                        <span aria-hidden="true" className="bg-border h-3 w-px" />
-                      ) : null}
-                      <fact.icon className="size-4 shrink-0" aria-hidden="true" />
-                      <dt className="sr-only">{fact.label}</dt>
-                      <dd>{fact.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
+              {meta.length > 0 ? <MetaFacts facts={meta} className="mt-2 hidden sm:flex" /> : null}
 
               {profile.phone_number ? (
-                <a
-                  href={`tel:${profile.phone_number}`}
-                  className="text-muted-foreground hover:text-foreground mt-2 hidden w-fit items-center gap-1.5 text-sm transition-colors sm:flex"
-                >
-                  <PhoneIcon className="size-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{formatPhoneNumber(profile.phone_number)}</span>
-                </a>
+                <PhoneLink phoneNumber={profile.phone_number} className="mt-2 hidden sm:flex" />
               ) : null}
             </div>
           </div>
 
-          {meta.length > 0 ? (
-            <dl className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:hidden">
-              {meta.map((fact, index) => (
-                <div key={fact.label} className="flex items-center gap-1.5">
-                  {index > 0 ? <span aria-hidden="true" className="bg-border h-3 w-px" /> : null}
-                  <fact.icon className="size-4 shrink-0" aria-hidden="true" />
-                  <dt className="sr-only">{fact.label}</dt>
-                  <dd>{fact.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
+          {meta.length > 0 ? <MetaFacts facts={meta} className="sm:hidden" /> : null}
 
           {profile.phone_number ? (
-            <a
-              href={`tel:${profile.phone_number}`}
-              className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1.5 text-sm transition-colors sm:hidden"
-            >
-              <PhoneIcon className="size-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{formatPhoneNumber(profile.phone_number)}</span>
-            </a>
+            <PhoneLink phoneNumber={profile.phone_number} className="sm:hidden" />
           ) : null}
 
           <div className="flex gap-2 sm:pb-1">
@@ -230,6 +223,7 @@ export function ProfileHero({
                 </Link>
               </Button>
             ) : (
+              /* TODO: DM 라우트가 연결되면 이 버튼을 대화 시작 Link로 바꾼다. */
               <Button type="button" variant="outline" className="h-10 max-sm:flex-1" disabled>
                 <MessageCircleIcon className="size-4" aria-hidden="true" />
                 메시지
@@ -244,6 +238,24 @@ export function ProfileHero({
           </p>
         ) : null}
       </div>
+
+      {avatarCrop.cropperProps ? (
+        <ImageCropper
+          {...avatarCrop.cropperProps}
+          aspect={AVATAR_CROP.aspect}
+          maxOutputEdge={AVATAR_CROP.maxOutputEdge}
+          round
+          title="프로필 사진"
+        />
+      ) : null}
+      {coverCrop.cropperProps ? (
+        <ImageCropper
+          {...coverCrop.cropperProps}
+          aspect={COVER_CROP.aspect}
+          maxOutputEdge={COVER_CROP.maxOutputEdge}
+          title="커버 사진"
+        />
+      ) : null}
     </section>
   )
 }

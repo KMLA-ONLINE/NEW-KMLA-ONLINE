@@ -18,6 +18,10 @@ const PERSONAL_FIELDS = [
 ] as const
 
 export function ProfileInfo({ profile }: { profile: MyProfile }) {
+  const personalFields = profile.contact_email
+    ? ([...PERSONAL_FIELDS, { field: "contact_email", label: "연락처 이메일" }] as const)
+    : PERSONAL_FIELDS
+
   return (
     <div className={profile.type === "teacher" ? "grid gap-4" : "grid gap-4 sm:grid-cols-2"}>
       {profile.type !== "teacher" ? (
@@ -32,7 +36,7 @@ export function ProfileInfo({ profile }: { profile: MyProfile }) {
       <FactCard
         title="개인"
         icon={UserRoundIcon}
-        fields={PERSONAL_FIELDS}
+        fields={personalFields}
         profile={profile}
         delay={profile.type === "teacher" ? 80 : 160}
       />
@@ -58,7 +62,7 @@ function FactCard({
   return (
     <Card
       className={cn(
-        "animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-0 shadow-none ring-0 duration-500 sm:shadow-xs sm:ring-1",
+        "animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both py-0 shadow-none ring-0 duration-500 motion-reduce:animate-none sm:shadow-xs sm:ring-1",
         className
       )}
       style={{ animationDelay: `${delay}ms` }}

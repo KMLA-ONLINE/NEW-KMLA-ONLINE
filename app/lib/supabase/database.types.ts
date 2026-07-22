@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1175,6 +1175,7 @@ export type Database = {
           birthday: string | null
           class_no: number | null
           cohort: number | null
+          contact_email: string | null
           cover_image_url: string | null
           created_at: string
           deleted_at: string | null
@@ -1202,6 +1203,7 @@ export type Database = {
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          contact_email?: string | null
           cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1229,6 +1231,7 @@ export type Database = {
           birthday?: string | null
           class_no?: number | null
           cohort?: number | null
+          contact_email?: string | null
           cover_image_url?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1857,6 +1860,7 @@ export type Database = {
           birthday: string
           class_no: number
           cohort: number
+          contact_email: string
           cover_image_url: string
           created_at: string
           department: string
