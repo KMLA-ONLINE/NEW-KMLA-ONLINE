@@ -6,8 +6,17 @@ import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { Twemoji } from "~/components/ui/twemoji"
 import type { GroupPost } from "~/lib/group/types"
+import { cn } from "~/lib/utils"
 
-export function GroupPostRow({ post }: { post: GroupPost }) {
+export function GroupPostRow({
+  post,
+  isVisited = false,
+  onVisit,
+}: {
+  post: GroupPost
+  isVisited?: boolean
+  onVisit?: () => void
+}) {
   const authorName = post.author?.name ?? "익명"
   // 카드와 같은 규칙: 피드(space 있음)에선 그룹을 명시한 절대 경로, 그룹 안에선 라우트 기준 상대 경로.
   const postPath = post.space
@@ -17,7 +26,11 @@ export function GroupPostRow({ post }: { post: GroupPost }) {
   return (
     <Link
       to={postPath}
-      className="hover:bg-muted/60 flex w-full flex-col gap-1 rounded-md px-3 py-2.5 text-left transition-colors"
+      onClick={onVisit}
+      className={cn(
+        "hover:bg-muted/60 flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors",
+        isVisited && "bg-muted/45 hover:bg-muted/60"
+      )}
     >
       <div className="flex items-center gap-2">
         {post.isPinned ? (
