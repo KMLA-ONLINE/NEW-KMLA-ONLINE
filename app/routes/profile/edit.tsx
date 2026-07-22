@@ -24,47 +24,20 @@ import {
 import { mockProfileDepartments } from "~/lib/profile/mock-data"
 import { GENDER_LABEL, TRACK_LABEL } from "~/lib/profile/types"
 
-/**
- * /profile/:profileId/edit. 프로필 위에 뜨는 모달이라 뒤에 편집 대상이 그대로 보인다 --
- * 그룹의 글쓰기·수정과 같은 패턴이고, 라우트라서 주소가 남고 뒤로가기로 닫힌다.
- *
- * 있는 칸은 `profiles`의 update 컬럼 grant가 정한다: name, gender, phone_number, birthday,
- * description, cohort, class_no, track, department, dorm_room. 그 열 개가 전부다.
- *
- * 학번은 없다. 심사에서 신원을 대조한 값이고 unique라, 열어두면 남의 학번을 선점하거나 심사받은
- * 신원과 다른 사람이 될 수 있다 -- 본문에 읽기로만 있다. 이전 화면에 있던 전공·좌우방 칸도
- * 지웠다. 스키마에 그런 컬럼이 아예 없어서 저장될 곳이 없는 칸이었다.
- *
- * TODO(backend): 저장은 `clientAction`에서 브라우저 Supabase 클라이언트로 한다.
- *   - `supabase.from("profiles").update({ ... }).eq("id", ...)`. id는 `get_my_profile()`로 읽는다
- *     (클라이언트가 보낸 id를 쓰지 않는다). `profiles_update`가 `id = current_profile_id()`로 다시 잠근다.
- *   - `phone_number`는 하이픈을 떨구고 보낸다 -- `profiles_phone_number_check`가 `^\+?[0-9]{8,15}$`라
- *     사람이 적은 `010-1234-5678`을 그대로 보내면 DB가 거절하고 사용자는 왜인지 알 수 없다.
- *   - 빈 칸은 `""`가 아니라 `null`이다. 숫자 칸(기수·반·방)은 `Number()`로 바꿔 보낸다.
- *   - 성공 응답을 받은 뒤에만 close()를 부른다. 실패하면 모달을 닫지 않고 입력을 그대로 둔다.
- */
 export default function ProfileEditPage() {
   const { profile } = useProfileContext()
-  // 딥링크로 들어오면 돌아갈 히스토리가 없다. 그때는 프로필 본문으로 replace 이동한다.
   const close = useModalClose("..")
-  // 기수·계열은 재학생과 졸업생이, 부서·반·방은 재학생만 갖는다.
   const isStudent = profile.type === "student"
   const isTeacher = profile.type === "teacher"
   const hasCohortAndTrack = profile.type === "student" || profile.type === "alumni"
 
-  // 칸이 열 개라 각각 ref로 원래 값과 대조하는 대신, 폼 전체의 변경 이벤트 하나로 dirty를 잡는다.
-  // Select(Radix)는 native input이 아니라 ref 대조가 애초에 통하지 않기도 한다. 되돌려 놓아도
-  // dirty로 남지만, 그 대가로 "안 고쳤는데 확인창이 뜬다"가 아니라 "고쳤다 되돌렸는데 뜬다"가
-  // 된다 -- 놓치는 쪽보다 덜 나쁘다.
+  // Radix Select까지 포함해 한 번이라도 수정되면 이탈 확인을 띄운다.
   const [isDirty, setIsDirty] = useState(false)
   const checkIsDirty = useCallback(() => isDirty, [isDirty])
   const { isConfirmingDiscard, allowNextClose, confirmDiscard, cancelDiscard } =
     useCloseConfirmation(checkIsDirty)
 
-  // setup.tsx(온보딩)와 같은 입력 제약을 저장 전에 화면에서 건다 -- 안 그러면 나중에 백엔드를
-  // 붙였을 때 DB의 check(profiles_phone_number_check 등)가 조용히 거절하고, 사용자는 "왜 안 되지"만
-  // 남는다. 폼은 uncontrolled이라(위 주석 참고) 값은 DOM이 들고, 여기서는 형식 오류 메시지와
-  // 저장 가능 여부만 DOM에서 파생한다. sanitize(숫자만·자릿수 컷)는 각 입력의 onChange가 직접 한다.
+  // 저장 전 DB 제약과 같은 형식만 확인한다.
   const formRef = useRef<HTMLFormElement>(null)
   const [phoneError, setPhoneError] = useState("")
   const [cohortError, setCohortError] = useState("")
@@ -78,7 +51,6 @@ export default function ProfileEditPage() {
 
     const name = read("name")
     const phone = read("phone_number")
-    // 재학생·졸업생이 아니면 기수 칸 자체가 없다(namedItem은 null -> "").
     const cohort = read("cohort")
     const classNo = read("class_no")
     const dormRoom = read("dorm_room")
@@ -91,10 +63,8 @@ export default function ProfileEditPage() {
     setCanSave(Boolean(name) && phoneOk && cohortOk && classNoOk && dormRoomOk)
   }
 
-  // 첫 렌더에서도 defaultValue들이 규칙을 만족하는지 확인해 저장 버튼 상태를 맞춘다.
   useEffect(() => {
     validate()
-    // 마운트 시 한 번만. validate는 DOM에서 읽으므로 의존성이 없다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -133,8 +103,6 @@ export default function ProfileEditPage() {
                 validate()
               }}
             >
-              {/* 사진은 프로필 화면의 커버·아바타 위에서 바꾼다. 여기서는 그 자리로 보내기만 한다 --
-                  같은 동작을 두 곳에 두면 한쪽이 낡는다. */}
               <PhotoShortcut />
 
               <Field label="이름" htmlFor="name">
@@ -163,8 +131,6 @@ export default function ProfileEditPage() {
               <div className="grid gap-5 sm:grid-cols-2">
                 {!isTeacher ? (
                   <Field label="성별" htmlFor="gender">
-                    {/* 성별은 온보딩에서도 선택값이라 비어 있을 수 있다. defaultValue가 undefined면
-                        placeholder가 그대로 남는다. */}
                     <Select
                       name="gender"
                       defaultValue={profile.gender ?? undefined}
@@ -191,8 +157,6 @@ export default function ProfileEditPage() {
                 </Field>
 
                 <Field label="전화번호" htmlFor="phone_number">
-                  {/* 하이픈은 아예 못 넣게 숫자만 남긴다 -- profiles_phone_number_check가 `^\+?[0-9]{8,15}$`라
-                      `010-1234-5678`을 그대로 보내면 DB가 거절한다. 앱 규칙은 setup과 같은 10~11자리. */}
                   <Input
                     id="phone_number"
                     name="phone_number"
@@ -227,7 +191,6 @@ export default function ProfileEditPage() {
                 {hasCohortAndTrack ? (
                   <>
                     <Field label="기수" htmlFor="cohort">
-                      {/* setup과 같은 규칙: 2자리 숫자. 숫자만 남기고 2자리에서 자른다. */}
                       <Input
                         id="cohort"
                         name="cohort"
@@ -273,8 +236,6 @@ export default function ProfileEditPage() {
                 {isStudent ? (
                   <>
                     <Field label="부서" htmlFor="department">
-                      {/* 자유 입력이 아니라 lookup FK다(profile_departments). 목록 밖의 이름은 DB가
-                          거절하므로 텍스트 입력을 주면 안 된다. */}
                       <Select
                         name="department"
                         defaultValue={profile.department ?? undefined}
@@ -298,7 +259,6 @@ export default function ProfileEditPage() {
                 {isStudent ? (
                   <>
                     <Field label="반" htmlFor="class_no">
-                      {/* 기수와 같은 방식으로 숫자만 2자리까지. 범위(1~10)는 validate가 저장 전에 본다. */}
                       <Input
                         id="class_no"
                         name="class_no"
@@ -337,20 +297,7 @@ export default function ProfileEditPage() {
   )
 }
 
-/**
- * 나가기 확인. 이 모달 **안에** 겹쳐 그린다 -- 별도의 AlertDialog로 띄우면 안 된다.
- *
- * Radix 모달이 둘 동시에 열렸다 닫히면 `document.body`의 `pointer-events: none`이 복구되지
- * 않는다. 두 layer가 body 잠금을 참조 계수로 공유하는데, 라우트 이동으로 둘이 한꺼번에
- * 사라지는 경로에서 그 계수가 어긋나기 때문이다. 결과는 조용하고 치명적이다: 모달은 정상적으로
- * 닫히고, 프로필 화면이 멀쩡히 보이고, 그런데 아무것도 클릭되지 않는다. 새로고침 말고는 길이 없다.
- *
- * (`supabase/tests`가 아니라 `profile.test.tsx`가 이걸 지킨다 -- 닫은 뒤 body 스타일이 풀렸는지
- * 보는 회귀 테스트가 거기 있다.)
- *
- * 그래서 Radix layer는 바깥 Dialog 하나로 유지하고, 확인창은 그 안의 평범한 div로 그린다.
- * 대신 모달이 스스로 해주던 것들을 여기서 직접 챙긴다: role/aria, 열릴 때 포커스 이동, Esc.
- */
+// 별도 AlertDialog를 열면 라우트 이동 때 body의 pointer-events가 남는 Radix 버그가 있다.
 function DiscardConfirm({
   onKeepEditing,
   onDiscard,
@@ -370,8 +317,6 @@ function DiscardConfirm({
       aria-modal="true"
       aria-labelledby="discard-title"
       aria-describedby="discard-description"
-      // Esc는 바깥 Dialog까지 올라가면 안 된다. 여기서 멈추고 "계속 편집"으로 해석한다 --
-      // 확인창을 띄워놓고 Esc 한 번에 편집 내용이 사라지면 확인창을 띄운 의미가 없다.
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault()
@@ -403,8 +348,6 @@ function DiscardConfirm({
   )
 }
 
-// 사진 변경이 어디 있는지 알려주는 줄. 버튼이 아니라 안내다 -- 실제 컨트롤은 커버와 아바타 위에
-// 하나씩만 있고, 그게 바꾸려는 대상 바로 위라는 것이 요점이다.
 function PhotoShortcut() {
   return (
     <div className="bg-muted/40 text-muted-foreground flex items-start gap-2.5 rounded-lg p-3 text-xs">
@@ -418,8 +361,6 @@ function PhotoShortcut() {
   )
 }
 
-// 한 폼 안의 구획선. 개인 정보와 학교 정보는 성격이 다르고(하나는 본인 것, 하나는 학교가 준
-// 것), 학번이 왜 여기 없는지도 이 자리에서 말해줘야 한다 -- 없는 칸은 스스로를 설명하지 못한다.
 function SectionDivider({ label, hint }: { label: string; hint?: string }) {
   return (
     <div className="border-t pt-4">
