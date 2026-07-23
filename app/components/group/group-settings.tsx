@@ -8,8 +8,6 @@ import {
 } from "lucide-react"
 import { useRef, useState } from "react"
 
-import { ImageCropper } from "~/components/image/image-cropper"
-import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
@@ -23,9 +21,6 @@ import { cn } from "~/lib/utils"
 // TODO(backend): 지금 이름/설명/카테고리 편집은 각 섹션 로컬 state에만 커밋돼(joinPolicy만 부모로
 // 리프팅됨) 헤더·사이드바·칩과 어긋나고 탭 전환 시 사라진다. 붙일 때는 action으로 저장 후 loader
 // revalidate가 단일 소스를 갱신하게 해 이 로컬-only 편집을 대체한다(그때 UI 불일치도 자연 해소).
-
-const GROUP_ICON_CROP = { aspect: 1, maxOutputEdge: 512 }
-const GROUP_COVER_CROP = { aspect: 4, maxOutputEdge: 1600 }
 
 const JOIN_POLICY_OPTIONS: {
   value: GroupSpace["joinPolicy"]
@@ -100,12 +95,10 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 
 function ImageControls({
   url,
-  onSelect,
-  onRemove,
+  onReplace,
 }: {
   url: string | null
-  onSelect: (file: File) => void
-  onRemove: () => void
+  onReplace: (next: string | null) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -129,7 +122,7 @@ function ImageControls({
             size="sm"
             className="text-destructive"
             onClick={() => {
-              onRemove()
+              onReplace(null)
               // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
               if (inputRef.current) inputRef.current.value = ""
             }}
@@ -145,8 +138,7 @@ function ImageControls({
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0]
-          if (file) onSelect(file)
-          event.currentTarget.value = ""
+          if (file) onReplace(URL.createObjectURL(file))
         }}
       />
     </div>
@@ -155,9 +147,6 @@ function ImageControls({
 
 function ImageSection({ group }: { group: GroupSpace }) {
   const [url, replace] = useImageDraft(group.imageUrl)
-  const crop = useImageCrop({
-    onCropped: (file) => replace(URL.createObjectURL(file)),
-  })
 
   return (
     <SettingsCard>
@@ -166,44 +155,25 @@ function ImageSection({ group }: { group: GroupSpace }) {
         <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-xl font-semibold">
           {url ? <img src={url} alt="" className="size-full object-cover" /> : group.name.charAt(0)}
         </div>
-        <ImageControls url={url} onSelect={crop.start} onRemove={() => replace(null)} />
+        <ImageControls url={url} onReplace={replace} />
       </div>
-      {crop.cropperProps ? (
-        <ImageCropper
-          {...crop.cropperProps}
-          aspect={GROUP_ICON_CROP.aspect}
-          maxOutputEdge={GROUP_ICON_CROP.maxOutputEdge}
-          title="그룹 아이콘"
-        />
-      ) : null}
     </SettingsCard>
   )
 }
 
 function CoverSection({ group }: { group: GroupSpace }) {
   const [url, replace] = useImageDraft(group.coverImageUrl)
-  const crop = useImageCrop({
-    onCropped: (file) => replace(URL.createObjectURL(file)),
-  })
 
   return (
     <SettingsCard>
       <h2 className="mb-3 text-sm font-semibold">그룹 커버</h2>
       <div className="flex flex-col gap-3">
         {/* 헤더와 같은 그라디언트를 폴백으로 써서, 올리기 전에도 결과가 어떻게 보일지 그대로 보인다. */}
-        <div className="from-primary/30 to-primary/5 aspect-[4/1] w-full overflow-hidden rounded-lg border bg-linear-to-br">
+        <div className="from-primary/30 to-primary/5 h-24 w-full overflow-hidden rounded-lg border bg-linear-to-br sm:h-28">
           {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
         </div>
-        <ImageControls url={url} onSelect={crop.start} onRemove={() => replace(null)} />
+        <ImageControls url={url} onReplace={replace} />
       </div>
-      {crop.cropperProps ? (
-        <ImageCropper
-          {...crop.cropperProps}
-          aspect={GROUP_COVER_CROP.aspect}
-          maxOutputEdge={GROUP_COVER_CROP.maxOutputEdge}
-          title="그룹 커버"
-        />
-      ) : null}
     </SettingsCard>
   )
 }
