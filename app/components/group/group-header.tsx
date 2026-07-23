@@ -27,6 +27,8 @@ export function GroupHeader({
   viewMode,
   onViewModeChange,
   onViewMembers,
+  canCurate,
+  onViewSettings,
 }: {
   group: GroupSpace
   className?: string
@@ -34,6 +36,8 @@ export function GroupHeader({
   onViewModeChange: (mode: PostViewMode) => void
   /** "멤버 N명"을 누르면 멤버 탭으로. 탭은 부모(group 라우트)의 로컬 상태라 콜백으로 올린다. */
   onViewMembers: () => void
+  canCurate: boolean
+  onViewSettings: () => void
 }) {
   // invite_only만 비공개(검색 노출 X). public·request(승인가입)는 검색에 노출되니 공개로 묶는다.
   const isPrivate = group.joinPolicy === "invite_only"
@@ -114,6 +118,11 @@ export function GroupHeader({
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setNotiOpen(true)}>알림 설정</DropdownMenuItem>
+              {canCurate ? (
+                <DropdownMenuItem className="sm:hidden" onSelect={onViewSettings}>
+                  그룹 설정
+                </DropdownMenuItem>
+              ) : null}
               {/* 공식 그룹(학생회·사감부 등)은 소속이지 취향 가입이 아니라서 나가기가 없다 --
                 재가입도 초대·승인이 아니라 소속 변경(전학·부서 이동)으로 처리된다. */}
               {isOfficial ? null : (

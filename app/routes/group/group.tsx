@@ -7,7 +7,7 @@ import {
   UsersIcon,
 } from "lucide-react"
 import { useState } from "react"
-import { Link, Outlet, useSearchParams } from "react-router"
+import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import { GroupCategoryChips } from "~/components/group/group-category-chips"
@@ -39,6 +39,7 @@ const FEED_PAGE_SIZE = 6
 export const handle = {
   mobileContentEdge: "bleed" as const,
   showMobileHeader: false,
+  mobileSafeAreaTop: false,
   showMobileTabBar: false,
 }
 
@@ -60,6 +61,12 @@ const TABS: { id: GroupTab; label: string; curateOnly?: boolean }[] = [
   { id: "settings", label: "그룹 설정", curateOnly: true },
 ]
 
+const GROUP_VIEW_SEARCH_PARAM = "view"
+
+type GroupViewLocationState = { groupViewPushed: true }
+
+const GROUP_VIEW_LOCATION_STATE: GroupViewLocationState = { groupViewPushed: true }
+
 // 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
 // 문자열이라 사전식 비교가 곧 시간순이다. 정렬 옵션은 최신순 하나뿐이라 드롭다운은 없다.
 function sortForFeed(posts: typeof mockGroupPosts) {
@@ -72,10 +79,11 @@ function sortForFeed(posts: typeof mockGroupPosts) {
 // 라우트는 /groups/:pubId. 슬러그로 space·글·멤버를 읽는 로더는 백엔드 붙일 때 추가한다.
 export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
-  const [tab, setTab] = useState<GroupTab>("posts")
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [feedVisible, setFeedVisible] = useState(FEED_PAGE_SIZE)
   const [searchOpen, setSearchOpen] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const selectCategory = (id: number | null) => {
@@ -110,6 +118,38 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
   const canCurate = canManage || viewerRole === "manager"
+  const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
+  const tab: GroupTab =
+    requestedTab === "members" || (requestedTab === "settings" && canCurate)
+      ? requestedTab
+      : "posts"
+  const isPushedGroupViewEntry = Boolean(
+    (location.state as GroupViewLocationState | null)?.groupViewPushed
+  )
+  const setTab = (next: GroupTab) => {
+    if (next === tab) return
+
+    if (next === "posts" && isPushedGroupViewEntry) {
+      navigate(-1)
+      return
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams)
+    if (next === "posts") {
+      nextSearchParams.delete(GROUP_VIEW_SEARCH_PARAM)
+    } else {
+      nextSearchParams.set(GROUP_VIEW_SEARCH_PARAM, next)
+    }
+
+    navigate(
+      { search: `?${nextSearchParams}` },
+      {
+        replace: next === "posts",
+        state: next === "posts" ? undefined : GROUP_VIEW_LOCATION_STATE,
+        preventScrollReset: true,
+      }
+    )
+  }
   // private.can_post_in_space와 같은 규칙. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
   // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
   const canPost = postPolicy === "all" ? viewerRole !== null : canCurate
@@ -183,16 +223,28 @@ export default function GroupPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl pt-11 sm:pt-0">
-      <div className="bg-background/95 fixed inset-x-0 top-0 z-10 flex h-11 items-center justify-between border-b px-1.5 backdrop-blur sm:hidden">
+    <div className="mx-auto w-full max-w-5xl pt-[calc(2.75rem+env(safe-area-inset-top))] sm:pt-0">
+      <div className="bg-background/95 fixed inset-x-0 top-0 z-10 flex h-[calc(2.75rem+env(safe-area-inset-top))] items-center justify-between border-b pt-[env(safe-area-inset-top)] pr-[max(0.375rem,env(safe-area-inset-right))] pl-[max(0.375rem,env(safe-area-inset-left))] backdrop-blur sm:hidden">
         <div className="flex min-w-0 items-center">
-          <Link
-            to="/groups"
-            className="text-muted-foreground hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-full transition-colors"
-            aria-label="그룹 목록으로 돌아가기"
-          >
-            <ArrowLeftIcon className="size-5" aria-hidden="true" />
-          </Link>
+          {tab === "posts" ? (
+            <Link
+              to="/groups"
+              className="text-muted-foreground hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-full transition-colors"
+              aria-label="그룹 목록으로 돌아가기"
+            >
+              <ArrowLeftIcon className="size-5" aria-hidden="true" />
+            </Link>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground shrink-0 gap-1 px-2"
+              onClick={() => setTab("posts")}
+            >
+              <ArrowLeftIcon className="size-4" aria-hidden="true" />
+              이전
+            </Button>
+          )}
           <div className="flex min-w-0 items-center gap-2">
             <div className="bg-muted border-border flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border text-sm font-semibold">
               {liveGroup.imageUrl ? (
@@ -221,9 +273,14 @@ export default function GroupPage() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onViewMembers={() => setTab("members")}
+        canCurate={canCurate}
+        onViewSettings={() => setTab("settings")}
       />
 
-      <nav className="mx-2 mt-1 flex items-center gap-1 border-b md:mb-3" aria-label="그룹 메뉴">
+      <nav
+        className="mx-2 mt-1 hidden items-center gap-1 border-b sm:flex md:mb-3"
+        aria-label="그룹 메뉴"
+      >
         {visibleTabs.map((item) => (
           <button
             key={item.id}

@@ -160,7 +160,9 @@ export function GroupPostCard({
         ) : null}
       </div>
 
-      {post.images.length > 0 ? <GroupPostImageGrid images={post.images} className="mt-3" /> : null}
+      {post.images.length > 0 ? (
+        <GroupPostImageGrid images={post.images} postPubId={post.pubId} className="mt-3" />
+      ) : null}
 
       {post.files?.length ? (
         <div className="mt-3 px-4">

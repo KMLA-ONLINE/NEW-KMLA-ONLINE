@@ -123,7 +123,11 @@ export default function GroupPostDetailPage() {
                 </div>
 
                 {post.images.length > 0 ? (
-                  <GroupPostImageGrid images={post.images} className="overflow-hidden rounded-lg" />
+                  <GroupPostImageGrid
+                    images={post.images}
+                    postPubId={post.pubId}
+                    className="overflow-hidden rounded-lg"
+                  />
                 ) : null}
 
                 {post.files?.length ? <GroupPostFiles files={post.files} /> : null}

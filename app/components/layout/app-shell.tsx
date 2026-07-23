@@ -21,6 +21,8 @@ type AppLayoutHandle = {
   // "shell" 스크롤일 때 모바일 좌우/상단 여백. "inset"(기본) | "bleed"(가장자리까지).
   mobileContentEdge?: "inset" | "bleed"
   showMobileHeader?: boolean
+  /** 전역 헤더를 숨긴 라우트가 자체 fixed header를 제공하면 false로 둔다. */
+  mobileSafeAreaTop?: boolean
   showMobileTabBar?: boolean
 }
 
@@ -38,6 +40,9 @@ export function AppShell({ email }: AppShellProps) {
   const showMobileHeader =
     resolved.find((handle) => typeof handle?.showMobileHeader === "boolean")?.showMobileHeader ??
     true
+  const mobileSafeAreaTop =
+    resolved.find((handle) => typeof handle?.mobileSafeAreaTop === "boolean")?.mobileSafeAreaTop ??
+    !showMobileHeader
 
   // 탭바 간격은 더 이상 mode에 박지 않고 파생한다: 쉘이 스크롤하고 탭바가 떠 있을 때만
   // 그만큼 하단 여백을 둬 고정 탭바에 콘텐츠가 가리지 않게 한다(self 스크롤은 라우트가 관리).
@@ -47,7 +52,16 @@ export function AppShell({ email }: AppShellProps) {
     <SidebarProvider defaultOpen={false}>
       <div className="flex h-svh w-full flex-1 flex-col overflow-hidden">
         <AppHeader email={email} className={!showMobileHeader ? "max-md:hidden" : undefined} />
-        <div className={cn("flex min-h-0 flex-1", showMobileHeader ? "pt-14" : "pt-0 md:pt-14")}>
+        <div
+          className={cn(
+            "flex min-h-0 flex-1",
+            showMobileHeader
+              ? "pt-[calc(3.5rem+env(safe-area-inset-top))] md:pt-14"
+              : mobileSafeAreaTop
+                ? "pt-[env(safe-area-inset-top)] md:pt-14"
+                : "pt-0 md:pt-14"
+          )}
+        >
           <AppSidebar />
           <SidebarInset className="min-h-0">
             <div
@@ -60,7 +74,8 @@ export function AppShell({ email }: AppShellProps) {
                       "overflow-y-auto sm:p-6",
                       // shell 스크롤일 때만 모바일 좌우/상단 여백 축이 의미를 가진다.
                       mobileContentEdge === "bleed" ? "p-0" : "p-4",
-                      needsTabBarClearance && "pb-24"
+                      needsTabBarClearance &&
+                        "pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6"
                     )
               )}
             >
