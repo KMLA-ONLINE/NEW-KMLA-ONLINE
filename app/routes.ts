@@ -52,4 +52,6 @@ export default [
   route("pending", "./routes/pending.tsx"),
   route("forgot-password", "./routes/forgot-password.tsx"),
   route("reset-password", "./routes/reset-password.tsx"),
+  route("__error-preview/:status", "./routes/error-preview.tsx"),
+  route("*", "./routes/not-found.tsx"),
 ] satisfies RouteConfig
