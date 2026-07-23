@@ -132,6 +132,7 @@ export default function MenuPage() {
       </MenuSection>
 
       <MenuSection title="학교">
+        <MenuRow icon={UsersRoundIcon} label="동아리" to="/clubs" />
         <MenuRow icon={UtensilsCrossedIcon} label="오늘의 급식" to="/menu/meal" />
       </MenuSection>
 
