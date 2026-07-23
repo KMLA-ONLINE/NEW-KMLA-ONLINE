@@ -1,4 +1,11 @@
-import { Globe2Icon, LandmarkIcon, LockIcon, SearchIcon, UsersIcon } from "lucide-react"
+import {
+  ArrowLeftIcon,
+  Globe2Icon,
+  LandmarkIcon,
+  LockIcon,
+  SearchIcon,
+  UsersIcon,
+} from "lucide-react"
 import { useState } from "react"
 import { Link, Outlet, useSearchParams } from "react-router"
 import { toast } from "sonner"
@@ -29,7 +36,11 @@ const FEED_PAGE_SIZE = 6
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
-export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
+export const handle = {
+  mobileContentEdge: "bleed" as const,
+  showMobileHeader: false,
+  showMobileTabBar: false,
+}
 
 /**
  * group 라우트가 모달 자식(상세·수정)에 내려주는 컨텍스트. 자식은 useOutletContext로 읽는다.
@@ -172,7 +183,38 @@ export default function GroupPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl pt-11 sm:pt-0">
+      <div className="bg-background/95 fixed inset-x-0 top-0 z-10 flex h-11 items-center justify-between border-b px-1.5 backdrop-blur sm:hidden">
+        <div className="flex min-w-0 items-center">
+          <Link
+            to="/groups"
+            className="text-muted-foreground hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-full transition-colors"
+            aria-label="그룹 목록으로 돌아가기"
+          >
+            <ArrowLeftIcon className="size-5" aria-hidden="true" />
+          </Link>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="bg-muted border-border flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border text-sm font-semibold">
+              {liveGroup.imageUrl ? (
+                <img src={liveGroup.imageUrl} alt="" className="size-full object-cover" />
+              ) : (
+                liveGroup.name.charAt(0)
+              )}
+            </div>
+            <span className="truncate text-base font-semibold">{liveGroup.name}</span>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground shrink-0"
+          onClick={() => setSearchOpen(true)}
+          aria-label="게시물 검색"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
+      </div>
+
       <GroupHeader
         group={liveGroup}
         className="border-0 sm:rounded-xl sm:border"
@@ -205,7 +247,7 @@ export default function GroupPage() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground mb-1 ml-auto"
+          className="text-muted-foreground mb-1 ml-auto hidden sm:inline-flex"
           onClick={() => setSearchOpen(true)}
           aria-label="게시물 검색"
         >

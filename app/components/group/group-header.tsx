@@ -46,16 +46,14 @@ export function GroupHeader({
 
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
-      {/* 커버가 없으면 그라디언트가 그대로 배너가 된다 -- 빈 회색 사각형보다 낫다. */}
-      <div className="from-primary/30 to-primary/5 h-32 w-full overflow-hidden bg-linear-to-br sm:h-44">
+      <div className="from-primary/30 to-primary/5 aspect-4/1 w-full overflow-hidden bg-linear-to-br">
         {group.coverImageUrl ? (
           <img src={group.coverImageUrl} alt="" className="size-full object-cover" />
         ) : null}
       </div>
-      <div className="flex items-start gap-3 p-4">
-        <div className="bg-muted ring-card -mt-12 hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-2xl font-semibold ring-4 sm:-mt-14 sm:flex sm:size-20">
+      <div className="flex items-start gap-5 p-4">
+        <div className="bg-muted border-border hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-2xl font-semibold shadow-xs sm:flex sm:size-20">
           {group.imageUrl ? (
-            // 이름이 바로 옆에 있으니 장식이다 -- 스크린리더가 같은 말을 두 번 읽지 않게 alt는 빈다.
             <img src={group.imageUrl} alt="" className="size-full object-cover" />
           ) : (
             group.name.charAt(0)
