@@ -12,7 +12,7 @@ type ErrorPageProps = {
 const ERROR_CONTENT = {
   notFound: {
     code: "404 · 소재 불명",
-    title: "찾으시는 페이지가 자습을 째고 사라졌어요.",
+    title: "찾으시는 페이지가 결석했어요.",
     description: "주소가 바뀌었거나, 페이지가 사라졌을 수 있어요.",
     Icon: FileQuestionMarkIcon,
   },
