@@ -78,13 +78,13 @@ export function GroupCommentComposer({
       />
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         className="text-primary"
         aria-label="댓글 게시"
         disabled={!canSend}
         onClick={send}
       >
-        <SendIcon />
+        <SendIcon className="size-5" />
       </Button>
     </div>
   )

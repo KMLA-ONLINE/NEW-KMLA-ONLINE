@@ -66,7 +66,10 @@ export async function mapPostRows(
       content: row.content,
       // 익명이면 서버(private.post_author)가 이미 author를 지워서 내려준다. is_mine은 익명이어도
       // 참이다 -- 내 글엔 수정/삭제가 떠야 하고, 그 사실은 남에게 새지 않는다.
-      author: typeof author?.name === "string" ? { name: author.name } : null,
+      author:
+        typeof author?.id === "number" && typeof author.name === "string"
+          ? { id: author.id, name: author.name }
+          : null,
       isAuthorAnonymitySuspended: row.is_author_anonymity_suspended,
       isMine: row.is_mine,
       // 고정은 **한 그룹 안에서의 정렬** 개념이다. 홈 피드는 여러 그룹을 가로지르므로 고정으로

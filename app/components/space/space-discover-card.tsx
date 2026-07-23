@@ -24,7 +24,7 @@ export function SpaceDiscoverCard({
   return (
     <article className="bg-card flex flex-col overflow-hidden rounded-2xl border">
       {/* 커버가 없으면 그라디언트가 그대로 배너다 -- 빈 회색 사각형보다 낫다. */}
-      <div className="from-primary/30 to-primary/5 h-20 w-full bg-linear-to-br">
+      <div className="from-primary/30 to-primary/5 aspect-[4/1] w-full bg-linear-to-br">
         {space.coverImageUrl ? (
           <img src={space.coverImageUrl} alt="" className="size-full object-cover" />
         ) : null}
