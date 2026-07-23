@@ -1,6 +1,6 @@
 import { PinIcon, XIcon } from "lucide-react"
 import { useRef } from "react"
-import { useOutletContext, useParams } from "react-router"
+import { Link, useOutletContext, useParams } from "react-router"
 
 import type { GroupOutletContext } from "~/routes/group/group"
 
@@ -75,7 +75,17 @@ export default function GroupPostDetailPage() {
                   </div>
                 ) : null}
                 <header className="flex items-center gap-3">
-                  <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
+                  {post.author ? (
+                    <Link
+                      to={`/profile/${post.author.id}`}
+                      aria-label={`${authorName} 프로필 보기`}
+                      className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <GroupAuthorAvatar name={authorName} anonymous={false} size="lg" />
+                    </Link>
+                  ) : (
+                    <GroupAuthorAvatar name={authorName} anonymous size="lg" />
+                  )}
                   <div className="min-w-0 flex-1">
                     {/* 카테고리 뱃지는 카드(GroupPostCard)와 같은 자리 -- 이름 옆이다. 제목 위에
                         따로 두면 같은 글이 목록과 상세에서 다르게 보인다. */}

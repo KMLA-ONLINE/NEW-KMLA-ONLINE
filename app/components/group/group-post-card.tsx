@@ -90,7 +90,17 @@ export function GroupPostCard({
           post.isPinned || post.space ? "pt-2" : "pt-4"
         )}
       >
-        <GroupAuthorAvatar name={authorName} anonymous={post.author === null} size="lg" />
+        {post.author ? (
+          <Link
+            to={`/profile/${post.author.id}`}
+            aria-label={`${authorName} 프로필 보기`}
+            className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <GroupAuthorAvatar name={authorName} anonymous={false} size="lg" />
+          </Link>
+        ) : (
+          <GroupAuthorAvatar name={authorName} anonymous size="lg" />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{authorName}</span>

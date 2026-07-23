@@ -1,5 +1,6 @@
 import { MoreHorizontalIcon, SmilePlusIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Link } from "react-router"
 
 import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
@@ -185,7 +186,17 @@ function GroupCommentItem({
   return (
     <li>
       <div className="flex gap-2">
-        <GroupAuthorAvatar name={name} anonymous={comment.author === null} />
+        {comment.author ? (
+          <Link
+            to={`/profile/${comment.author.id}`}
+            aria-label={`${name} 프로필 보기`}
+            className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <GroupAuthorAvatar name={name} anonymous={false} />
+          </Link>
+        ) : (
+          <GroupAuthorAvatar name={name} anonymous />
+        )}
         <div className="flex min-w-0 flex-1 items-start gap-1">
           <div className="min-w-0">
             <div

@@ -1,6 +1,7 @@
 import { makeMockReactors } from "~/lib/group/mock-reactors"
 import type {
   GroupCategory,
+  GroupComment,
   GroupJoinRequest,
   GroupMember,
   GroupPost,
@@ -54,9 +55,35 @@ export const mockGroupCategories: GroupCategory[] = [
 const cat = (id: number): GroupCategory | null =>
   mockGroupCategories.find((category) => category.id === id) ?? null
 
+type MockAuthor = { name: string }
+type RawGroupComment = Omit<GroupComment, "author"> & { author: MockAuthor | null }
+type RawGroupPost = Omit<GroupPost, "author" | "comments" | "commentCount"> & {
+  author: MockAuthor | null
+  comments?: RawGroupComment[]
+}
+
+// 목업에서도 profiles.id를 함께 들고 다녀야 UI가 나중의 author 조인과 같은 모양을 유지한다.
+// 동명이인까지 구분할 정보는 글·댓글 목업에 없으므로, 현재 목업에서 등장하는 이름만 기존 멤버 ID와 맞춘다.
+const MOCK_AUTHOR_IDS: Readonly<Record<string, number>> = {
+  나: 1,
+  김지원: 101,
+  이현우: 102,
+  박서연: 103,
+  정하늘: 104,
+  이민서: 105,
+  김도윤: 106,
+  박준서: 9001,
+}
+
+function mockAuthor(author: MockAuthor) {
+  const id = MOCK_AUTHOR_IDS[author.name]
+  if (id === undefined) throw new Error(`Missing mock profile id for ${author.name}`)
+  return { ...author, id }
+}
+
 // 댓글은 각 글에 트리로 들고 있다(parentId 스레드). 4번 글은 빈 상태 확인용으로 댓글이 없다.
 // commentCount는 아래에서 comments.length로 채운다 -- 실제 피드 로더는 트리 대신 count(*)만 내려준다.
-const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
+const rawGroupPosts: RawGroupPost[] = [
   {
     id: 1,
     pubId: "a1f0c3e2-0001-4aaa-9aaa-000000000001",
@@ -401,12 +428,21 @@ const rawGroupPosts: Omit<GroupPost, "commentCount">[] = [
 
 // 삭제된 댓글(tombstone)은 세지 않는다 -- 서버도 deleted_at is null만 센다. tombstone은 답글
 // 사슬을 잇기 위해 목록에 남을 뿐 "댓글 n개"의 n은 아니다.
-export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => ({
-  ...post,
-  commentCount: post.comments?.filter((comment) => !comment.isDeleted).length ?? 0,
-  // 반응자 목록은 reactionCount·topReactions에서 합성한다(총원·아이콘이 요약과 일치).
-  reactors: makeMockReactors(post.reactionCount, post.topReactions),
-}))
+export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => {
+  const comments = post.comments?.map((comment) => ({
+    ...comment,
+    author: comment.author ? mockAuthor(comment.author) : null,
+  }))
+
+  return {
+    ...post,
+    author: post.author ? mockAuthor(post.author) : null,
+    comments,
+    commentCount: comments?.filter((comment) => !comment.isDeleted).length ?? 0,
+    // 반응자 목록은 reactionCount·topReactions에서 합성한다(총원·아이콘이 요약과 일치).
+    reactors: makeMockReactors(post.reactionCount, post.topReactions),
+  }
+})
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
 // 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.

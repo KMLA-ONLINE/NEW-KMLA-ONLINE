@@ -61,6 +61,8 @@ export type GroupSpace = {
 }
 
 export type GroupPostAuthor = {
+  /** profiles.id. 실명 작성자의 프로필 링크와 사진 폴백 색상에 쓴다. */
+  id: number
   name: string
 }
 
