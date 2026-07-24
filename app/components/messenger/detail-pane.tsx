@@ -1,14 +1,17 @@
 import {
   ArrowLeftIcon,
+  ArrowUpRightIcon,
   ChevronRightIcon,
   ImageIcon,
   PanelRightCloseIcon,
   PinIcon,
   SearchIcon,
+  ShieldCheckIcon,
   UsersIcon,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { getRoomSubtitle } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
@@ -70,6 +73,19 @@ export function DetailPane({
           </Avatar>
           <h2 className="mt-3 text-lg font-semibold">{room.name}</h2>
           <p className="text-muted-foreground mt-1 text-sm">{getRoomSubtitle(room)}</p>
+          {room.type === "direct" ? (
+            <Badge asChild variant="outline" className="mt-1">
+              <a
+                href="https://www.cloudflare.com/ko-kr/learning/privacy/what-is-end-to-end-encryption/"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="종단간 암호화에 대해 알아보기 (새 창)"
+              >
+                <ShieldCheckIcon data-icon="inline-start" />
+                종단간 암호화됨
+              </a>
+            </Badge>
+          ) : null}
         </section>
 
         <section className="flex flex-col gap-1">

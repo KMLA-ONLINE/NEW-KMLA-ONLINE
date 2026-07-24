@@ -47,7 +47,7 @@ export function ErrorPage({ status, onRetry, stack }: ErrorPageProps) {
       <section className="relative w-full max-w-md text-center">
         <div className="relative mx-auto mb-7 h-40 w-52" aria-hidden="true">
           <div className="bg-card border-border absolute inset-x-3 top-5 h-28 rotate-[-5deg] rounded-xl border shadow-sm" />
-          <div className="bg-card border-border absolute inset-x-3 top-5 flex h-28 rotate-[3deg] flex-col items-center justify-center rounded-xl border shadow-sm">
+          <div className="bg-card border-border absolute inset-x-3 top-5 flex h-28 rotate-3 flex-col items-center justify-center rounded-xl border shadow-sm">
             <Icon className="text-primary mb-2 size-8" strokeWidth={1.7} />
             <span className="text-muted-foreground text-xs font-medium tracking-[0.18em]">
               {content.code}
