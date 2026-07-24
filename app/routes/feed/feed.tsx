@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Suspense, use, useState } from "react"
 import { Link } from "react-router"
 
 import { GroupPostFeed } from "~/components/group/group-post-feed"
@@ -6,7 +6,8 @@ import { PostViewToggle } from "~/components/group/post-view-toggle"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { Separator } from "~/components/ui/separator"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
-import { mockFeedPosts, mockMealPlan } from "~/lib/feed/mock-data"
+import { mockFeedPosts } from "~/lib/feed/mock-data"
+import { getTodayMealPlan } from "~/lib/meal/neis"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
 // TODO(backend): 이 슬라이스가 list_feed_posts의 keyset 페이지네이션(before_id)으로 바뀐다.
@@ -61,31 +62,51 @@ export default function AppHomePage() {
       </section>
 
       <aside className="hidden lg:sticky lg:top-4 lg:block lg:self-start">
-        <MealPlanCard />
+        <Suspense fallback={<MealPlanCardLoading />}>
+          <MealPlanCard />
+        </Suspense>
       </aside>
     </div>
   )
 }
 
-// 오늘의 급식. 지금은 레이아웃만 -- 데이터는 나중에 cron이 급식 API에서 받아 채운다.
 function MealPlanCard() {
+  const mealPlan = use(getTodayMealPlan())
+
   return (
     <div className="bg-card flex flex-col gap-3 rounded-xl border p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold">오늘의 급식</h2>
-        <span className="text-muted-foreground text-xs">{mockMealPlan.dateLabel}</span>
+        <span className="text-muted-foreground text-xs">{mealPlan.dateLabel}</span>
       </div>
       <Separator />
-      <ul className="flex flex-col gap-3">
-        {mockMealPlan.meals.map((meal) => (
-          <li key={meal.label} className="flex flex-col gap-0.5">
-            <p className="text-muted-foreground text-xs font-medium">{meal.label}</p>
-            <p className="text-sm leading-relaxed">{meal.items.join(" · ")}</p>
-          </li>
-        ))}
-      </ul>
-      <p className="text-muted-foreground border-t pt-2 text-[11px]">
-        매일 자동으로 업데이트됩니다.
+      {mealPlan.meals.length > 0 ? (
+        <ul className="flex flex-col gap-3">
+          {mealPlan.meals.map((meal) => (
+            <li key={meal.label} className="flex flex-col gap-0.5">
+              <p className="text-muted-foreground text-xs font-medium">{meal.label}</p>
+              <p className="text-sm leading-relaxed">{meal.items.join(" · ")}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground py-3 text-center text-xs">
+          {mealPlan.unavailable
+            ? "급식 정보를 불러오지 못했습니다."
+            : "오늘은 등록된 급식이 없습니다."}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function MealPlanCardLoading() {
+  return (
+    <div className="bg-card flex flex-col gap-3 rounded-xl border p-4">
+      <h2 className="text-sm font-semibold">오늘의 급식</h2>
+      <Separator />
+      <p className="text-muted-foreground py-3 text-center text-xs">
+        급식 정보를 불러오는 중입니다.
       </p>
     </div>
   )

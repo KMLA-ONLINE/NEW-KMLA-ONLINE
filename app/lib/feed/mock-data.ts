@@ -181,19 +181,3 @@ export const mockFeedPosts: GroupPost[] = rawFeedPosts.map((post) => ({
   ...post,
   reactionDetails: makeMockReactionDetails(post.reactionCount, post.topReactions),
 }))
-
-// 오른쪽 사이드바의 급식 카드. 지금은 레이아웃용 mock -- 나중에 cron이 급식 API에서 받아 채운다.
-// 표시에 필요한 것만 담는다: 날짜 한 줄, 끼니별 메뉴 목록.
-export type MealMenu = {
-  label: string
-  items: string[]
-}
-
-export const mockMealPlan: { dateLabel: string; meals: MealMenu[] } = {
-  dateLabel: "7월 13일 (월)",
-  meals: [
-    { label: "조식", items: ["흑미밥", "된장찌개", "계란말이", "배추김치", "요구르트"] },
-    { label: "중식", items: ["백미밥", "제육볶음", "미역국", "코울슬로", "깍두기", "오렌지"] },
-    { label: "석식", items: ["김치볶음밥", "유부장국", "치킨텐더", "단무지", "청포도"] },
-  ],
-}
