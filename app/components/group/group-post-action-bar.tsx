@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { GroupReactionButton } from "~/components/group/group-reaction-button"
 import { GroupReactionListDialog } from "~/components/group/group-reaction-list-dialog"
 import { Twemoji } from "~/components/ui/twemoji"
-import type { GroupPostReactor } from "~/lib/group/types"
+import type { GroupPostReactionDetails } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -18,7 +18,7 @@ export function GroupPostActionBar({
   commentCount,
   topReactions,
   reactionTypes,
-  reactors,
+  reactionDetails,
   postPath,
   onComment,
   className,
@@ -27,11 +27,8 @@ export function GroupPostActionBar({
   commentCount: number
   topReactions: string[]
   reactionTypes: ReactionType[]
-  /**
-   * 반응자 목록(누가 어떤 이모지로). 있으면 우측 요약 이모지가 눌러서 목록 모달을 여는 버튼이
-   * 된다. 없으면(로더가 아직 안 채운 실데이터) 요약은 표시만 되고 클릭되지 않는다.
-   */
-  reactors?: GroupPostReactor[]
+  /** 실명 반응자 목록과 익명 타입별 집계. 없으면 요약은 표시만 되고 클릭되지 않는다. */
+  reactionDetails?: GroupPostReactionDetails
   /** 이 게시물의 상대 경로. 카드에선 "posts/:pubId", 상세에선 "."(이미 그 글 위에 있으므로). */
   postPath: string
   /** 주면 댓글 아이콘이 링크 대신 버튼이 된다(상세에서 댓글 입력창으로 포커스). */
@@ -41,8 +38,10 @@ export function GroupPostActionBar({
   // 상대 경로를 이 라우트 기준의 절대 경로로 해석한다 -- 공유 링크에 origin을 붙이려면 필요하다.
   const postHref = useHref(postPath)
   const [reactorsOpen, setReactorsOpen] = useState(false)
-  const canOpenReactors = reactors != null && reactors.length > 0
-  const hasAnonymousReactors = reactors?.some((reactor) => reactor.isAnonymous) ?? false
+  const anonymousReactionCount =
+    reactionDetails?.anonymousCounts.reduce((sum, item) => sum + item.count, 0) ?? 0
+  const canOpenReactors =
+    reactionDetails != null && (reactionDetails.identified.length > 0 || anonymousReactionCount > 0)
 
   const commentInner = (
     <>
@@ -77,8 +76,8 @@ export function GroupPostActionBar({
   return (
     <div className={cn("flex items-center justify-between px-2 py-1", className)}>
       <div className="text-muted-foreground flex items-center">
-        {/* TODO(backend): required 공간의 반응은 DB가 당시 is_anonymous=true로 기록해야 한다.
-            클라이언트가 익명 여부를 보내게 두면 false로 우회할 수 있으므로 space 정책에서 파생한다. */}
+        {/* 익명 작성 제한은 글·댓글만 막고 반응은 허용한다. TODO(backend): required 공간의 반응은
+            DB가 당시 is_anonymous=true로 기록해야 한다. 클라이언트 값으로 두면 우회할 수 있다. */}
         <GroupReactionButton count={reactionCount} reactionTypes={reactionTypes} />
         {onComment ? (
           <button type="button" aria-label="댓글" className={ACTION_CLASS} onClick={onComment}>
@@ -99,7 +98,7 @@ export function GroupPostActionBar({
             type="button"
             onClick={() => setReactorsOpen(true)}
             aria-label={
-              hasAnonymousReactors
+              anonymousReactionCount > 0
                 ? `반응 ${reactionCount}개 상세 보기`
                 : `반응한 사람 ${reactionCount}명 보기`
             }
@@ -122,7 +121,7 @@ export function GroupPostActionBar({
         <GroupReactionListDialog
           open={reactorsOpen}
           onOpenChange={setReactorsOpen}
-          reactors={reactors}
+          reactionDetails={reactionDetails}
           reactionTypes={reactionTypes}
         />
       ) : null}

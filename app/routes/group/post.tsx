@@ -12,6 +12,7 @@ import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
@@ -32,14 +33,15 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const { canManage, canCurate, anonymityPolicy, canPostAnonymously } =
+  const { canManage, canCurate, anonymityPolicy, canPostAnonymously, canPostAsStaff } =
     useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
   const composerRef = useRef<HTMLTextAreaElement>(null)
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
   const post = mockGroupPosts.find((item) => item.pubId === postId)
-  const authorName = post?.author?.name ?? "익명"
+  const isStaffPost = post?.authorAttribution === "staff"
+  const authorName = post?.author?.name ?? (isStaffPost ? "운영진" : "익명")
   // comments는 상세 전용 optional(피드엔 없음). 상세는 트리를 조인해 받는다.
   const comments = post?.comments ?? []
 
@@ -51,7 +53,7 @@ export default function GroupPostDetailPage() {
       >
         <DialogHeader className="relative flex-row items-center justify-center border-b p-3">
           <DialogTitle className="text-base">
-            {post ? `${authorName}님의 게시물` : "게시물"}
+            {post ? (isStaffPost ? "운영진 게시물" : `${authorName}님의 게시물`) : "게시물"}
           </DialogTitle>
           <DialogDescription className="sr-only">게시물 상세와 댓글</DialogDescription>
           <Button
@@ -78,6 +80,8 @@ export default function GroupPostDetailPage() {
                 <header className="flex items-center gap-3">
                   {post.author ? (
                     <ProfileAvatarLink profile={post.author} size="lg" />
+                  ) : isStaffPost ? (
+                    <GroupStaffAvatar size="lg" />
                   ) : (
                     <AnonymousAvatar size="lg" />
                   )}
@@ -102,7 +106,7 @@ export default function GroupPostDetailPage() {
                   <GroupPostMenu
                     isMine={post.isMine}
                     isPinned={post.isPinned}
-                    isAnonymous={post.author === null}
+                    isAnonymous={post.author === null && !isStaffPost}
                     isAnonymitySuspended={post.isAuthorAnonymitySuspended}
                     canManage={canManage}
                     canCurate={canCurate}
@@ -133,7 +137,7 @@ export default function GroupPostDetailPage() {
                 commentCount={post.commentCount}
                 topReactions={post.topReactions}
                 reactionTypes={PLACEHOLDER_REACTION_TYPES}
-                reactors={post.reactors}
+                reactionDetails={post.reactionDetails}
                 postPath="."
                 onComment={() => composerRef.current?.focus()}
               />
@@ -147,6 +151,7 @@ export default function GroupPostDetailPage() {
                   canManage={canManage}
                   anonymityPolicy={anonymityPolicy}
                   canPostAnonymously={canPostAnonymously}
+                  commentAuthorAttribution={canPostAsStaff ? "staff" : undefined}
                 />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
@@ -166,6 +171,7 @@ export default function GroupPostDetailPage() {
           inputRef={composerRef}
           anonymityPolicy={anonymityPolicy}
           canPostAnonymously={canPostAnonymously}
+          authorAttribution={canPostAsStaff ? "staff" : undefined}
         />
       </DialogContent>
     </Dialog>

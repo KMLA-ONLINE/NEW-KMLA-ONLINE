@@ -7,6 +7,7 @@ import { GroupAttachmentButtons } from "~/components/group/group-attachment-butt
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { GroupContentEditor } from "~/components/group/group-content-editor"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
 import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
@@ -34,6 +35,7 @@ export default function GroupEditPostPage() {
   const post = mockGroupPosts.find((item) => item.pubId === postId)
   // 익명 글은 서버가 author를 지워서 내려준다(is_anonymous면 null). 내 글인 건 is_mine으로 따로 안다.
   const isAnonymous = post !== undefined && post.author === null
+  const isStaffPost = post?.authorAttribution === "staff"
 
   // 제목/본문은 uncontrolled(defaultValue)라 타이핑엔 리렌더 없음. ref는 닫으려 할 때 딱 한 번,
   // 원래 값과 달라졌는지만 읽는다 -- 매 입력마다 리렌더를 만들지 않는다.
@@ -132,13 +134,17 @@ export default function GroupEditPostPage() {
                     실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
                     글이 익명이면(author가 null) 그 사실만 보여준다. */}
                 <div className="flex items-center gap-3">
-                  {isAnonymous ? (
+                  {isStaffPost ? (
+                    <GroupStaffAvatar size="lg" />
+                  ) : isAnonymous ? (
                     <AnonymousAvatar size="lg" />
                   ) : (
                     <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size="lg" />
                   )}
                   <div className="text-sm leading-tight">
-                    <p className="font-semibold">{isAnonymous ? "익명" : "나"}</p>
+                    <p className="font-semibold">
+                      {isStaffPost ? "운영진" : isAnonymous ? "익명" : "나"}
+                    </p>
                     <p className="text-muted-foreground text-xs">{mockGroup.name}</p>
                   </div>
                 </div>

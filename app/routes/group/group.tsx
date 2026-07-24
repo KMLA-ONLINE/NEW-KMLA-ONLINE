@@ -53,6 +53,7 @@ export type GroupOutletContext = {
   canCurate: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
+  canPostAsStaff: boolean
 }
 
 type GroupTab = "posts" | "members" | "settings"
@@ -131,9 +132,15 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
   const canCurate = canManage || viewerRole === "manager"
+  const canPostAsStaff = anonymityPolicy === "required" && mockGroup.type === "group" && canCurate
+  // 항상 익명 공간의 실명 명부는 owner/admin만 본다. UI만 숨겨서는 user_id를 직접 조회할 수
+  // 있으므로 TODO(backend): space_members_select도 해당 공간에서는 본인 행 또는 can_manage_space만
+  // 허용하고, 일반 멤버에게는 spaces.member_count만 제공한다.
+  const canViewMemberDirectory = anonymityPolicy !== "required" || canManage
   const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
   const tab: GroupTab =
-    requestedTab === "members" || (requestedTab === "settings" && canCurate)
+    (requestedTab === "members" && canViewMemberDirectory) ||
+    (requestedTab === "settings" && canCurate)
       ? requestedTab
       : "posts"
   const isPushedGroupViewEntry = Boolean(
@@ -169,6 +176,7 @@ export default function GroupPage() {
   const canPostAnonymously =
     anonymityPolicy !== "disabled" && mockGroup.anonymitySuspendedUntil === null
   // 항상 익명인 그룹에서 익명 작성이 제한되면 실명으로 우회할 수 없으므로 글·댓글 작성도 막힌다.
+  // 공식 그룹 운영진도 예외가 아니다 -- 역할 권한으로 `운영진` 귀속 글을 써서 제재를 우회할 수 없다.
   const canPost = roleCanPost && (anonymityPolicy !== "required" || canPostAnonymously)
 
   const liveGroup = {
@@ -198,7 +206,9 @@ export default function GroupPage() {
 
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
-  const visibleTabs = TABS.filter((item) => !item.curateOnly || canCurate)
+  const visibleTabs = TABS.filter(
+    (item) => (item.id !== "members" || canViewMemberDirectory) && (!item.curateOnly || canCurate)
+  )
 
   // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
   // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
@@ -290,6 +300,7 @@ export default function GroupPage() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onViewMembers={() => setTab("members")}
+        canViewMembers={canViewMemberDirectory}
         canCurate={canCurate}
         onViewSettings={() => setTab("settings")}
       />
@@ -461,6 +472,7 @@ export default function GroupPage() {
             canCurate,
             anonymityPolicy,
             canPostAnonymously,
+            canPostAsStaff,
           } satisfies GroupOutletContext
         }
       />

@@ -26,7 +26,7 @@ describe("GroupCommentComposer anonymity policy", () => {
 
     writeAndSend()
 
-    expect(onSubmit).toHaveBeenCalledWith("댓글", true)
+    expect(onSubmit).toHaveBeenCalledWith("댓글", true, undefined)
   })
 
   it("실명 전용 그룹에서는 실명 댓글로 제출한다", () => {
@@ -35,7 +35,7 @@ describe("GroupCommentComposer anonymity policy", () => {
 
     writeAndSend()
 
-    expect(onSubmit).toHaveBeenCalledWith("댓글", false)
+    expect(onSubmit).toHaveBeenCalledWith("댓글", false, undefined)
   })
 
   it("선택형 그룹에서는 사용자가 고른 익명 상태를 제출한다", () => {
@@ -45,7 +45,20 @@ describe("GroupCommentComposer anonymity policy", () => {
     fireEvent.click(screen.getByRole("button", { name: "실명으로 작성 중. 눌러서 익명으로" }))
     writeAndSend()
 
-    expect(onSubmit).toHaveBeenCalledWith("댓글", true)
+    expect(onSubmit).toHaveBeenCalledWith("댓글", true, undefined)
+  })
+
+  it("운영진 댓글은 개인 신원 대신 운영진 귀속으로 제출한다", () => {
+    const onSubmit = vi.fn()
+    renderComposer({
+      anonymityPolicy: "required",
+      authorAttribution: "staff",
+      onSubmit,
+    })
+
+    writeAndSend()
+
+    expect(onSubmit).toHaveBeenCalledWith("댓글", true, "staff")
   })
 
   it("항상 익명 그룹에서 익명 작성이 제한되면 실명 우회를 막는다", () => {

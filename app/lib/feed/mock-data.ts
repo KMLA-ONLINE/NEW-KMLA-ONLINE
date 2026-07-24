@@ -1,4 +1,4 @@
-import { makeMockReactors } from "~/lib/group/mock-reactors"
+import { makeMockReactionDetails } from "~/lib/group/mock-reactors"
 import type { GroupCategory, GroupPost, GroupPostSpace } from "~/lib/group/types"
 
 // 홈 피드의 대역 데이터. 로더가 list_feed_posts로 "내가 가입한 space들의 글"을 최신순으로
@@ -176,10 +176,10 @@ const rawFeedPosts: GroupPost[] = [
   },
 ]
 
-// 반응자 목록은 reactionCount·topReactions에서 합성한다(group/mock-data.ts와 같은 대역).
+// 반응 상세는 reactionCount·topReactions에서 합성한다(group/mock-data.ts와 같은 대역).
 export const mockFeedPosts: GroupPost[] = rawFeedPosts.map((post) => ({
   ...post,
-  reactors: makeMockReactors(post.reactionCount, post.topReactions),
+  reactionDetails: makeMockReactionDetails(post.reactionCount, post.topReactions),
 }))
 
 // 오른쪽 사이드바의 급식 카드. 지금은 레이아웃용 mock -- 나중에 cron이 급식 API에서 받아 채운다.

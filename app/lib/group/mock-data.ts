@@ -1,4 +1,4 @@
-import { makeMockReactors } from "~/lib/group/mock-reactors"
+import { makeMockReactionDetails } from "~/lib/group/mock-reactors"
 import type {
   GroupCategory,
   GroupComment,
@@ -442,7 +442,7 @@ export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => {
     // 반응자 목록은 reactionCount·topReactions에서 합성한다(총원·아이콘이 요약과 일치).
     // 정책 변경 전후의 실명·익명 반응이 섞인 상태를 미리 본다. 실제 RPC는 익명 반응을 사람별
     // 행이 아니라 타입별 count로 집계해 내려줘야 한다.
-    reactors: makeMockReactors(post.reactionCount, post.topReactions, 3),
+    reactionDetails: makeMockReactionDetails(post.reactionCount, post.topReactions, 3),
   }
 })
 

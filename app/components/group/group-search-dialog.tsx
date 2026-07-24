@@ -106,7 +106,10 @@ export function GroupSearchDialog({
                       {toPlainTextPreview(post.content)}
                     </p>
                     <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                      <span className="truncate">{post.author?.name ?? "익명"}</span>
+                      <span className="truncate">
+                        {post.author?.name ??
+                          (post.authorAttribution === "staff" ? "운영진" : "익명")}
+                      </span>
                       <span aria-hidden="true">·</span>
                       <RelativeTime value={post.createdAt} />
                     </div>

@@ -8,6 +8,7 @@ import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { RichText } from "~/components/rich-text/rich-text"
@@ -31,7 +32,8 @@ export function GroupPostCard({
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
   canCurate?: boolean
 }) {
-  const authorName = post.author?.name ?? "익명"
+  const isStaffPost = post.authorAttribution === "staff"
+  const authorName = post.author?.name ?? (isStaffPost ? "운영진" : "익명")
   // 피드(space 있음)에선 다른 그룹의 글이라 그룹을 명시한 절대 경로로 링크한다. 그룹 안
   // (space 없음)에선 지금까지처럼 라우트 기준 상대 경로 -- 둘 다 상세/수정으로 옳게 간다.
   const postPath = post.space
@@ -92,6 +94,8 @@ export function GroupPostCard({
       >
         {post.author ? (
           <ProfileAvatarLink profile={post.author} size="lg" />
+        ) : isStaffPost ? (
+          <GroupStaffAvatar size="lg" />
         ) : (
           <AnonymousAvatar size="lg" />
         )}
@@ -112,7 +116,7 @@ export function GroupPostCard({
         <GroupPostMenu
           isMine={post.isMine}
           isPinned={post.isPinned}
-          isAnonymous={post.author === null}
+          isAnonymous={post.author === null && !isStaffPost}
           isAnonymitySuspended={post.isAuthorAnonymitySuspended}
           canManage={canManage}
           canCurate={canCurate}
@@ -169,7 +173,7 @@ export function GroupPostCard({
         commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
-        reactors={post.reactors}
+        reactionDetails={post.reactionDetails}
         postPath={postPath}
         className="mt-1"
       />

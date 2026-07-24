@@ -2,6 +2,7 @@ import { SendIcon } from "lucide-react"
 import { useRef, useState, type RefObject } from "react"
 
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import type { GroupAnonymityPolicy } from "~/lib/group/types"
@@ -30,16 +31,22 @@ export function GroupCommentComposer({
   inputRef,
   anonymityPolicy = "optional",
   canPostAnonymously = true,
+  authorAttribution,
 }: {
   placeholder?: string
   autoFocus?: boolean
   /** 익명 여부까지 넘긴다 -- comments.is_anonymous는 insert에만 있고 나중에 못 바꾼다. */
-  onSubmit?: (text: string, anonymous: boolean) => void
+  onSubmit?: (text: string, anonymous: boolean, authorAttribution?: "staff") => void
   className?: string
   /** 바깥에서 포커스를 주려면 넘긴다(상세의 댓글 아이콘). 안 넘기면 내부 ref를 쓴다. */
   inputRef?: RefObject<HTMLTextAreaElement | null>
   anonymityPolicy?: GroupAnonymityPolicy
   canPostAnonymously?: boolean
+  /**
+   * Mock 표시용. TODO(backend): 클라이언트 값을 신뢰하지 않고 공간 정책과 현재 역할에서 `staff`를
+   * 파생해 comments.author_attribution에 게시 당시 스냅샷으로 저장한다.
+   */
+  authorAttribution?: "staff"
 }) {
   const [draft, setDraft] = useState("")
   // comments.is_anonymous. 글과 마찬가지로 작성 시점에만 정해진다(update grant는 content 하나뿐).
@@ -53,7 +60,7 @@ export function GroupCommentComposer({
 
   const send = () => {
     if (!canSend) return
-    onSubmit?.(draft, effectiveAnonymous)
+    onSubmit?.(draft, effectiveAnonymous, authorAttribution)
     setDraft("")
     setAnonymous(anonymityPolicy === "required")
     if (textareaRef.current) resize(textareaRef.current)
@@ -61,7 +68,9 @@ export function GroupCommentComposer({
 
   return (
     <div className={cn("flex items-end gap-2", className)}>
-      {canChooseAnonymity ? (
+      {authorAttribution === "staff" ? (
+        <GroupStaffAvatar className="mb-0.5" />
+      ) : canChooseAnonymity ? (
         <GroupAnonymousToggle
           anonymous={anonymous}
           onToggle={() => setAnonymous((value) => !value)}

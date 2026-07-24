@@ -11,6 +11,7 @@ import { GroupAttachmentPreview } from "~/components/group/group-attachment-prev
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { GroupContentEditor } from "~/components/group/group-content-editor"
 import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
@@ -31,7 +32,8 @@ import { mockGroup, mockGroupCategories } from "~/lib/group/mock-data"
 export default function GroupNewPostPage() {
   // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 히스토리를 pop해 그룹으로 돌아간다.
   const close = useModalClose()
-  const { anonymityPolicy, canPostAnonymously } = useOutletContext<GroupOutletContext>()
+  const { anonymityPolicy, canPostAnonymously, canPostAsStaff } =
+    useOutletContext<GroupOutletContext>()
 
   // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부·카테고리만 로컬 상태. 저장은 백엔드 붙일 때.
   // ref는 닫으려 할 때 딱 한 번, 값이 비어있는지만 읽는다 -- 매 입력마다 리렌더를 만들지 않는다.
@@ -45,7 +47,9 @@ export default function GroupNewPostPage() {
   const suspendedUntil = mockGroup.anonymitySuspendedUntil
   const [anonymous, setAnonymous] = useState(anonymityPolicy === "required")
   const canChooseAnonymity = anonymityPolicy === "optional" && canPostAnonymously
+  // 운영진 귀속 글도 익명 작성 제한을 우회하지 않는다.
   const isRequiredAndSuspended = anonymityPolicy === "required" && !canPostAnonymously
+  const isStaffPost = canPostAsStaff
 
   const checkIsDirty = useCallback(
     () =>
@@ -116,7 +120,11 @@ export default function GroupNewPostPage() {
                 그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
                 거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
             <div className="flex items-center gap-3">
-              {canChooseAnonymity ? (
+              {/* TODO(backend): required 공식 그룹에서 owner/admin/manager가 쓰면 개인 신원은 익명으로
+                  두되 author_attribution='staff'를 게시 당시 스냅샷으로 저장한다. */}
+              {isStaffPost ? (
+                <GroupStaffAvatar size="lg" />
+              ) : canChooseAnonymity ? (
                 <GroupAnonymousToggle
                   anonymous={anonymous}
                   onToggle={() => setAnonymous((value) => !value)}
@@ -128,7 +136,9 @@ export default function GroupNewPostPage() {
                 <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size="lg" />
               )}
               <div className="text-sm leading-tight">
-                <p className="font-semibold">{anonymous ? "익명" : "나"}</p>
+                <p className="font-semibold">
+                  {isStaffPost ? "운영진" : anonymous ? "익명" : "나"}
+                </p>
                 <p className="text-muted-foreground text-xs">
                   {suspendedUntil
                     ? `익명 작성 제한 중 · ${new Date(suspendedUntil).toLocaleDateString("ko-KR")}까지`
