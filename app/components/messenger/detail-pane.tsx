@@ -1,6 +1,5 @@
 import {
   ArrowLeftIcon,
-  ArrowUpRightIcon,
   ChevronRightIcon,
   ImageIcon,
   PanelRightCloseIcon,
@@ -10,7 +9,7 @@ import {
   UsersIcon,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ConversationAvatar } from "~/components/messenger/conversation-avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { getRoomSubtitle } from "~/lib/messenger/utils"
@@ -68,9 +67,9 @@ export function DetailPane({
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
         <section className="bg-muted/50 rounded-[1.5rem] p-5 text-center">
-          <Avatar size="lg" className="mx-auto">
-            <AvatarFallback>{room.initials}</AvatarFallback>
-          </Avatar>
+          <div className="flex justify-center">
+            <ConversationAvatar room={room} linkProfile />
+          </div>
           <h2 className="mt-3 text-lg font-semibold">{room.name}</h2>
           <p className="text-muted-foreground mt-1 text-sm">{getRoomSubtitle(room)}</p>
           {room.type === "direct" ? (

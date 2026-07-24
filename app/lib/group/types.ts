@@ -3,11 +3,13 @@
 // the backend won't return -- no "category"/"flair"/"featured", because spaces and
 // posts have none of those.
 
+import type { Database } from "~/lib/supabase/database.types"
+
 export type GroupSpace = {
   name: string
   description: string
   /** spaces.space_type. group=공식, community=비공식. 이 화면은 둘 다 담는다. */
-  type: "group" | "community"
+  type: Database["public"]["Enums"]["space_type"]
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
   /**
@@ -21,13 +23,13 @@ export type GroupSpace = {
    * finalize_space_cover/clear_space_cover RPC뿐 -- 컬럼 grant에 없다.
    */
   coverImageUrl: string | null
-  joinPolicy: "public" | "request" | "invite_only"
+  joinPolicy: Database["public"]["Enums"]["space_join_policy"]
   /**
    * spaces.post_policy. 누가 **메인 글**을 쓸 수 있는가. 'managers'면 owner/admin/manager만 쓴다
    * (공지형 그룹). 댓글은 이 정책과 무관하게 언제나 멤버 전원에게 열려 있다 -- 공지에 달리는
    * 반응까지 잠그면 게시판이 아니라 공고문이다.
    */
-  postPolicy: "all" | "managers"
+  postPolicy: Database["public"]["Enums"]["space_post_policy"]
   /**
    * 내가 지금 이 그룹에 글을 쓸 수 있는지(private.can_post_in_space). postPolicy가 'all'이면
    * 멤버 전원, 'managers'면 내 viewerRole이 owner/admin/manager일 때만 true. 로더가 파생한다.
@@ -61,9 +63,11 @@ export type GroupSpace = {
 }
 
 export type GroupPostAuthor = {
-  /** profiles.id. 실명 작성자의 프로필 링크와 사진 폴백 색상에 쓴다. */
+  /** profiles.id. 실명 작성자의 프로필 링크에 쓴다. */
   id: number
   name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
+  avatarUrl: string | null
 }
 
 /**
@@ -76,7 +80,7 @@ export type GroupPostReactor = {
   id: number
   /** profiles.name */
   name: string
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
   /** 이 사람이 누른 반응 타입(reaction_types.id). 어떤 이모지인지는 reactionTypes에서 찾는다. */
   reactionTypeId: number
@@ -94,7 +98,7 @@ export type GroupPostSpace = {
   /** spaces.name */
   name: string
   /** spaces.space_type. group=공식, community=비공식. 출처 아이콘을 가른다. */
-  type: "group" | "community"
+  type: Database["public"]["Enums"]["space_type"]
   /** spaces.pub_id 슬러그. 출처를 누르면 /groups/:pubId 로 간다. */
   pubId: string
 }
@@ -110,7 +114,7 @@ export type GroupCategory = {
 }
 
 /** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
-export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
+export type GroupMemberRole = Database["public"]["Enums"]["member_role"]
 
 /** space_join_requests 한 행 + 표시용 profiles 필드. request 정책 그룹의 승인 대기 가입 요청. */
 export type GroupJoinRequest = {
@@ -123,7 +127,7 @@ export type GroupJoinRequest = {
    * 되지만, 동명이인 중 엉뚱한 사람을 승인하면 그 사람이 그룹에 들어와 있다.
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
   /** space_join_requests.created_at (ISO 8601). */
   createdAt: string
@@ -142,7 +146,7 @@ export type GroupMember = {
    * type='student'일 때만 cohort를 요구한다).
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
   role: GroupMemberRole
   /** space_members.joined_at (ISO 8601). */

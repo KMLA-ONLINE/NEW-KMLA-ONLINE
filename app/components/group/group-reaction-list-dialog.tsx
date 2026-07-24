@@ -1,8 +1,7 @@
 import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
-import { Link } from "react-router"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog"
 import { Twemoji } from "~/components/ui/twemoji"
@@ -138,18 +137,13 @@ export function GroupReactionListDialog({
                 const type = typeById.get(reactor.reactionTypeId)
                 return (
                   <li key={reactor.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                    <Link
-                      to={`/profile/${reactor.id}`}
-                      aria-label={`${reactor.name} 프로필 보기`}
-                      className="focus-visible:ring-ring relative shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
-                    >
-                      <GroupAuthorAvatar name={reactor.name} anonymous={false} size="lg" />
+                    <ProfileAvatarLink profile={reactor} size="lg">
                       {type?.icon ? (
                         <span className="bg-background ring-background absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full ring-2">
                           <Twemoji text={type.icon} className="text-xs leading-none" />
                         </span>
                       ) : null}
-                    </Link>
+                    </ProfileAvatarLink>
                     <span className="truncate text-sm font-semibold">{reactor.name}</span>
                   </li>
                 )

@@ -4,7 +4,7 @@ import { Camera, ChevronLeft, Loader2, Upload } from "lucide-react"
 
 import type { Route } from "./+types/setup"
 import type { Database } from "~/lib/supabase/database.types"
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
@@ -274,7 +274,6 @@ export default function Setup() {
     birthday: hasBirthdayInput && !hasValidBirthday ? "올바른 생년월일을 입력하세요." : "",
   }
 
-  const profileInitial = formData.name.trim().charAt(0).toUpperCase() || "K"
   const submitError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null
   const isSubmitting = fetcher.state !== "idle"
 
@@ -631,14 +630,11 @@ export default function Setup() {
 
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative">
-                    <Avatar className="size-28">
-                      {avatarPreview ? (
-                        <AvatarImage src={avatarPreview} alt="선택한 프로필 이미지 미리보기" />
-                      ) : null}
-                      <AvatarFallback className="text-3xl font-semibold">
-                        {profileInitial}
-                      </AvatarFallback>
-                    </Avatar>
+                    <ProfileAvatar
+                      profile={{ name: formData.name || "사용자", avatarUrl: avatarPreview }}
+                      className="size-28"
+                      imageAlt="선택한 프로필 이미지 미리보기"
+                    />
                     <span className="bg-primary text-primary-foreground ring-background absolute right-0 bottom-0 flex size-8 items-center justify-center rounded-full ring-4">
                       <Camera />
                     </span>

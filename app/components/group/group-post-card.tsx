@@ -2,7 +2,7 @@ import { LandmarkIcon, PinIcon, UsersIcon } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Link } from "react-router"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
@@ -91,15 +91,9 @@ export function GroupPostCard({
         )}
       >
         {post.author ? (
-          <Link
-            to={`/profile/${post.author.id}`}
-            aria-label={`${authorName} 프로필 보기`}
-            className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
-          >
-            <GroupAuthorAvatar name={authorName} anonymous={false} size="lg" />
-          </Link>
+          <ProfileAvatarLink profile={post.author} size="lg" />
         ) : (
-          <GroupAuthorAvatar name={authorName} anonymous size="lg" />
+          <AnonymousAvatar size="lg" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

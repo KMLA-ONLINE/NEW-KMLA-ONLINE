@@ -14,7 +14,7 @@ import {
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type { ReactionType } from "~/lib/reactions"
-import type { Message, Participant, Room } from "~/lib/messenger/types"
+import type { Message, MessageId, Participant, ProfileId, Room } from "~/lib/messenger/types"
 
 export function MessageList({
   room,
@@ -41,23 +41,23 @@ export function MessageList({
   onTogglePin: (message: Message) => void
   onRetry: (message: Message) => void
   onOpenActions: (message: Message) => void
-  activeMobileActionMessageId: string | null
+  activeMobileActionMessageId: MessageId | null
   onCloseActions: () => void
-  focusedMessageId?: string | null
+  focusedMessageId?: MessageId | null
   onFocusedMessageHandled?: () => void
   /** 모바일/태블릿 다중 삭제 선택 모드. room-pane.tsx가 롱프레스 액션패널의 "삭제"로 진입시킨다. */
   isSelectionMode: boolean
-  selectedMessageIds: Set<string>
-  onToggleMessageSelection: (messageId: string) => void
+  selectedMessageIds: Set<MessageId>
+  onToggleMessageSelection: (messageId: MessageId) => void
 }) {
   const messages = room.messages
   const participants = room.participants
   const roomType = room.type
-  const messageElementsRef = useRef(new Map<string, HTMLDivElement>())
+  const messageElementsRef = useRef(new Map<MessageId, HTMLDivElement>())
   const highlightTimerRef = useRef<number | null>(null)
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<MessageId | null>(null)
 
-  const setMessageElement = (messageId: string, element: HTMLDivElement | null) => {
+  const setMessageElement = (messageId: MessageId, element: HTMLDivElement | null) => {
     if (element) {
       messageElementsRef.current.set(messageId, element)
       return
@@ -66,7 +66,7 @@ export function MessageList({
     messageElementsRef.current.delete(messageId)
   }
 
-  const openReplyTarget = (messageId: string) => {
+  const openReplyTarget = (messageId: MessageId) => {
     const target = messageElementsRef.current.get(messageId)
     if (!target) {
       return
@@ -86,7 +86,7 @@ export function MessageList({
   }
 
   useEffect(() => {
-    if (!focusedMessageId) {
+    if (focusedMessageId === null || focusedMessageId === undefined) {
       return
     }
 
@@ -115,7 +115,7 @@ export function MessageList({
         .filter((participant) => participant.id !== CURRENT_USER.id)
         .map((participant) => [participant.id, participant])
     )
-    const latestReadMessageIdByParticipantId = new Map<string, string>()
+    const latestReadMessageIdByParticipantId = new Map<ProfileId, MessageId>()
 
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index]
@@ -130,7 +130,7 @@ export function MessageList({
       }
     }
 
-    const readReceiptParticipantsByMessageId = new Map<string, Participant[]>()
+    const readReceiptParticipantsByMessageId = new Map<MessageId, Participant[]>()
     for (const [participantId, messageId] of latestReadMessageIdByParticipantId) {
       const participant = participantById.get(participantId)
       if (!participant) {
@@ -155,7 +155,7 @@ export function MessageList({
           : (authorById.get(message.senderId) ?? {
               id: message.senderId,
               name: "알 수 없음",
-              initials: "UN",
+              avatarUrl: null,
             }),
         replyPreviewText: message.replyTo
           ? replyTarget

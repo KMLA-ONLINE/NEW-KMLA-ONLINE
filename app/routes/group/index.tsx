@@ -119,7 +119,6 @@ function MemberGroupsPage() {
         <section className="flex flex-col gap-3">
           {/* 공식 그룹엔 가입 버튼도 찾기도 없다 -- 전교생이 이미 속해 있어서 고를 게 없다.
               남는 결정은 "어느 걸 자주 보나"뿐이고, 그게 핀이다. */}
-          <p className="text-muted-foreground text-sm">학교가 운영하는 그룹입니다.</p>
           <ul className="flex flex-col gap-1.5">
             {official.map((space) => (
               <SpaceRow

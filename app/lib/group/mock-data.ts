@@ -78,7 +78,7 @@ const MOCK_AUTHOR_IDS: Readonly<Record<string, number>> = {
 function mockAuthor(author: MockAuthor) {
   const id = MOCK_AUTHOR_IDS[author.name]
   if (id === undefined) throw new Error(`Missing mock profile id for ${author.name}`)
-  return { ...author, id }
+  return { ...author, id, avatarUrl: null }
 }
 
 // 댓글은 각 글에 트리로 들고 있다(parentId 스레드). 4번 글은 빈 상태 확인용으로 댓글이 없다.
@@ -445,7 +445,7 @@ export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => {
 })
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
-// 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.
+// 채운다. avatarUrl은 아직 자산이 없어 전부 null(공통 사용자 SVG 폴백). owner는 스키마상 정확히 1명.
 //
 // 동명이인(김도윤 30기/32기, 이민서 31기/33기)을 일부러 심어 뒀다 -- 기수를 안 보여주면 목록에서
 // 누가 누군지 가를 수가 없다. profiles.name엔 유니크 제약이 없고, 실제로 흔하다.

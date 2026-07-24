@@ -1,6 +1,6 @@
 import { ArrowLeftIcon, PinIcon, PinOffIcon } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import {
   formatMessageTime,
@@ -9,7 +9,7 @@ import {
   getReplyText,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, Room } from "~/lib/messenger/types"
+import type { Message, MessageId, Room } from "~/lib/messenger/types"
 
 export function PinnedMessagesPane({
   room,
@@ -21,7 +21,7 @@ export function PinnedMessagesPane({
   room: Room
   compact?: boolean
   onBack: () => void
-  onOpenMessage: (messageId: string) => void
+  onOpenMessage: (messageId: MessageId) => void
   onUnpinMessage: (message: Message) => void
 }) {
   const pinnedMessages = getPinnedMessages(room)
@@ -34,24 +34,24 @@ export function PinnedMessagesPane({
         key={message.id}
         className="hover:bg-muted/60 flex items-start gap-1 rounded-2xl p-1 pr-2 transition-colors"
       >
-        <button
-          type="button"
-          onClick={() => onOpenMessage(message.id)}
-          className="flex min-w-0 flex-1 items-start gap-3 rounded-xl p-1 text-left"
-        >
-          <Avatar size="sm">
-            <AvatarFallback>{author.initials}</AvatarFallback>
-          </Avatar>
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-sm font-medium">{author.name}</span>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {formatMessageTime(message.createdAt)}
+        <div className="flex min-w-0 flex-1 items-start gap-3 p-1">
+          <ProfileAvatarLink profile={author} size="sm" />
+          <button
+            type="button"
+            onClick={() => onOpenMessage(message.id)}
+            className="min-w-0 flex-1 rounded-xl text-left"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium">{author.name}</span>
+                <span className="text-muted-foreground shrink-0 text-xs">
+                  {formatMessageTime(message.createdAt)}
+                </span>
               </span>
+              <span className="text-muted-foreground mt-0.5 text-sm">{getReplyText(message)}</span>
             </span>
-            <span className="text-muted-foreground mt-0.5 text-sm">{getReplyText(message)}</span>
-          </span>
-        </button>
+          </button>
+        </div>
         <Button
           type="button"
           variant="ghost"

@@ -3,12 +3,12 @@ import { useCallback, useRef, useState } from "react"
 import { useParams } from "react-router"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { GroupContentEditor } from "~/components/group/group-content-editor"
 import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
 import { useFileDrop } from "~/hooks/use-file-drop"
@@ -132,7 +132,11 @@ export default function GroupEditPostPage() {
                     실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
                     글이 익명이면(author가 null) 그 사실만 보여준다. */}
                 <div className="flex items-center gap-3">
-                  <GroupAuthorAvatar name="나" anonymous={isAnonymous} size="lg" />
+                  {isAnonymous ? (
+                    <AnonymousAvatar size="lg" />
+                  ) : (
+                    <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size="lg" />
+                  )}
                   <div className="text-sm leading-tight">
                     <p className="font-semibold">{isAnonymous ? "익명" : "나"}</p>
                     <p className="text-muted-foreground text-xs">{mockGroup.name}</p>

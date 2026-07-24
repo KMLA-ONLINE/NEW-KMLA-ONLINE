@@ -14,11 +14,10 @@ import type { ComponentType, ReactNode } from "react"
 import { Link, useSearchParams } from "react-router"
 
 import { ThemeSelect } from "~/components/menu/theme-select"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { mockAppAdmins, mockPendingProfiles } from "~/lib/admin/mock-data"
-import { profileInitials } from "~/lib/profile/format"
-import { mockProfile, mockProfileEmail } from "~/lib/profile/mock-data"
+import { mockProfile, mockProfileAvatarUrl, mockProfileEmail } from "~/lib/profile/mock-data"
 import { cn } from "~/lib/utils"
 
 function MenuSection({ title, children }: { title: string; children: ReactNode }) {
@@ -101,9 +100,10 @@ export default function MenuPage() {
         to="/profile"
         className="bg-card hover:bg-muted/60 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors"
       >
-        <Avatar className="size-12">
-          <AvatarFallback className="text-base">{profileInitials(mockProfile.name)}</AvatarFallback>
-        </Avatar>
+        <ProfileAvatar
+          profile={{ name: mockProfile.name, avatarUrl: mockProfileAvatarUrl }}
+          className="size-12"
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">
             {mockProfile.name}

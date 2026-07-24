@@ -2,14 +2,14 @@ import { BellOffIcon, SearchIcon } from "lucide-react"
 import { useState } from "react"
 import { Link } from "react-router"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ConversationAvatar } from "~/components/messenger/conversation-avatar"
 import { Badge } from "~/components/ui/badge"
 import { Input } from "~/components/ui/input"
 import { Twemoji } from "~/components/ui/twemoji"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
 import { getMessagePreview, formatRoomTime } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { RoomSummary } from "~/lib/messenger/types"
+import type { ConversationId, RoomSummary } from "~/lib/messenger/types"
 
 const ROOM_PAGE_SIZE = 15
 
@@ -22,11 +22,11 @@ export function ChatListPane({
   onSelectRoom,
 }: {
   rooms: RoomSummary[]
-  selectedRoomId: string | null
+  selectedRoomId: ConversationId | null
   searchValue: string
-  getRoomHref: (roomId: string) => string
+  getRoomHref: (roomId: ConversationId) => string
   onSearchChange: (value: string) => void
-  onSelectRoom: (roomId: string) => void
+  onSelectRoom: (roomId: ConversationId) => void
 }) {
   const [visibleCount, setVisibleCount] = useState(ROOM_PAGE_SIZE)
   const shownRooms = rooms.slice(0, visibleCount)
@@ -69,9 +69,7 @@ export function ChatListPane({
                   )}
                   onClick={() => onSelectRoom(room.id)}
                 >
-                  <Avatar size="lg">
-                    <AvatarFallback>{room.initials}</AvatarFallback>
-                  </Avatar>
+                  <ConversationAvatar room={room} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{room.name}</span>
