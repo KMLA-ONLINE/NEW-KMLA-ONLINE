@@ -1,8 +1,9 @@
-import { ClockIcon } from "lucide-react"
+import { ClockIcon, VenetianMaskIcon } from "lucide-react"
 import { Link } from "react-router"
 
 import { SpaceAvatar } from "~/components/space/space-avatar"
 import { Button } from "~/components/ui/button"
+import { Badge } from "~/components/ui/badge"
 import { formatMemberCount } from "~/lib/space/format"
 import type { SpaceSummary } from "~/lib/space/types"
 
@@ -36,6 +37,12 @@ export function SpaceDiscoverCard({
         {/* 이름은 자르지 않고 두 줄까지 흘린다 -- 카드에서 가장 중요한 정보를 "민사고 사진 공유 동..."
             으로 뭉개면 고를 수가 없다. 설명은 두 줄에서 끊는다. */}
         <h3 className="line-clamp-2 text-base font-semibold">{space.name}</h3>
+        {space.anonymityPolicy === "required" ? (
+          <Badge variant="secondary" className="mt-1.5">
+            <VenetianMaskIcon data-icon="inline-start" aria-hidden="true" />
+            항상 익명
+          </Badge>
+        ) : null}
         <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">{space.description}</p>
 
         <p className="text-muted-foreground mt-2 text-xs">

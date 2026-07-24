@@ -154,7 +154,11 @@ export function GroupHeader({
         </div>
       </div>
 
-      <GroupNotificationsDialog open={notiOpen} onOpenChange={setNotiOpen} />
+      <GroupNotificationsDialog
+        open={notiOpen}
+        onOpenChange={setNotiOpen}
+        mentionsAllowed={group.anonymityPolicy !== "required"}
+      />
       <GroupLeaveDialog group={group} open={leaveOpen} onOpenChange={setLeaveOpen} />
     </section>
   )

@@ -12,6 +12,14 @@ import { ImageCropper } from "~/components/image/image-cropper"
 import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import type { GroupAnonymityPolicy, GroupCategory, GroupSpace } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
@@ -540,8 +548,8 @@ const ANONYMITY_OPTIONS: {
   },
 ]
 
-// TODO(backend): spaces.anonymity_policy를 갱신한다. 정책 변경은 이후 활동에만 적용하고 posts,
-// comments, reactions에 기록된 당시 익명 여부는 절대 소급 변경하지 않는다.
+// TODO(backend): owner/admin(can_manage_space)만 spaces.anonymity_policy를 갱신한다. 정책 변경은
+// 이후 활동에만 적용하고 posts, comments, reactions의 당시 익명 여부는 절대 소급 변경하지 않는다.
 function AnonymousSection({
   policy,
   onChange,
@@ -549,35 +557,69 @@ function AnonymousSection({
   policy: GroupAnonymityPolicy
   onChange: (next: GroupAnonymityPolicy) => void
 }) {
+  const [pendingPolicy, setPendingPolicy] = useState<GroupAnonymityPolicy | null>(null)
+  const pendingOption = ANONYMITY_OPTIONS.find((option) => option.value === pendingPolicy)
+
   return (
-    <SettingsCard>
-      <div className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">활동 신원</h2>
-          <p className="text-muted-foreground mt-1 text-xs">
-            정책을 바꿔도 이미 남긴 활동의 공개 범위는 바뀌지 않습니다.
-          </p>
+    <>
+      <SettingsCard>
+        <div className="flex flex-col gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">활동 신원</h2>
+            <p className="text-muted-foreground mt-1 text-xs">
+              정책을 바꿔도 이미 남긴 활동의 공개 범위는 바뀌지 않습니다.
+            </p>
+          </div>
+          <div role="radiogroup" aria-label="활동 신원" className="flex flex-col gap-1">
+            {ANONYMITY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={policy === option.value}
+                onClick={() => option.value !== policy && setPendingPolicy(option.value)}
+                className={cn(
+                  "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
+                  policy === option.value && "bg-muted"
+                )}
+              >
+                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-muted-foreground text-xs">{option.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <div role="radiogroup" aria-label="활동 신원" className="flex flex-col gap-1">
-          {ANONYMITY_OPTIONS.map((option) => (
-            <button
-              key={option.value}
+      </SettingsCard>
+
+      <Dialog
+        open={pendingPolicy !== null}
+        onOpenChange={(open) => !open && setPendingPolicy(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>활동 신원을 변경할까요?</DialogTitle>
+            <DialogDescription>
+              이후 활동은 <strong>{pendingOption?.label}</strong> 정책을 따릅니다. 기존 게시물,
+              댓글, 반응의 공개 범위는 바뀌지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingPolicy(null)}>
+              취소
+            </Button>
+            <Button
               type="button"
-              role="radio"
-              aria-checked={policy === option.value}
-              onClick={() => onChange(option.value)}
-              className={cn(
-                "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
-                policy === option.value && "bg-muted"
-              )}
+              onClick={() => {
+                if (pendingPolicy) onChange(pendingPolicy)
+                setPendingPolicy(null)
+              }}
             >
-              <span className="text-sm font-medium">{option.label}</span>
-              <span className="text-muted-foreground text-xs">{option.description}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </SettingsCard>
+              변경
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

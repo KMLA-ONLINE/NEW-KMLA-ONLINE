@@ -76,8 +76,8 @@ export function GroupPostActionBar({
   return (
     <div className={cn("flex items-center justify-between px-2 py-1", className)}>
       <div className="text-muted-foreground flex items-center">
-        {/* 익명 작성 제한은 글·댓글만 막고 반응은 허용한다. TODO(backend): required 공간의 반응은
-            DB가 당시 is_anonymous=true로 기록해야 한다. 클라이언트 값으로 두면 우회할 수 있다. */}
+        {/* 익명 작성 제한 중에도 반응은 허용하며 운영진 반응도 따로 드러내지 않는다.
+            TODO(backend): required 공간의 반응은 DB가 당시 is_anonymous=true로 기록해야 한다. */}
         <GroupReactionButton count={reactionCount} reactionTypes={reactionTypes} />
         {onComment ? (
           <button type="button" aria-label="댓글" className={ACTION_CLASS} onClick={onComment}>

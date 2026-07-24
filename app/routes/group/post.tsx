@@ -33,7 +33,7 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const { canManage, canCurate, anonymityPolicy, canPostAnonymously, canPostAsStaff } =
+  const { canManage, canCurate, anonymityPolicy, canPostAnonymously, staffAttributionMode } =
     useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
@@ -90,6 +90,11 @@ export default function GroupPostDetailPage() {
                         따로 두면 같은 글이 목록과 상세에서 다르게 보인다. */}
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold">{authorName}</span>
+                      {post.isMine && post.author === null ? (
+                        <Badge variant="secondary" className="shrink-0">
+                          나
+                        </Badge>
+                      ) : null}
                       {post.category ? (
                         <Badge variant="secondary" className="shrink-0">
                           {post.category.name}
@@ -151,7 +156,7 @@ export default function GroupPostDetailPage() {
                   canManage={canManage}
                   anonymityPolicy={anonymityPolicy}
                   canPostAnonymously={canPostAnonymously}
-                  commentAuthorAttribution={canPostAsStaff ? "staff" : undefined}
+                  staffAttributionMode={staffAttributionMode}
                 />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
@@ -171,7 +176,7 @@ export default function GroupPostDetailPage() {
           inputRef={composerRef}
           anonymityPolicy={anonymityPolicy}
           canPostAnonymously={canPostAnonymously}
-          authorAttribution={canPostAsStaff ? "staff" : undefined}
+          staffAttributionMode={staffAttributionMode}
         />
       </DialogContent>
     </Dialog>

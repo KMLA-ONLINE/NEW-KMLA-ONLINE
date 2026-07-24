@@ -53,7 +53,8 @@ export type GroupOutletContext = {
   canCurate: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
-  canPostAsStaff: boolean
+  anonymitySuspendedUntil: string | null
+  staffAttributionMode: "automatic" | "optional" | "none"
 }
 
 type GroupTab = "posts" | "members" | "settings"
@@ -114,6 +115,9 @@ export default function GroupPage() {
       : mockGroup.anonymityPolicy
   const [anonymityPolicy, setAnonymityPolicy] =
     useState<GroupAnonymityPolicy>(initialAnonymityPolicy)
+  const typePreview = searchParams.get("type")
+  const groupType =
+    typePreview === "group" || typePreview === "community" ? typePreview : mockGroup.type
   // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
   // 로컬 object URL이라 새로고침하면 사라진다.
   const imageUrl = mockGroup.imageUrl
@@ -132,7 +136,12 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
   const canCurate = canManage || viewerRole === "manager"
-  const canPostAsStaff = anonymityPolicy === "required" && mockGroup.type === "group" && canCurate
+  const staffAttributionMode: GroupOutletContext["staffAttributionMode"] =
+    anonymityPolicy === "required" && canCurate
+      ? groupType === "group"
+        ? "automatic"
+        : "optional"
+      : "none"
   // 항상 익명 공간의 실명 명부는 owner/admin만 본다. UI만 숨겨서는 user_id를 직접 조회할 수
   // 있으므로 TODO(backend): space_members_select도 해당 공간에서는 본인 행 또는 can_manage_space만
   // 허용하고, 일반 멤버에게는 spaces.member_count만 제공한다.
@@ -181,6 +190,7 @@ export default function GroupPage() {
 
   const liveGroup = {
     ...mockGroup,
+    type: groupType,
     imageUrl,
     joinPolicy,
     postPolicy,
@@ -472,7 +482,8 @@ export default function GroupPage() {
             canCurate,
             anonymityPolicy,
             canPostAnonymously,
-            canPostAsStaff,
+            anonymitySuspendedUntil: mockGroup.anonymitySuspendedUntil,
+            staffAttributionMode,
           } satisfies GroupOutletContext
         }
       />

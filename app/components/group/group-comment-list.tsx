@@ -8,6 +8,7 @@ import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
 import { Button } from "~/components/ui/button"
+import { Badge } from "~/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -41,7 +42,7 @@ export function GroupCommentList({
   canManage,
   anonymityPolicy,
   canPostAnonymously,
-  commentAuthorAttribution,
+  staffAttributionMode,
 }: {
   comments: GroupComment[]
   reactionTypes: ReactionType[]
@@ -49,7 +50,7 @@ export function GroupCommentList({
   canManage?: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
-  commentAuthorAttribution?: "staff"
+  staffAttributionMode: "automatic" | "optional" | "none"
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -109,7 +110,7 @@ export function GroupCommentList({
           canManage={canManage}
           anonymityPolicy={anonymityPolicy}
           canPostAnonymously={canPostAnonymously}
-          commentAuthorAttribution={commentAuthorAttribution}
+          staffAttributionMode={staffAttributionMode}
         />
       ))}
     </ul>
@@ -126,7 +127,7 @@ function GroupCommentItem({
   canManage,
   anonymityPolicy,
   canPostAnonymously,
-  commentAuthorAttribution,
+  staffAttributionMode,
   depth = 0,
 }: {
   comment: GroupComment
@@ -140,7 +141,7 @@ function GroupCommentItem({
   canManage?: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
-  commentAuthorAttribution?: "staff"
+  staffAttributionMode: "automatic" | "optional" | "none"
   depth?: number
 }) {
   // 익명이면 서버가 매긴 라벨을 쓴다("익명1", "익명2", 익명 글의 글쓴이면 "글쓴이"). 클라이언트가
@@ -193,7 +194,7 @@ function GroupCommentItem({
                 canManage={canManage}
                 anonymityPolicy={anonymityPolicy}
                 canPostAnonymously={canPostAnonymously}
-                commentAuthorAttribution={commentAuthorAttribution}
+                staffAttributionMode={staffAttributionMode}
                 depth={depth + 1}
               />
             ))}
@@ -222,7 +223,12 @@ function GroupCommentItem({
                 highlightedId === comment.id && "ring-ring ring-2"
               )}
             >
-              <p className="text-xs font-semibold">{name}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-semibold">{name}</p>
+                {comment.isMine && comment.author === null ? (
+                  <Badge variant="secondary">나</Badge>
+                ) : null}
+              </div>
               <p className="text-sm">
                 {parentName ? (
                   <button
@@ -323,10 +329,13 @@ function GroupCommentItem({
                     {/* TODO(backend): 확인 후 suspend_comment_author_anonymity(id) /
                         undo_comment_anonymity_suspension(id). 후자는 void다 -- 자세한 이유는
                         group-post-menu.tsx의 같은 항목 주석 참고. 취소는 확인 모달 없음(처벌이 아니라서). */}
-                    <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
-                      익명 작성 제한
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+                    {comment.isAuthorAnonymitySuspended ? (
+                      <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
+                        익명 작성 제한
+                      </DropdownMenuItem>
+                    )}
                   </>
                 ) : null}
               </DropdownMenuContent>
@@ -376,7 +385,7 @@ function GroupCommentItem({
               canManage={canManage}
               anonymityPolicy={anonymityPolicy}
               canPostAnonymously={canPostAnonymously}
-              commentAuthorAttribution={commentAuthorAttribution}
+              staffAttributionMode={staffAttributionMode}
               depth={depth + 1}
             />
           ))}
@@ -389,7 +398,7 @@ function GroupCommentItem({
                 onSubmit={() => setReplying(false)}
                 anonymityPolicy={anonymityPolicy}
                 canPostAnonymously={canPostAnonymously}
-                authorAttribution={commentAuthorAttribution}
+                staffAttributionMode={staffAttributionMode}
               />
             </li>
           ) : null}

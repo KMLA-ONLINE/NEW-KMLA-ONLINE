@@ -129,10 +129,9 @@ export default function GroupEditPostPage() {
           {post ? (
             <>
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-                {/* 여기엔 익명 토글이 없다. is_anonymous는 작성 시점에만 정해지고 update 컬럼
-                    grant에서 빠져 있어 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에
-                    실명으로 까거나, 실명 글을 뒤늦게 익명으로 숨기는 걸 둘 다 막기 위해서다.
-                    글이 익명이면(author가 null) 그 사실만 보여준다. */}
+                {/* 여기엔 익명·운영진 귀속 토글이 없다. is_anonymous와 author_attribution은 작성
+                    시점에 고정되고 update 허용 컬럼에서 빠진다. 이미 본 사람과 나중에 본 사람에게
+                    서로 다른 작성 주체를 보여주지 않기 위해서다. */}
                 <div className="flex items-center gap-3">
                   {isStaffPost ? (
                     <GroupStaffAvatar size="lg" />

@@ -2,6 +2,7 @@ import { SendIcon } from "lucide-react"
 import { useRef, useState, type RefObject } from "react"
 
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
+import { GroupStaffAttributionToggle } from "~/components/group/group-staff-attribution-toggle"
 import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
@@ -22,7 +23,8 @@ function resize(element: HTMLTextAreaElement) {
 
 // 로컬 상태라 타이핑이 상세 페이지 전체를 리렌더하지 않는다. 하단 댓글 입력에도, 각
 // 댓글의 인라인 답글에도 쓴다(className으로 프레임만 바꿈). 저장은 백엔드 붙일 때 --
-// 지금은 Enter로 전송하면 비우기만 한다(Shift+Enter는 줄바꿈).
+// 지금은 Enter로 전송하면 비우기만 한다(Shift+Enter는 줄바꿈). required 공간은 명시적 @멘션을
+// 허용하지 않는다. 답글의 @익명N 표시는 탐색용 UI이며 mention 행이나 알림을 만들지 않는다.
 export function GroupCommentComposer({
   placeholder = "댓글을 입력하세요…",
   autoFocus = false,
@@ -31,7 +33,7 @@ export function GroupCommentComposer({
   inputRef,
   anonymityPolicy = "optional",
   canPostAnonymously = true,
-  authorAttribution,
+  staffAttributionMode = "none",
 }: {
   placeholder?: string
   autoFocus?: boolean
@@ -42,33 +44,41 @@ export function GroupCommentComposer({
   inputRef?: RefObject<HTMLTextAreaElement | null>
   anonymityPolicy?: GroupAnonymityPolicy
   canPostAnonymously?: boolean
-  /**
-   * Mock 표시용. TODO(backend): 클라이언트 값을 신뢰하지 않고 공간 정책과 현재 역할에서 `staff`를
-   * 파생해 comments.author_attribution에 게시 당시 스냅샷으로 저장한다.
-   */
-  authorAttribution?: "staff"
+  /** TODO(backend): optional 선택은 요청값으로 받되 현재 역할을 다시 검사하고 게시 당시 귀속을 저장한다. */
+  staffAttributionMode?: "automatic" | "optional" | "none"
 }) {
   const [draft, setDraft] = useState("")
   // comments.is_anonymous. 글과 마찬가지로 작성 시점에만 정해진다(update grant는 content 하나뿐).
   const [anonymous, setAnonymous] = useState(anonymityPolicy === "required")
+  const [staffAttributed, setStaffAttributed] = useState(staffAttributionMode === "automatic")
   const fallbackRef = useRef<HTMLTextAreaElement>(null)
   const textareaRef = inputRef ?? fallbackRef
   const canChooseAnonymity = anonymityPolicy === "optional" && canPostAnonymously
   const isRequiredAndSuspended = anonymityPolicy === "required" && !canPostAnonymously
   const effectiveAnonymous = anonymityPolicy === "required" || anonymous
+  const effectiveAuthorAttribution =
+    staffAttributionMode === "automatic" || staffAttributed ? "staff" : undefined
   const canSend = draft.trim().length > 0 && !isRequiredAndSuspended
 
   const send = () => {
     if (!canSend) return
-    onSubmit?.(draft, effectiveAnonymous, authorAttribution)
+    onSubmit?.(draft, effectiveAnonymous, effectiveAuthorAttribution)
     setDraft("")
     setAnonymous(anonymityPolicy === "required")
+    // 비공식 그룹의 운영진 귀속은 공식 입장을 실수로 이어 쓰지 않도록 매번 일반 익명으로 돌아간다.
+    setStaffAttributed(staffAttributionMode === "automatic")
     if (textareaRef.current) resize(textareaRef.current)
   }
 
   return (
     <div className={cn("flex items-end gap-2", className)}>
-      {authorAttribution === "staff" ? (
+      {staffAttributionMode === "optional" ? (
+        <GroupStaffAttributionToggle
+          staff={staffAttributed}
+          onToggle={() => setStaffAttributed((value) => !value)}
+          className="mb-0.5"
+        />
+      ) : staffAttributionMode === "automatic" ? (
         <GroupStaffAvatar className="mb-0.5" />
       ) : canChooseAnonymity ? (
         <GroupAnonymousToggle

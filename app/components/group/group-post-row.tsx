@@ -59,6 +59,7 @@ export function GroupPostRow({
           </>
         ) : null}
         <span className="truncate">{authorName}</span>
+        {post.isMine && post.author === null ? <Badge variant="secondary">나</Badge> : null}
         <span aria-hidden="true">·</span>
         <RelativeTime value={post.createdAt} />
         <GroupEditedMark at={post.updatedAt} />

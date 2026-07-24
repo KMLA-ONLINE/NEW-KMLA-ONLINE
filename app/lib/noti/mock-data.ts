@@ -12,10 +12,24 @@ const minutesAgo = (minutes: number) => new Date(BASE - minutes * 60_000).toISOS
 
 export const mockNotifications: AppNotification[] = [
   {
+    id: 13,
+    type: "reaction_summary",
+    // 집계 알림에는 단일 actor가 없다. 익명 개인 행 대신 집계 창의 인원수만 payload에 둔다.
+    actor: null,
+    actorIsAnonymous: false,
+    space: { pubId: "student-council", name: "행정위원회", type: "group" },
+    post: { pubId: "c0ffee00-0000-4000-8000-000000000001", title: "기말고사 일정 안내" },
+    comment: null,
+    payload: { reaction_count: 3 },
+    readAt: null,
+    createdAt: minutesAgo(1),
+  },
+  {
     id: 12,
     type: "post_comment",
-    // 익명 댓글: 서버가 actor를 지워서 내린다. actor_id는 select grant에 없어 우회 조회도 안 된다.
+    // 운영진 댓글: 개인 actor는 지우고 게시 당시 운영진 귀속만 내려준다.
     actor: null,
+    actorAttribution: "staff",
     actorIsAnonymous: true,
     space: { pubId: "student-council", name: "행정위원회", type: "group" },
     post: { pubId: "c0ffee00-0000-4000-8000-000000000001", title: "기말고사 일정 안내" },

@@ -52,13 +52,33 @@ describe("GroupCommentComposer anonymity policy", () => {
     const onSubmit = vi.fn()
     renderComposer({
       anonymityPolicy: "required",
-      authorAttribution: "staff",
+      staffAttributionMode: "automatic",
       onSubmit,
     })
 
     writeAndSend()
 
     expect(onSubmit).toHaveBeenCalledWith("댓글", true, "staff")
+  })
+
+  it("비공식 운영진은 작성할 때 운영진 귀속을 선택할 수 있다", () => {
+    const onSubmit = vi.fn()
+    renderComposer({
+      anonymityPolicy: "required",
+      staffAttributionMode: "optional",
+      onSubmit,
+    })
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "일반 익명으로 작성 중. 눌러서 운영진으로" })
+    )
+    writeAndSend()
+
+    expect(onSubmit).toHaveBeenCalledWith("댓글", true, "staff")
+
+    writeAndSend()
+
+    expect(onSubmit).toHaveBeenNthCalledWith(2, "댓글", true, undefined)
   })
 
   it("항상 익명 그룹에서 익명 작성이 제한되면 실명 우회를 막는다", () => {

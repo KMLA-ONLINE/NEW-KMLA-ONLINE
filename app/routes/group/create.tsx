@@ -87,6 +87,7 @@ export default function CreateSpacePage() {
   const [pubId, setPubId] = useState("")
   const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("public")
   const [postPolicy, setPostPolicy] = useState<SpaceDraft["postPolicy"]>("all")
+  // 기존 그룹 동작과 DB allow_anonymous_posts=true의 의미를 이어받는 기본값이다.
   const [anonymityPolicy, setAnonymityPolicy] = useState<SpaceDraft["anonymityPolicy"]>("optional")
 
   const trimmedName = name.trim()
@@ -102,7 +103,7 @@ export default function CreateSpacePage() {
     toast.success(`${type === "group" ? "공식 그룹" : "그룹"}을 만들었습니다`)
     // 백엔드 미연동 미리보기에서 생성한 정책을 그룹 화면에 전달한다. 실제 생성 RPC가 붙으면
     // loader가 spaces.anonymity_policy를 읽으므로 이 query parameter는 제거한다.
-    navigate(`/groups/${slug}?anonymity=${anonymityPolicy}`)
+    navigate(`/groups/${slug}?anonymity=${anonymityPolicy}&type=${type}`)
   }
 
   return (

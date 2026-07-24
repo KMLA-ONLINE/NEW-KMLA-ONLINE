@@ -110,6 +110,9 @@ export function GroupSearchDialog({
                         {post.author?.name ??
                           (post.authorAttribution === "staff" ? "운영진" : "익명")}
                       </span>
+                      {post.isMine && post.author === null ? (
+                        <Badge variant="secondary">나</Badge>
+                      ) : null}
                       <span aria-hidden="true">·</span>
                       <RelativeTime value={post.createdAt} />
                     </div>

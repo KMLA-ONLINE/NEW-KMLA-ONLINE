@@ -86,7 +86,7 @@ export type GroupPostReactor = {
   createdAt: string
 }
 
-/** 익명 반응은 개인 행·시각 없이 타입별 인원수만 클라이언트에 전달한다. */
+/** 익명 반응은 운영진 여부도 구분하지 않고, 개인 행·시각 없이 타입별 인원수만 전달한다. */
 export type GroupAnonymousReactionCount = {
   reactionTypeId: number
   count: number
@@ -192,7 +192,7 @@ export type GroupPost = {
   author: GroupPostAuthor | null
   /**
    * required 공식 그룹에서 운영 권한으로 작성한 글이면 `staff`. 개인 신원은 숨기되 공식 발언임을
-   * 나타낸다. 게시 당시 귀속을 저장해야 하며 현재 역할로 다시 계산하면 안 된다.
+   * 나타낸다. 게시 당시 귀속을 저장하고 이후 변경할 수 없으며 현재 역할로 다시 계산하면 안 된다.
    */
   authorAttribution?: "staff" | null
   /**
@@ -252,7 +252,7 @@ export type GroupComment = {
    * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
    */
   author: GroupPostAuthor | null
-  /** required 공식 그룹에서 운영진으로 남긴 댓글. 서버가 역할에서 파생해 게시 당시 귀속을 저장한다. */
+  /** required 그룹에서 운영진으로 남긴 댓글. 서버가 역할에서 파생해 저장하며 이후 변경할 수 없다. */
   authorAttribution?: "staff" | null
   /**
    * 익명 댓글의 표시 이름: "익명1", "익명2", 또는 익명 글의 글쓴이면 "글쓴이". 익명이 아니거나
@@ -261,6 +261,11 @@ export type GroupComment = {
    * 글에선 다른 번호를 받으므로 여러 글에 걸쳐 이어 붙일 수 없다).
    */
   anonymousLabel?: string | null
+  /**
+   * 이 익명 댓글 작성자가 현재 정지 중인지. TODO(backend): get_post_comments가 관리자에게만
+   * is_author_anonymity_suspended를 내려주고, 일반 멤버에게는 항상 false를 반환한다.
+   */
+  isAuthorAnonymitySuspended?: boolean
   /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
   isMine?: boolean
   /**

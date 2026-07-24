@@ -8,7 +8,11 @@ import { createSignedUrlMap } from "~/lib/supabase/storage"
 // list_feed_posts(홈, 출처 space가 붙는다). 차이가 그 한 컬럼뿐이라 매퍼도 하나다 -- 두 벌이면
 // 같은 카드가 어느 화면에서 왔느냐에 따라 조용히 다르게 채워진다.
 type SpacePostRow = Database["public"]["Functions"]["list_space_posts"]["Returns"][number]
-export type PostRow = SpacePostRow & { space?: Json | null }
+export type PostRow = SpacePostRow & {
+  space?: Json | null
+  /** TODO(backend): 목록 RPC가 게시 당시 posts.author_attribution을 반환하면 생성 타입에 흡수한다. */
+  author_attribution?: string | null
+}
 
 // jsonb 컬럼은 생성 타입에서 Json(=any에 가까움)이라, 읽기 전에 모양을 좁힌다.
 type AttachmentJson = {
@@ -84,6 +88,7 @@ export async function mapPostRows(
                   : null,
             }
           : null,
+      authorAttribution: row.author_attribution === "staff" ? "staff" : null,
       isAuthorAnonymitySuspended: row.is_author_anonymity_suspended,
       isMine: row.is_mine,
       // 고정은 **한 그룹 안에서의 정렬** 개념이다. 홈 피드는 여러 그룹을 가로지르므로 고정으로

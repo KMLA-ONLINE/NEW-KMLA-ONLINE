@@ -20,7 +20,12 @@ import type { Database } from "~/lib/supabase/database.types"
  * 채팅은 여기 없다. 알림함과 채팅은 별개 체계다 -- 안 읽음은 chat_read_states의 커서에서
  * 파생되고 뱃지는 get_unread_message_count()가 맡는다. 근거는 06-notifications.sql 상단.
  */
-export type NotificationType = Database["public"]["Enums"]["notification_type"]
+type BackendNotificationType = Database["public"]["Enums"]["notification_type"]
+
+// TODO(backend): notification_type enum에 reaction_summary를 추가한다. 개별 반응 actor는 저장하거나
+// 반환하지 않고, 같은 대상의 읽지 않은 집계 행 하나에 reaction_count를 누적한다. 읽은 뒤 들어온
+// 다음 반응부터 새 행을 만든다.
+export type NotificationType = BackendNotificationType | "reaction_summary"
 
 /** 행위자. 익명이거나 시스템/모더레이션 알림이면 서버가 통째로 null로 지워서 내린다. */
 export type NotificationActor = {
@@ -54,6 +59,8 @@ export type NotificationPayload = {
   to?: GroupMemberRole
   /** space_anonymity_suspended (ISO 8601) */
   suspended_until?: string
+  /** reaction_summary. 읽기 전까지 같은 대상에 누적된 새 반응 수. */
+  reaction_count?: number
 }
 
 export type AppNotification = {
@@ -61,6 +68,11 @@ export type AppNotification = {
   type: NotificationType
   /** 익명이거나(actorIsAnonymous) 시스템/모더레이션 알림이면 null. */
   actor: NotificationActor | null
+  /**
+   * required 공식 그룹에서 운영진으로 남긴 활동. TODO(backend): 원본 글·댓글의 게시 당시 귀속을
+   * 알림 행에도 스냅샷하고, list_notifications는 개인 actor를 지운 채 이 값만 반환한다.
+   */
+  actorAttribution?: "staff" | null
   /**
    * actor가 null인 이유가 "익명"인지 "행위자가 없음(시스템)"인지 가른다. 둘은 화면이 다르다 --
    * 익명은 마스크 아바타에 "익명의 사용자"로 뜨고, 시스템은 아바타 없이 아이콘만 뜬다.

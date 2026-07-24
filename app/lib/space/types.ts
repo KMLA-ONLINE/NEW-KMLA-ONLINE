@@ -4,6 +4,7 @@
  */
 
 import type { Database } from "~/lib/supabase/database.types"
+import type { GroupAnonymityPolicy } from "~/lib/group/types"
 
 export type SpaceSummary = {
   /** spaces.pub_id 슬러그. 상세 URL(/groups/:pubId)에 실린다. */
@@ -23,6 +24,8 @@ export type SpaceSummary = {
    * 자체를 숨기기 때문이다. 그래서 미가입 카드의 정책은 사실상 public 아니면 request다.
    */
   joinPolicy: Database["public"]["Enums"]["space_join_policy"]
+  /** 목록에서 항상 익명 그룹임을 가입 전에 알리는 데 쓴다. */
+  anonymityPolicy: GroupAnonymityPolicy
   /** spaces.member_count. 캐시 컬럼이라(join/leave RPC가 갱신) 목록에서 보여줘도 싸다. */
   memberCount: number
   /** space_members에 내 행이 있는지. */
