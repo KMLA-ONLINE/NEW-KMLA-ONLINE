@@ -26,7 +26,7 @@ import {
   mockGroupPosts,
   mockJoinRequests,
 } from "~/lib/group/mock-data"
-import type { GroupMemberRole } from "~/lib/group/types"
+import type { GroupAnonymityPolicy, GroupMemberRole } from "~/lib/group/types"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -48,7 +48,12 @@ export const handle = {
  * 권한이 두 층이라 둘 다 내려준다 -- canManage(owner/admin: 삭제·익명 제한)와
  * canCurate(owner/admin/manager: 고정). 하나로 합치면 매니저가 남의 글 삭제 버튼을 보게 된다.
  */
-export type GroupOutletContext = { canManage: boolean; canCurate: boolean }
+export type GroupOutletContext = {
+  canManage: boolean
+  canCurate: boolean
+  anonymityPolicy: GroupAnonymityPolicy
+  canPostAnonymously: boolean
+}
 
 type GroupTab = "posts" | "members" | "settings"
 
@@ -97,9 +102,17 @@ export default function GroupPage() {
   // spaces.post_policy. 'managers'면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹).
   // 댓글은 이 정책과 무관하게 열려 있다 -- comments_insert는 can_access_post만 본다.
   const [postPolicy, setPostPolicy] = useState(mockGroup.postPolicy)
-  // spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(서버 트리거가 강제).
-  // 기존 익명 글은 그대로 익명이다 -- is_anonymous는 불변이라 소급해서 까이지 않는다.
-  const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
+  // 생성 화면이 mock 상태로 넘긴 미리보기 값. 실제 연동 후에는 loader가 spaces.anonymity_policy를
+  // 내려주며 query parameter는 사라진다.
+  const anonymityPreview = searchParams.get("anonymity")
+  const initialAnonymityPolicy: GroupAnonymityPolicy =
+    anonymityPreview === "disabled" ||
+    anonymityPreview === "optional" ||
+    anonymityPreview === "required"
+      ? anonymityPreview
+      : mockGroup.anonymityPolicy
+  const [anonymityPolicy, setAnonymityPolicy] =
+    useState<GroupAnonymityPolicy>(initialAnonymityPolicy)
   // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
   // 로컬 object URL이라 새로고침하면 사라진다.
   const imageUrl = mockGroup.imageUrl
@@ -152,7 +165,11 @@ export default function GroupPage() {
   }
   // private.can_post_in_space와 같은 규칙. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
   // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
-  const canPost = postPolicy === "all" ? viewerRole !== null : canCurate
+  const roleCanPost = postPolicy === "all" ? viewerRole !== null : canCurate
+  const canPostAnonymously =
+    anonymityPolicy !== "disabled" && mockGroup.anonymitySuspendedUntil === null
+  // 항상 익명인 그룹에서 익명 작성이 제한되면 실명으로 우회할 수 없으므로 글·댓글 작성도 막힌다.
+  const canPost = roleCanPost && (anonymityPolicy !== "required" || canPostAnonymously)
 
   const liveGroup = {
     ...mockGroup,
@@ -161,9 +178,9 @@ export default function GroupPage() {
     postPolicy,
     canPost,
     memberCount,
-    allowAnonymous,
+    anonymityPolicy,
     viewerRole,
-    canPostAnonymously: allowAnonymous && mockGroup.anonymitySuspendedUntil === null,
+    canPostAnonymously,
   }
 
   const isPrivate = joinPolicy === "invite_only"
@@ -337,7 +354,9 @@ export default function GroupPage() {
                 </Link>
               ) : (
                 <p className="text-muted-foreground bg-card border-foreground/20 sm:border-border rounded-none border-b-2 px-4 py-3 text-sm sm:rounded-xl sm:border sm:px-4">
-                  이 그룹은 매니저만 게시물을 올릴 수 있습니다. 댓글은 자유롭게 달 수 있어요.
+                  {roleCanPost
+                    ? "익명 작성이 제한되어 있어 현재 이 그룹에 게시물을 올릴 수 없습니다."
+                    : "이 그룹은 매니저만 게시물을 올릴 수 있습니다. 댓글은 자유롭게 달 수 있어요."}
                 </p>
               )}
 
@@ -407,8 +426,8 @@ export default function GroupPage() {
               onJoinPolicyChange={changeJoinPolicy}
               postPolicy={postPolicy}
               onPostPolicyChange={setPostPolicy}
-              allowAnonymous={allowAnonymous}
-              onAllowAnonymousChange={setAllowAnonymous}
+              anonymityPolicy={anonymityPolicy}
+              onAnonymityPolicyChange={setAnonymityPolicy}
             />
           )}
         </div>
@@ -435,7 +454,16 @@ export default function GroupPage() {
 
       {/* 모달 라우트(상세·수정)는 URL에 ?as=admin이 안 따라가므로 뷰어 권한을 context로 내려준다.
           백엔드 붙으면 부모 로더의 viewerRole이 그 자리를 대신한다. */}
-      <Outlet context={{ canManage, canCurate } satisfies GroupOutletContext} />
+      <Outlet
+        context={
+          {
+            canManage,
+            canCurate,
+            anonymityPolicy,
+            canPostAnonymously,
+          } satisfies GroupOutletContext
+        }
+      />
 
       <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
     </div>

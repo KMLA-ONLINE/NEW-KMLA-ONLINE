@@ -42,6 +42,7 @@ export function GroupPostActionBar({
   const postHref = useHref(postPath)
   const [reactorsOpen, setReactorsOpen] = useState(false)
   const canOpenReactors = reactors != null && reactors.length > 0
+  const hasAnonymousReactors = reactors?.some((reactor) => reactor.isAnonymous) ?? false
 
   const commentInner = (
     <>
@@ -76,6 +77,8 @@ export function GroupPostActionBar({
   return (
     <div className={cn("flex items-center justify-between px-2 py-1", className)}>
       <div className="text-muted-foreground flex items-center">
+        {/* TODO(backend): required 공간의 반응은 DB가 당시 is_anonymous=true로 기록해야 한다.
+            클라이언트가 익명 여부를 보내게 두면 false로 우회할 수 있으므로 space 정책에서 파생한다. */}
         <GroupReactionButton count={reactionCount} reactionTypes={reactionTypes} />
         {onComment ? (
           <button type="button" aria-label="댓글" className={ACTION_CLASS} onClick={onComment}>
@@ -95,7 +98,11 @@ export function GroupPostActionBar({
           <button
             type="button"
             onClick={() => setReactorsOpen(true)}
-            aria-label={`반응한 사람 ${reactionCount}명 보기`}
+            aria-label={
+              hasAnonymousReactors
+                ? `반응 ${reactionCount}개 상세 보기`
+                : `반응한 사람 ${reactionCount}명 보기`
+            }
             className="hover:bg-muted -mr-1 flex items-center gap-0.5 rounded-md px-2 py-1 text-sm transition-colors"
           >
             {topReactions.map((emoji) => (

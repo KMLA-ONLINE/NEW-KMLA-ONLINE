@@ -32,7 +32,8 @@ import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const { canManage, canCurate } = useOutletContext<GroupOutletContext>()
+  const { canManage, canCurate, anonymityPolicy, canPostAnonymously } =
+    useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -144,6 +145,8 @@ export default function GroupPostDetailPage() {
                   comments={comments}
                   reactionTypes={PLACEHOLDER_REACTION_TYPES}
                   canManage={canManage}
+                  anonymityPolicy={anonymityPolicy}
+                  canPostAnonymously={canPostAnonymously}
                 />
               ) : (
                 <div className="text-muted-foreground py-10 text-center">
@@ -159,7 +162,11 @@ export default function GroupPostDetailPage() {
           </div>
         )}
 
-        <GroupCommentComposer inputRef={composerRef} />
+        <GroupCommentComposer
+          inputRef={composerRef}
+          anonymityPolicy={anonymityPolicy}
+          canPostAnonymously={canPostAnonymously}
+        />
       </DialogContent>
     </Dialog>
   )

@@ -32,7 +32,6 @@
 - Do not delegate simple edits, single-file inspection, straightforward lookups, or tasks the main agent can complete directly.
 - Give subagents narrow, non-overlapping scopes and only the context required for their task. Reuse existing findings instead of repeating investigation.
 - Prefer cheaper models for mechanical work when model selection is available. Avoid recursive delegation.
-- Require concise results: conclusion, material evidence, affected paths or symbols, unresolved risks, and recommended action. The main agent must synthesize and verify consequential findings.
 
 ## Validation
 

@@ -5,6 +5,10 @@
 
 import type { Database } from "~/lib/supabase/database.types"
 
+// TODO(backend): space_anonymity_policy enum과 spaces.anonymity_policy 컬럼으로 옮긴다.
+// 기존 allow_anonymous_posts=false/true는 각각 disabled/optional로 이관한다.
+export type GroupAnonymityPolicy = "disabled" | "optional" | "required"
+
 export type GroupSpace = {
   name: string
   description: string
@@ -35,12 +39,12 @@ export type GroupSpace = {
    * 멤버 전원, 'managers'면 내 viewerRole이 owner/admin/manager일 때만 true. 로더가 파생한다.
    */
   canPost: boolean
-  /** spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(기존 익명 글은 그대로). */
-  allowAnonymous: boolean
+  /** 이후 활동에 적용되는 익명 정책. 이미 작성된 글·댓글·반응의 익명 여부는 바꾸지 않는다. */
+  anonymityPolicy: GroupAnonymityPolicy
   /**
-   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고 + 내가 익명 정지 중이
-   * 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가 남의
-   * 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
+   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 정책이 optional/required이고 + 내가 익명 정지
+   * 중이 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가
+   * 남의 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
    */
   canPostAnonymously: boolean
   /** 내가 익명 정지 중이면 해제 시각. 아니면 null. 왜 토글이 없는지 알려주는 데 쓴다. */
@@ -71,22 +75,29 @@ export type GroupPostAuthor = {
 }
 
 /**
- * 이 글에 반응한 한 사람(post_reactions ⋈ profiles ⋈ reaction_types). "누가 어떤 이모지로
- * 눌렀나" 목록 모달에서 쓴다. 반응자는 **언제나 실명**이다 -- post_reactions.user_id엔 익명
- * 개념이 없어서, 글이 익명이어도 누가 눌렀는지는 드러난다(반응은 익명 글이라도 실명 행동이다).
+ * 이 글에 반응한 한 사람. 익명 반응은 프로필 필드를 클라이언트에 내리지 않는다. 실제 백엔드는
+ * 익명 행을 개인 단위로 내리지 않고 반응 타입별 인원수로 집계해야 한다.
  */
-export type GroupPostReactor = {
-  /** profiles.id */
-  id: number
-  /** profiles.name */
-  name: string
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
-  avatarUrl: string | null
-  /** 이 사람이 누른 반응 타입(reaction_types.id). 어떤 이모지인지는 reactionTypes에서 찾는다. */
-  reactionTypeId: number
-  /** post_reactions.created_at (ISO 8601). "전체" 탭을 시간순으로 정렬하는 데 쓴다. */
-  createdAt: string
-}
+export type GroupPostReactor =
+  | {
+      isAnonymous: false
+      /** profiles.id */
+      id: number
+      /** profiles.name */
+      name: string
+      /** profiles.avatar_url 기반 서명 URL. */
+      avatarUrl: string | null
+      reactionTypeId: number
+      createdAt: string
+    }
+  | {
+      isAnonymous: true
+      id: null
+      name: null
+      avatarUrl: null
+      reactionTypeId: number
+      createdAt: string
+    }
 
 /**
  * 이 글이 놓인 space의 최소 정보. 피드처럼 **여러 space의 글을 한 흐름에 모을 때만** 채운다 --

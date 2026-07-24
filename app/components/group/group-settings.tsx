@@ -13,7 +13,7 @@ import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
-import type { GroupCategory, GroupSpace } from "~/lib/group/types"
+import type { GroupAnonymityPolicy, GroupCategory, GroupSpace } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
 // 관리자 전용 그룹 설정. 실수로 바꾸기 쉽지 않게 각 섹션은 읽기 모드가 기본이고, "편집"을
@@ -522,43 +522,60 @@ function PostPolicySection({
   )
 }
 
-// spaces.allow_anonymous_posts. 다른 섹션과 달리 edit 모드가 없다 -- 값이 하나뿐이라 토글이 곧
-// 저장이다. TODO(backend): action에서 spaces.allow_anonymous_posts를 update(매니저 컬럼 grant).
+const ANONYMITY_OPTIONS: {
+  value: GroupAnonymityPolicy
+  label: string
+  description: string
+}[] = [
+  { value: "disabled", label: "실명만", description: "게시물, 댓글, 반응에 프로필을 표시합니다." },
+  {
+    value: "optional",
+    label: "작성할 때 선택",
+    description: "게시물과 댓글은 익명을 선택하고 반응은 실명으로 남깁니다.",
+  },
+  {
+    value: "required",
+    label: "항상 익명",
+    description: "게시물, 댓글, 반응 모두 신원을 표시하지 않습니다.",
+  },
+]
+
+// TODO(backend): spaces.anonymity_policy를 갱신한다. 정책 변경은 이후 활동에만 적용하고 posts,
+// comments, reactions에 기록된 당시 익명 여부는 절대 소급 변경하지 않는다.
 function AnonymousSection({
-  allowed,
+  policy,
   onChange,
 }: {
-  allowed: boolean
-  onChange: (next: boolean) => void
+  policy: GroupAnonymityPolicy
+  onChange: (next: GroupAnonymityPolicy) => void
 }) {
   return (
     <SettingsCard>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">익명 글 허용</h2>
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">활동 신원</h2>
           <p className="text-muted-foreground mt-1 text-xs">
-            끄면 새 익명 글과 익명 댓글을 쓸 수 없습니다. 이미 올라간 익명 글은 그대로 익명으로
-            남습니다.
+            정책을 바꿔도 이미 남긴 활동의 공개 범위는 바뀌지 않습니다.
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={allowed}
-          aria-label="익명 글 허용"
-          onClick={() => onChange(!allowed)}
-          className={cn(
-            "focus-visible:ring-ring relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none",
-            allowed ? "bg-primary" : "bg-muted-foreground/30"
-          )}
-        >
-          <span
-            className={cn(
-              "bg-background absolute top-0.5 size-5 rounded-full shadow transition-[left]",
-              allowed ? "left-[1.375rem]" : "left-0.5"
-            )}
-          />
-        </button>
+        <div role="radiogroup" aria-label="활동 신원" className="flex flex-col gap-1">
+          {ANONYMITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={policy === option.value}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
+                policy === option.value && "bg-muted"
+              )}
+            >
+              <span className="text-sm font-medium">{option.label}</span>
+              <span className="text-muted-foreground text-xs">{option.description}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </SettingsCard>
   )
@@ -575,8 +592,8 @@ export function GroupSettings({
   onJoinPolicyChange,
   postPolicy,
   onPostPolicyChange,
-  allowAnonymous,
-  onAllowAnonymousChange,
+  anonymityPolicy,
+  onAnonymityPolicyChange,
 }: {
   group: GroupSpace
   categories: GroupCategory[]
@@ -586,8 +603,8 @@ export function GroupSettings({
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
   postPolicy: GroupSpace["postPolicy"]
   onPostPolicyChange: (next: GroupSpace["postPolicy"]) => void
-  allowAnonymous: boolean
-  onAllowAnonymousChange: (next: boolean) => void
+  anonymityPolicy: GroupAnonymityPolicy
+  onAnonymityPolicyChange: (next: GroupAnonymityPolicy) => void
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -598,8 +615,8 @@ export function GroupSettings({
           <BasicInfoSection group={group} />
           <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
           {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
+          <AnonymousSection policy={anonymityPolicy} onChange={onAnonymityPolicyChange} />
           <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
-          <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
         </>
       ) : null}
       <CategorySection initial={categories} />

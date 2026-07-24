@@ -1,9 +1,11 @@
+import { CirclePlusIcon } from "lucide-react"
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router"
 
 import { SpaceDiscoverCard } from "~/components/space/space-discover-card"
 import { SpaceRow } from "~/components/space/space-row"
 import { TeacherGroupsHome } from "~/components/space/teacher-groups-home"
+import { Button } from "~/components/ui/button"
 import { mockSpaces, mockTeacherSpaces } from "~/lib/space/mock-data"
 import { mockProfileForPreview } from "~/lib/profile/mock-data"
 import type { SpaceSummary } from "~/lib/space/types"
@@ -94,7 +96,17 @@ function MemberGroupsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-      <h1 className="text-2xl font-semibold">그룹</h1>
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">그룹</h1>
+        {tab === "community" ? (
+          <Button asChild size="sm">
+            <Link to="/groups/create">
+              <CirclePlusIcon data-icon="inline-start" aria-hidden="true" />
+              그룹 만들기
+            </Link>
+          </Button>
+        ) : null}
+      </header>
 
       <nav className="flex items-center gap-1 border-b" aria-label="그룹 종류">
         {TABS.map((item) => (

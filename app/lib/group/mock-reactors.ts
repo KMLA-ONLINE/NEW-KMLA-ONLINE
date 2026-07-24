@@ -94,7 +94,8 @@ function distribute(reactionCount: number, iconCount: number): number[] {
 
 export function makeMockReactors(
   reactionCount: number,
-  topReactions: string[]
+  topReactions: string[],
+  anonymousEvery = 0
 ): GroupPostReactor[] {
   const topIcons = topReactions.filter((icon) => ICON_TO_TYPE_ID.has(icon))
   if (reactionCount <= 0 || topIcons.length === 0) return []
@@ -132,11 +133,25 @@ export function makeMockReactors(
   }
 
   // sequence[0]이 가장 최근. 이름은 seq로 뽑아 한 글 안에서 겹치지 않게 한다(풀 > 최대 인원).
-  return sequence.map((reactionTypeId, seq) => ({
-    id: 9000 + seq,
-    name: REACTOR_NAME_POOL[seq % REACTOR_NAME_POOL.length],
-    avatarUrl: null,
-    reactionTypeId,
-    createdAt: new Date(BASE_REACTION_TIME_MS - seq * REACTION_INTERVAL_MS).toISOString(),
-  }))
+  return sequence.map((reactionTypeId, seq) => {
+    const createdAt = new Date(BASE_REACTION_TIME_MS - seq * REACTION_INTERVAL_MS).toISOString()
+    if (anonymousEvery > 0 && seq % anonymousEvery === 0) {
+      return {
+        isAnonymous: true as const,
+        id: null,
+        name: null,
+        avatarUrl: null,
+        reactionTypeId,
+        createdAt,
+      }
+    }
+    return {
+      isAnonymous: false as const,
+      id: 9000 + seq,
+      name: REACTOR_NAME_POOL[seq % REACTOR_NAME_POOL.length],
+      avatarUrl: null,
+      reactionTypeId,
+      createdAt,
+    }
+  })
 }

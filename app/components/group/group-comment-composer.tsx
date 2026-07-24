@@ -2,7 +2,9 @@ import { SendIcon } from "lucide-react"
 import { useRef, useState, type RefObject } from "react"
 
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
+import type { GroupAnonymityPolicy } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
 const MAX_HEIGHT = 120
@@ -26,6 +28,8 @@ export function GroupCommentComposer({
   onSubmit,
   className = "border-t p-3",
   inputRef,
+  anonymityPolicy = "optional",
+  canPostAnonymously = true,
 }: {
   placeholder?: string
   autoFocus?: boolean
@@ -34,36 +38,47 @@ export function GroupCommentComposer({
   className?: string
   /** 바깥에서 포커스를 주려면 넘긴다(상세의 댓글 아이콘). 안 넘기면 내부 ref를 쓴다. */
   inputRef?: RefObject<HTMLTextAreaElement | null>
+  anonymityPolicy?: GroupAnonymityPolicy
+  canPostAnonymously?: boolean
 }) {
   const [draft, setDraft] = useState("")
   // comments.is_anonymous. 글과 마찬가지로 작성 시점에만 정해진다(update grant는 content 하나뿐).
-  const [anonymous, setAnonymous] = useState(false)
+  const [anonymous, setAnonymous] = useState(anonymityPolicy === "required")
   const fallbackRef = useRef<HTMLTextAreaElement>(null)
   const textareaRef = inputRef ?? fallbackRef
-  const canSend = draft.trim().length > 0
+  const canChooseAnonymity = anonymityPolicy === "optional" && canPostAnonymously
+  const isRequiredAndSuspended = anonymityPolicy === "required" && !canPostAnonymously
+  const effectiveAnonymous = anonymityPolicy === "required" || anonymous
+  const canSend = draft.trim().length > 0 && !isRequiredAndSuspended
 
   const send = () => {
     if (!canSend) return
-    onSubmit?.(draft, anonymous)
+    onSubmit?.(draft, effectiveAnonymous)
     setDraft("")
-    setAnonymous(false)
+    setAnonymous(anonymityPolicy === "required")
     if (textareaRef.current) resize(textareaRef.current)
   }
 
   return (
     <div className={cn("flex items-end gap-2", className)}>
-      {/* 아바타를 눌러 익명 ↔ 실명. 보낸 뒤엔 못 바꾼다. */}
-      <GroupAnonymousToggle
-        anonymous={anonymous}
-        onToggle={() => setAnonymous((value) => !value)}
-        className="mb-0.5"
-      />
+      {canChooseAnonymity ? (
+        <GroupAnonymousToggle
+          anonymous={anonymous}
+          onToggle={() => setAnonymous((value) => !value)}
+          className="mb-0.5"
+        />
+      ) : anonymityPolicy === "required" ? (
+        <AnonymousAvatar className="mb-0.5" />
+      ) : (
+        <ProfileAvatar profile={{ name: "나", avatarUrl: null }} className="mb-0.5" />
+      )}
       <textarea
         ref={textareaRef}
         value={draft}
         rows={1}
         autoFocus={autoFocus}
-        placeholder={placeholder}
+        placeholder={isRequiredAndSuspended ? "익명 작성이 제한되어 있습니다" : placeholder}
+        disabled={isRequiredAndSuspended}
         className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden rounded-3xl px-4 py-2 text-sm leading-5 outline-none"
         onChange={(event) => {
           setDraft(event.target.value)

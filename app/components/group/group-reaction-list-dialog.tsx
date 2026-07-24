@@ -1,7 +1,7 @@
 import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
-import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
+import { AnonymousAvatar, ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog"
 import { Twemoji } from "~/components/ui/twemoji"
@@ -82,6 +82,8 @@ export function GroupReactionListDialog({
     activeTypeId === null
       ? ordered
       : ordered.filter((reactor) => reactor.reactionTypeId === activeTypeId)
+  const anonymousCount = visible.filter((reactor) => reactor.isAnonymous).length
+  const identifiedReactors = visible.filter((reactor) => !reactor.isAnonymous)
 
   return (
     <Dialog
@@ -96,8 +98,10 @@ export function GroupReactionListDialog({
         className="flex h-[70svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-md"
       >
         {/* 제목/설명은 스크린리더용. 화면 헤더 역할은 아래 탭 줄이 한다(페북과 같은 배치). */}
-        <DialogTitle className="sr-only">반응한 사람</DialogTitle>
-        <DialogDescription className="sr-only">이 게시물에 반응한 사람 목록</DialogDescription>
+        <DialogTitle className="sr-only">게시물 반응</DialogTitle>
+        <DialogDescription className="sr-only">
+          이 게시물의 반응 종류와 공개된 반응자 목록
+        </DialogDescription>
 
         <div className="flex shrink-0 items-center border-b pr-2">
           <div
@@ -133,7 +137,15 @@ export function GroupReactionListDialog({
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {visible.length > 0 ? (
             <ul className="flex flex-col">
-              {visible.map((reactor) => {
+              {/* TODO(backend): 익명 반응은 user_id·created_at을 개별 행으로 보내지 않고
+                  reaction_type_id별 count만 내려준다. 프론트에서도 한 줄로만 집계해 표시한다. */}
+              {anonymousCount > 0 ? (
+                <li className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+                  <AnonymousAvatar size="lg" />
+                  <span className="text-sm font-semibold">익명 {anonymousCount}명</span>
+                </li>
+              ) : null}
+              {identifiedReactors.map((reactor) => {
                 const type = typeById.get(reactor.reactionTypeId)
                 return (
                   <li key={reactor.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
