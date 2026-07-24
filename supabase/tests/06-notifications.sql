@@ -1,8 +1,6 @@
 -- 알림. supabase/schemas/06-notifications.sql
 --
--- 지금은 읽기 RPC의 상한 계약 하나만 찌른다. 이 파일이 없어서 list_notifications의 p_limit 가드가
--- null을 못 막는 채로 있었다 -- `p_limit not between 1 and 50`은 null이면 참이 아니라 null이라
--- 가드를 지나가고, `limit null`은 상한이 없다는 뜻이다.
+-- 읽기 RPC 상한, 최근 unread badge 범위, 30일 retention purge를 검증한다.
 
 begin;
 

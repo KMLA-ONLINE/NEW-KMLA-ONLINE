@@ -62,6 +62,7 @@ export class DirectMessageSearchIndex {
   private readonly messages = new Map<number, IndexedMessage>()
   private readonly postings = new Map<string, Set<number>>()
   private complete = false
+  private before: number | undefined
 
   get isComplete(): boolean {
     return this.complete
@@ -69,6 +70,10 @@ export class DirectMessageSearchIndex {
 
   get size(): number {
     return this.messages.size
+  }
+
+  get nextBefore(): number | undefined {
+    return this.before
   }
 
   upsert(message: DirectMessageMatch): void {
@@ -102,12 +107,18 @@ export class DirectMessageSearchIndex {
 
   markComplete(): void {
     this.complete = true
+    this.before = undefined
+  }
+
+  markScannedThrough(messageId: number): void {
+    this.before = messageId
   }
 
   clear(): void {
     this.messages.clear()
     this.postings.clear()
     this.complete = false
+    this.before = undefined
   }
 
   search(query: string, limit = 50): DirectMessageSearchResult {
@@ -188,7 +199,7 @@ export async function searchDirectMessages(
 
   const matches: DirectMessageMatch[] = []
   // 첫 페이지는 커서를 아예 넘기지 않는다 -- RPC의 기본값(null)이 "가장 최근부터"다.
-  let before: number | undefined
+  let before = index?.nextBefore
   let scanned = 0
 
   for (;;) {
@@ -207,6 +218,7 @@ export async function searchDirectMessages(
 
     for (const row of rows) {
       scanned++
+      index?.markScannedThrough(row.message_id)
       if (!row.content_ciphertext || !row.message_key) continue
 
       let content: string

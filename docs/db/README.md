@@ -140,8 +140,8 @@ DB 테스트는 권한 누출, 암호화 키 노출, 잘못된 profile visibilit
 | `03-content.sql`       | 있음    | Post/comment read RPC, anonymous label, tombstone          |
 | `04-reactions.sql`     | 있음    | Reactor keyset, anonymous reaction snapshot and aggregation |
 | `05-chat.sql`          | 있음    | Group plaintext contract, 1:1 E2EE contract                |
-| `06-notifications.sql` | 있음    | Read RPC limit contract                                    |
-| `09-storage.sql`       | 없음    | Cleanup queue, bucket/MIME allowlist 일치 여부             |
+| `06-notifications.sql` | 있음    | Read limit, unread badge 범위, retention purge             |
+| `09-storage.sql`       | 있음    | Cleanup queue, attachment 제거, bucket/MIME registry 일치  |
 | `10-rls.sql`           | 있음    | Client 역할에서의 runtime RLS 동작                         |
 
 `07-utilities`, `08-clubs`에는 도메인별 테스트 파일이 없다. 대신 `00-privileges.sql`의 schema-wide 검사 대상에 포함된다.

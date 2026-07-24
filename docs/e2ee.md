@@ -139,7 +139,7 @@ IndexedDB 저장은 best-effort다(iOS Safari 프라이빗 모드처럼 아예 �
 
 - `npm test` — 빠른 단위 테스트. 실제 파라미터로 도는 `app/lib/crypto/crypto.test.ts`를 포함하되, 로컬 DB가 필요한 통합 테스트는 여기서 건너뛴다.
 - `npm run test:e2ee` — `e2ee.integration.test.ts`를 진짜 키·진짜 로컬 DB·Storage API로 왕복한다. 로컬 Supabase가 없으면 skip이 아니라 실패한다.
-- `npm run test:db` — `supabase/tests/01-identity.sql`(열쇠고리), `05-chat.sql`(메시지 암호문·봉투·회전), `09-storage.sql`(버킷 분리).
+- `npm run test:db` — `supabase/tests/05-chat.sql`(키 조회·메시지 암호문·봉투·회전), `09-storage.sql`(버킷 분리), `10-rls.sql`(키 테이블 접근 차단).
 
 핵심 단언 셋: **authHash로는 금고가 열리지 않는다**(서버가 가진 걸로는 못 연다), **비밀번호를 바꿔도 신원키가 그대로다**(히스토리가 살아남는 이유), **키를 갈아엎으면 옛 메시지는 아무도 못 열고 새 메시지는 재키잉 없이 그냥 된다**.
 

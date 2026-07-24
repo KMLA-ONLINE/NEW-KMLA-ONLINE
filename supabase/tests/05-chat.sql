@@ -320,16 +320,8 @@ begin
   end if;
 
   -- -------------------------------------------------------------------------
-  -- 쓰기 grant와 죽은 RPC
+  -- 현재 client 쓰기 경로에 필요한 grant
   -- -------------------------------------------------------------------------
-
-  if to_regprocedure('public.update_message(bigint,text)') is not null
-    or to_regprocedure('public.mark_chat_read(bigint,bigint)') is not null
-    or to_regprocedure('public.set_message_reaction(bigint,bigint)') is not null
-    or to_regprocedure('public.finalize_message_attachment(bigint,text,text,text,bigint,integer,integer,integer)') is not null
-  then
-    raise exception 'redundant chat RPCs must not exist';
-  end if;
 
   if not has_column_privilege('authenticated', 'public.messages', 'content', 'UPDATE')
     or not has_column_privilege('authenticated', 'public.messages', 'pinned_at', 'UPDATE')

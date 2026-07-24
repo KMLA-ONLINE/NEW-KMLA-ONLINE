@@ -17,8 +17,7 @@ const KEY: MessageKeyRow = {
 
 describe("direct message search", () => {
   it("uses the same NFC, lowercase and whitespace normalization as Postgres", () => {
-    const decomposed = "한글 테스트"
-    expect(normalizeSearchText(decomposed)).toBe(normalizeSearchText("한글테스트"))
+    expect(normalizeSearchText("  A\t한글\n테 스트  ")).toBe("a한글테스트")
   })
 
   it("indexes trigrams in memory and applies edits and deletes incrementally", () => {
@@ -63,5 +62,39 @@ describe("direct message search", () => {
     const second = await searchDirectMessages(db, crypto, 1, "한글", { index })
     expect(second.matches.map((message) => message.messageId)).toEqual([7])
     expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it("continues an incomplete indexed scan instead of starting from the newest message", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [
+          {
+            message_id: 9,
+            sender_id: 10,
+            created_at: "2026-01-02T00:00:00Z",
+            content_ciphertext: "첫 페이지",
+            message_key: KEY,
+          },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null })
+    const db = { rpc } as unknown as SupabaseClient<Database>
+    const crypto = {
+      decrypt: vi.fn(async (ciphertext: string) => ciphertext),
+    } as unknown as MessageCrypto
+    const index = new DirectMessageSearchIndex()
+
+    const first = await searchDirectMessages(db, crypto, 1, "없음", { index, scanLimit: 1 })
+    expect(first.reachedStart).toBe(false)
+
+    const second = await searchDirectMessages(db, crypto, 1, "없음", { index, scanLimit: 1 })
+    expect(second.reachedStart).toBe(true)
+    expect(rpc).toHaveBeenNthCalledWith(2, "get_encrypted_message_bodies", {
+      p_conversation_id: 1,
+      p_before_id: 9,
+      p_limit: 1,
+    })
   })
 })
