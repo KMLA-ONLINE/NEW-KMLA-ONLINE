@@ -1,11 +1,11 @@
 import { Link } from "react-router"
 
 import { Twemoji } from "~/components/ui/twemoji"
-import { clubDivisionLabel } from "~/lib/club/format"
+import { clubTypeLabel } from "~/lib/club/format"
 import type { Club } from "~/lib/club/types"
 
 export function ClubCard({ club, adminMode }: { club: Club; adminMode: boolean }) {
-  const to = adminMode ? `/clubs/${club.id}?as=admin` : `/clubs/${club.id}`
+  const to = adminMode ? `/clubs/${club.slug}?as=admin` : `/clubs/${club.slug}`
 
   return (
     <Link to={to} className="group block min-w-0 outline-none">
@@ -26,7 +26,7 @@ export function ClubCard({ club, adminMode }: { club: Club; adminMode: boolean }
       <div className="mt-2 min-w-0">
         <h2 className="truncate text-sm font-semibold sm:text-base">{club.name}</h2>
         <p className="text-muted-foreground mt-0.5 truncate text-xs">
-          {clubDivisionLabel[club.division]}
+          {clubTypeLabel[club.type]}
           {club.recruitment?.isOpen ? <span className="text-primary"> · 지원 가능</span> : null}
         </p>
         <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5 sm:text-sm">

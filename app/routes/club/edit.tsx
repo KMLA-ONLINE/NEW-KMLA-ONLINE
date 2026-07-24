@@ -28,7 +28,7 @@ const CLUB_IMAGE_CROP = {
 
 export default function ClubEditPage() {
   const { clubId } = useParams()
-  const club = mockClubs.find((item) => item.id === clubId)
+  const club = mockClubs.find((item) => item.slug === clubId)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
   const [imageUrl, replaceImage] = useImageDraft(club?.imageUrl ?? null, club?.id)
@@ -37,13 +37,13 @@ export default function ClubEditPage() {
   })
 
   const [cardDescription, setCardDescription] = useState(club?.cardDescription ?? "")
-  const [descriptionMarkdown, setDescriptionMarkdown] = useState(club?.descriptionMarkdown ?? "")
+  const [descriptionMarkdown, setDescriptionMarkdown] = useState(club?.description ?? "")
   const [announcementMarkdown, setAnnouncementMarkdown] = useState(
     club?.recruitment?.announcementMarkdown ?? ""
   )
   const [isOpen, setIsOpen] = useState(club?.recruitment?.isOpen ?? false)
-  const [startsAt, setStartsAt] = useState(club?.recruitment?.startsAt.slice(0, 16) ?? "")
-  const [endsAt, setEndsAt] = useState(club?.recruitment?.endsAt.slice(0, 16) ?? "")
+  const [startsAt, setStartsAt] = useState(club?.recruitment?.starts_at.slice(0, 16) ?? "")
+  const [endsAt, setEndsAt] = useState(club?.recruitment?.ends_at.slice(0, 16) ?? "")
   const [managers, setManagers] = useState<ClubManager[]>(club?.managers ?? [])
   const [newManagerName, setNewManagerName] = useState("")
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -59,7 +59,7 @@ export default function ClubEditPage() {
     setManagers((current) => [
       ...current,
       {
-        userId: `mock-manager-${Date.now()}`,
+        id: Date.now(),
         name,
         cohort: null,
       },
@@ -70,7 +70,7 @@ export default function ClubEditPage() {
   return (
     <div className="mx-auto w-full max-w-2xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link to={`/clubs/${club.id}?as=admin`}>
+        <Link to={`/clubs/${club.slug}?as=admin`}>
           <ArrowLeftIcon aria-hidden />
           {club.name}
         </Link>
@@ -162,7 +162,7 @@ export default function ClubEditPage() {
               aria-checked={isOpen}
               onClick={() => setIsOpen((current) => !current)}
               className={cn(
-                "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                "focus-visible:ring-ring relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
                 isOpen ? "bg-primary" : "bg-muted"
               )}
             >
@@ -213,7 +213,7 @@ export default function ClubEditPage() {
 
           <div className="mt-3 divide-y">
             {managers.map((manager) => (
-              <div key={manager.userId} className="flex items-center gap-3 py-2.5">
+              <div key={manager.id} className="flex items-center gap-3 py-2.5">
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {manager.name}
                   {manager.cohort === null ? null : (
@@ -225,9 +225,7 @@ export default function ClubEditPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    setManagers((current) =>
-                      current.filter((item) => item.userId !== manager.userId)
-                    )
+                    setManagers((current) => current.filter((item) => item.id !== manager.id))
                   }
                 >
                   <Trash2Icon aria-hidden />
@@ -298,9 +296,7 @@ export default function ClubEditPage() {
 
             <section className="border-t pt-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold">
-                  {club.recruitment?.title ?? "동아리 모집"}
-                </h3>
+                <h3 className="text-lg font-semibold">{club.recruitment?.name ?? "동아리 모집"}</h3>
                 <span
                   className={
                     isOpen ? "text-primary text-sm font-semibold" : "text-muted-foreground text-sm"

@@ -6,15 +6,15 @@ import { ClubCard } from "~/components/club/club-card"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { mockClubs } from "~/lib/club/mock-data"
-import type { ClubDivision } from "~/lib/club/types"
+import type { ClubType } from "~/lib/club/types"
 import { cn } from "~/lib/utils"
 
-type ClubTab = "all" | ClubDivision
+type ClubTab = "all" | ClubType
 
 const tabs: { id: ClubTab; label: string }[] = [
   { id: "all", label: "전체" },
-  { id: "sudo", label: "수동" },
-  { id: "mokdong", label: "목동" },
+  { id: "major", label: "수동" },
+  { id: "general", label: "목동" },
 ]
 
 export default function ClubsPage() {
@@ -27,7 +27,7 @@ export default function ClubsPage() {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR")
 
     return mockClubs.filter((club) => {
-      const matchesTab = tab === "all" || club.division === tab
+      const matchesTab = tab === "all" || club.type === tab
       const matchesQuery =
         normalizedQuery.length === 0 ||
         club.name.toLocaleLowerCase("ko-KR").includes(normalizedQuery) ||
@@ -58,7 +58,7 @@ export default function ClubsPage() {
             {myApplications.map((club) => (
               <Link
                 key={club.id}
-                to={`/clubs/${club.id}`}
+                to={`/clubs/${club.slug}`}
                 className="bg-muted hover:bg-muted/80 shrink-0 rounded-full px-3 py-1.5 text-sm font-medium"
               >
                 {club.name}

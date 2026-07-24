@@ -1,8 +1,8 @@
-import type { ClubDivision } from "~/lib/club/types"
+import type { ClubType } from "~/lib/club/types"
 
-export const clubDivisionLabel: Record<ClubDivision, string> = {
-  sudo: "수동",
-  mokdong: "목동",
+export const clubTypeLabel: Record<ClubType, string> = {
+  major: "수동",
+  general: "목동",
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {

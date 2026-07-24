@@ -10,20 +10,20 @@ import { Link, useParams, useSearchParams } from "react-router"
 import { RichText } from "~/components/rich-text/rich-text"
 import { Button } from "~/components/ui/button"
 import { Twemoji } from "~/components/ui/twemoji"
-import { clubDivisionLabel, formatRecruitmentPeriod } from "~/lib/club/format"
-import { mockClubApplicantsByClubId, mockClubs } from "~/lib/club/mock-data"
+import { clubTypeLabel, formatRecruitmentPeriod } from "~/lib/club/format"
+import { mockClubApplicantsByClubSlug, mockClubs } from "~/lib/club/mock-data"
 
 export default function ClubPage() {
   const { clubId } = useParams()
   const [searchParams] = useSearchParams()
   const adminMode = searchParams.get("as") === "admin"
-  const club = mockClubs.find((item) => item.id === clubId)
+  const club = mockClubs.find((item) => item.slug === clubId)
 
   if (!club) {
     return <p className="py-16 text-center text-sm">동아리를 찾을 수 없습니다.</p>
   }
 
-  const applicants = mockClubApplicantsByClubId[club.id] ?? []
+  const applicants = mockClubApplicantsByClubSlug[club.slug] ?? []
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -48,9 +48,7 @@ export default function ClubPage() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h1 className="text-2xl font-semibold">{club.name}</h1>
-            <span className="text-muted-foreground text-sm">
-              {clubDivisionLabel[club.division]}
-            </span>
+            <span className="text-muted-foreground text-sm">{clubTypeLabel[club.type]}</span>
           </div>
 
           <p className="text-muted-foreground mt-1 text-sm">{club.cardDescription}</p>
@@ -69,7 +67,7 @@ export default function ClubPage() {
 
         {adminMode ? (
           <Button variant="outline" size="sm" asChild>
-            <Link to={`/clubs/${club.id}/edit`}>
+            <Link to={`/clubs/${club.slug}/edit`}>
               <PencilIcon aria-hidden />
               편집
             </Link>
@@ -78,12 +76,12 @@ export default function ClubPage() {
       </header>
 
       <main className="mt-8 space-y-8">
-        <RichText text={club.descriptionMarkdown} mode="block" className="text-sm" />
+        <RichText text={club.description ?? ""} mode="block" className="text-sm" />
 
         {club.recruitment ? (
           <section className="border-t pt-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">{club.recruitment.title}</h2>
+              <h2 className="text-lg font-semibold">{club.recruitment.name}</h2>
               <span
                 className={
                   club.recruitment.isOpen
@@ -96,7 +94,7 @@ export default function ClubPage() {
             </div>
 
             <p className="text-muted-foreground mt-1 text-xs">
-              {formatRecruitmentPeriod(club.recruitment.startsAt, club.recruitment.endsAt)}
+              {formatRecruitmentPeriod(club.recruitment.starts_at, club.recruitment.ends_at)}
             </p>
 
             <RichText
@@ -116,7 +114,7 @@ export default function ClubPage() {
               ) : club.recruitment.isOpen ? (
                 <Button className="mt-5" asChild>
                   <Link
-                    to={`/messenger?intent=club-apply&club=${club.id}&to=${club.managers[0]?.userId ?? ""}`}
+                    to={`/messenger?intent=club-apply&club=${club.id}&to=${club.managers[0]?.id ?? ""}`}
                   >
                     <MessageSquareTextIcon aria-hidden />
                     지원하기
@@ -154,10 +152,12 @@ export default function ClubPage() {
                 {applicants.map((applicant) => (
                   <div key={applicant.id} className="flex items-center gap-3 py-3">
                     <p className="min-w-0 flex-1 truncate text-sm font-semibold">
-                      {applicant.name}
-                      <span className="text-muted-foreground ml-1 font-normal">
-                        {applicant.cohort}기
-                      </span>
+                      {applicant.profile.name}
+                      {applicant.profile.cohort === null ? null : (
+                        <span className="text-muted-foreground ml-1 font-normal">
+                          {applicant.profile.cohort}기
+                        </span>
+                      )}
                     </p>
                     <Button variant="outline" size="sm" asChild>
                       <Link to={`/messenger/${applicant.conversationId}`}>대화 열기</Link>
