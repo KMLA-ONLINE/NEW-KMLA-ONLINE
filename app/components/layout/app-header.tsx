@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { BellIcon, SearchIcon, XIcon } from "lucide-react"
+import { Link } from "react-router"
 
 import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
@@ -9,9 +10,10 @@ import { cn } from "~/lib/utils"
 type AppHeaderProps = {
   email: string
   className?: string
+  onFocus?: () => void
 }
 
-export function AppHeader({ email, className }: AppHeaderProps) {
+export function AppHeader({ email, className, onFocus }: AppHeaderProps) {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false)
   const mobileSearchInputRef = useRef<HTMLInputElement>(null)
 
@@ -25,6 +27,7 @@ export function AppHeader({ email, className }: AppHeaderProps) {
 
   return (
     <header
+      onFocusCapture={onFocus}
       className={cn(
         "bg-background/95 fixed top-0 z-10 grid h-[calc(3.5rem+env(safe-area-inset-top))] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur md:h-14 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] md:px-4 md:pt-0",
         className
@@ -53,10 +56,15 @@ export function AppHeader({ email, className }: AppHeaderProps) {
         >
           <SearchIcon />
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <BellIcon />
+        <Button asChild variant="ghost" size="icon">
+          <Link to="/noti" aria-label="알림">
+            <BellIcon />
+          </Link>
         </Button>
-        <ProfileAvatar profile={{ name: email, avatarUrl: null }} className="size-8" />
+        <ProfileAvatar
+          profile={{ name: email, avatarUrl: null }}
+          className="hidden size-8 md:flex"
+        />
       </div>
 
       <div

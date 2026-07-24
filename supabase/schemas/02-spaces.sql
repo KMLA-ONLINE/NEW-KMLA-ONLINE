@@ -207,6 +207,26 @@ begin
 end;
 $$;
 
+-- 새 멤버의 알림 기본값은 공간 성격을 따른다. 공식 그룹은 학교 공지를 놓치지 않도록 전체,
+-- 비공식 그룹은 가입만으로 알림이 과해지지 않도록 멘션만 받는다. 모든 가입 RPC와 공간 생성이
+-- space_members INSERT로 모이므로 트리거 한 곳에서 강제해 새 가입 경로가 추가돼도 규칙이 빠지지 않는다.
+create function private.set_space_member_notification_default()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  select case when s.type='group' then 'all'::public.notification_setting else 'mentions'::public.notification_setting end
+  into new.notification_setting
+  from public.spaces s
+  where s.id=new.space_id;
+  return new;
+end;
+$$;
+
+create trigger trg_set_space_member_notification_default
+before insert on public.space_members
+for each row execute function private.set_space_member_notification_default();
+
+revoke execute on function private.set_space_member_notification_default() from public, anon, authenticated, service_role;
+
 create constraint trigger trg_validate_space_owner
 after insert or update or delete on public.space_members
 deferrable initially deferred

@@ -2102,7 +2102,7 @@ export type Database = {
           skipped: number
         }[]
       }
-      purge_read_notifications: {
+      purge_notifications: {
         Args: { p_limit?: number; p_older_than?: string }
         Returns: number
       }

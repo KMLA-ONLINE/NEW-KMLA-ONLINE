@@ -64,7 +64,7 @@ export function GroupHeader({
           <img src={group.coverImageUrl} alt="" className="size-full object-cover" />
         ) : null}
       </div>
-      <div className="flex items-start gap-5 p-4">
+      <div className="flex items-start gap-5 p-4 py-2 sm:py-4">
         <div className="bg-muted border-border hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-2xl font-semibold shadow-xs sm:flex sm:size-20">
           {group.imageUrl ? (
             <img src={group.imageUrl} alt="" className="size-full object-cover" />
@@ -157,6 +157,7 @@ export function GroupHeader({
       <GroupNotificationsDialog
         open={notiOpen}
         onOpenChange={setNotiOpen}
+        initialSetting={group.type === "group" ? "all" : "mentions"}
         mentionsAllowed={group.anonymityPolicy !== "required"}
       />
       <GroupLeaveDialog group={group} open={leaveOpen} onOpenChange={setLeaveOpen} />

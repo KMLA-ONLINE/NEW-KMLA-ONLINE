@@ -34,6 +34,20 @@ import { cn } from "~/lib/utils"
 // 바로 실행하지 않고 확인 모달을 한 번 거친다. group-post-menu.tsx와 같은 패턴.
 type ConfirmAction = "delete" | "suspend-anonymity" | null
 
+function countActiveReplies(commentId: number, childrenOf: Map<number, GroupComment[]>): number {
+  let count = 0
+  const pending = [...(childrenOf.get(commentId) ?? [])]
+
+  while (pending.length > 0) {
+    const reply = pending.pop()
+    if (!reply) continue
+    if (!reply.isDeleted) count += 1
+    pending.push(...(childrenOf.get(reply.id) ?? []))
+  }
+
+  return count
+}
+
 // 평면 댓글 목록을 parentId로 스레드화해 렌더한다. 대댓글은 부모 아래로 들여쓰며,
 // 임의 깊이를 재귀로 처리한다(comments.parent_id).
 export function GroupCommentList({
@@ -161,7 +175,24 @@ function GroupCommentItem({
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
+  const [repliesExpanded, setRepliesExpanded] = useState(false)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
+  const replyCount = depth === 0 ? countActiveReplies(comment.id, childrenOf) : 0
+  // 답글은 최상위 댓글 단위로 한꺼번에 펼친다. 하위 답글은 @부모 칩으로 관계를 표시하므로
+  // 각 깊이마다 다시 접으면 스레드 흐름을 따라가기 어렵다.
+  const showReplies = depth > 0 || repliesExpanded
+  const replyToggle =
+    depth === 0 && replyCount > 0 ? (
+      <button
+        type="button"
+        aria-expanded={repliesExpanded}
+        aria-controls={`comment-${comment.id}-replies`}
+        className="text-muted-foreground hover:text-foreground mt-2 ml-10 text-xs font-semibold hover:underline"
+        onClick={() => setRepliesExpanded((value) => !value)}
+      >
+        {repliesExpanded ? "답글 숨기기" : `답글 ${replyCount}개 보기`}
+      </button>
+    ) : null
 
   // 삭제된 댓글은 답글이 살아 있는 동안만 자리를 지킨다(없애면 답글 사슬이 끊긴다). 본문·작성자·
   // 반응·답글·메뉴는 전부 사라지고 자국만 남지만, 자식 답글은 그대로 이어서 렌더한다.
@@ -180,8 +211,12 @@ function GroupCommentItem({
             삭제된 댓글입니다
           </p>
         </div>
-        {replies.length > 0 ? (
-          <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
+        {replyToggle}
+        {replies.length > 0 && showReplies ? (
+          <ul
+            id={`comment-${comment.id}-replies`}
+            className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}
+          >
             {replies.map((reply) => (
               <GroupCommentItem
                 key={reply.id}
@@ -280,7 +315,11 @@ function GroupCommentItem({
               <button
                 type="button"
                 className="font-medium hover:underline"
-                onClick={() => setReplying((value) => !value)}
+                onClick={() => {
+                  const nextReplying = !replying
+                  setReplying(nextReplying)
+                  if (nextReplying && depth === 0) setRepliesExpanded(true)
+                }}
               >
                 답글
               </button>
@@ -370,8 +409,28 @@ function GroupCommentItem({
         </DialogContent>
       </Dialog>
 
-      {replies.length > 0 || replying ? (
-        <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
+      {replyToggle}
+      {(replies.length > 0 && showReplies) || replying ? (
+        <ul
+          id={`comment-${comment.id}-replies`}
+          className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}
+        >
+          {replying ? (
+            <li>
+              <GroupCommentComposer
+                autoFocus
+                className=""
+                placeholder={`${name}님에게 답글 남기기…`}
+                onSubmit={() => {
+                  setReplying(false)
+                  if (depth === 0) setRepliesExpanded(true)
+                }}
+                anonymityPolicy={anonymityPolicy}
+                canPostAnonymously={canPostAnonymously}
+                staffAttributionMode={staffAttributionMode}
+              />
+            </li>
+          ) : null}
           {replies.map((reply) => (
             <GroupCommentItem
               key={reply.id}
@@ -388,19 +447,6 @@ function GroupCommentItem({
               depth={depth + 1}
             />
           ))}
-          {replying ? (
-            <li>
-              <GroupCommentComposer
-                autoFocus
-                className=""
-                placeholder={`${name}님에게 답글 남기기…`}
-                onSubmit={() => setReplying(false)}
-                anonymityPolicy={anonymityPolicy}
-                canPostAnonymously={canPostAnonymously}
-                staffAttributionMode={staffAttributionMode}
-              />
-            </li>
-          ) : null}
         </ul>
       ) : null}
     </li>

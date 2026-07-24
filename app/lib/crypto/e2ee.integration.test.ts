@@ -20,7 +20,7 @@ import {
 } from "./account"
 import { base64ToBytes, bytesEqual, bytesToUtf8, utf8ToBytes } from "./encoding"
 import { MessageCrypto, type MessageKeyRow } from "./message"
-import { searchDirectMessages } from "./message-search"
+import { DirectMessageSearchIndex, searchDirectMessages } from "./message-search"
 
 const SUPABASE_URL = "http://127.0.0.1:54721"
 const ANON_KEY =
@@ -302,25 +302,33 @@ describe.skipIf(!reachable)("종단간 암호화: 실제 DB 왕복", () => {
       await send(alice, bob, conversationId, "수학 숙제 다 했어?")
       await send(bob, alice, conversationId, "아직. 내일 아침에 할래")
 
-      // 서버의 그룹 검색과 같은 정규화(소문자화 + 공백 전부 제거 + 부분 문자열)라서,
+      // 서버의 그룹 검색과 같은 정규화(NFC + 소문자화 + 공백 전부 제거 + 부분 문자열)라서,
       // 붙여 친 "수학숙제"가 띄어 쓴 "수학 숙제"를 찾는다. 사용자가 지금 어느 쪽 대화에
       // 있는지를 검색 결과로 눈치채면 안 된다.
-      const found = await searchDirectMessages(bob.db, bob.crypto, conversationId, "수학숙제")
+      const index = new DirectMessageSearchIndex()
+      const found = await searchDirectMessages(bob.db, bob.crypto, conversationId, "수학숙제", {
+        index,
+      })
       expect(found.matches.map((match) => match.content)).toEqual(["수학 숙제 다 했어?"])
       expect(found.reachedStart).toBe(true)
+      expect(index.isComplete).toBe(true)
 
-      // 질의 쪽 공백도 무시된다.
-      const spaced = await searchDirectMessages(bob.db, bob.crypto, conversationId, "  내 일  ")
+      // 질의 쪽 공백도 무시된다. 첫 검색이 대화의 처음까지 갔으므로 이 검색과 아래 검색은
+      // 서버를 다시 훑지 않고 세션 메모리 인덱스에서 답한다.
+      const spaced = await searchDirectMessages(bob.db, bob.crypto, conversationId, "  내 일  ", {
+        index,
+      })
       expect(spaced.matches.length).toBeGreaterThan(0)
 
       const nothing = await searchDirectMessages(
         bob.db,
         bob.crypto,
         conversationId,
-        "존재하지않는말"
+        "존재하지않는말",
+        { index }
       )
       expect(nothing.matches).toHaveLength(0)
-      expect(nothing.scanned).toBeGreaterThan(0) // 훑기는 훑었다
+      expect(nothing.scanned).toBe(0) // 없는 trigram은 평문 후보를 하나도 열지 않고 끝낸다
 
       // 발신자도 자기가 보낸 것을 찾는다. 봉투는 수신자 앞으로만 있지만 DH가 대칭이라
       // 발신자가 그 행을 그대로 연다 -- 그 성질이 검색 경로에서도 성립해야 한다.

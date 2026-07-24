@@ -1,7 +1,10 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 
 import { NotiContext } from "~/components/noti/noti-context"
+import { useClientNow } from "~/hooks/use-client-now"
 import { mockNotifications } from "~/lib/noti/mock-data"
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
  * 알림 상태를 앱 셸 **위**에 얹는다. 내비 뱃지(사이드바·탭바)와 /noti 페이지가 같은 상태를 봐야
@@ -16,6 +19,7 @@ import { mockNotifications } from "~/lib/noti/mock-data"
  */
 export function NotiProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState(mockNotifications)
+  const now = useClientNow()
 
   const markRead = useCallback((id: number) => {
     setNotifications((current) =>
@@ -27,21 +31,17 @@ export function NotiProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  const markAllRead = useCallback(() => {
-    const readAt = new Date().toISOString()
-    setNotifications((current) =>
-      current.map((item) => (item.readAt === null ? { ...item, readAt } : item))
-    )
-  }, [])
-
   const value = useMemo(
     () => ({
       notifications,
-      unreadCount: notifications.filter((item) => item.readAt === null).length,
+      unreadCount: notifications.filter(
+        (item) =>
+          item.readAt === null &&
+          (now === null || new Date(item.createdAt).getTime() >= now - DAY_MS)
+      ).length,
       markRead,
-      markAllRead,
     }),
-    [notifications, markRead, markAllRead]
+    [notifications, now, markRead]
   )
 
   return <NotiContext value={value}>{children}</NotiContext>

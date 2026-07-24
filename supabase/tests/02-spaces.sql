@@ -229,10 +229,11 @@ begin
 
   community_id := public.create_space('community', '  중고 장터  ', null, null, 'request');
 
-  -- 만든 사람은 owner이고 member_count는 1에서 시작한다. owner가 0명인 공간은 애초에 만들 수 없다.
+  -- 만든 사람은 owner이고 member_count는 1에서 시작한다. 비공식 그룹의 새 멤버는 멘션만 받는다.
   if not exists(
     select 1 from public.space_members
     where space_id = community_id and user_id = founder_id and role = 'owner'
+      and notification_setting = 'mentions'
   ) or (select member_count from public.spaces where id = community_id) <> 1 then
     raise exception 'space creator must be the owner of a 1-member space';
   end if;
@@ -247,8 +248,10 @@ begin
 
   perform set_config('request.jwt.claim.sub', admin_user::text, true);
   group_id := public.create_space('group', '학생회', '자치 활동', 'student-council');
-  if (select pub_id from public.spaces where id = group_id) <> 'student-council' then
-    raise exception 'explicit pub id was not honoured';
+  if (select pub_id from public.spaces where id = group_id) <> 'student-council'
+    or (select notification_setting from public.space_members where space_id=group_id and user_id=admin_id) <> 'all'
+  then
+    raise exception 'official space creation defaults failed';
   end if;
 
   begin
@@ -263,6 +266,12 @@ begin
   -- -------------------------------------------------------------------------
 
   perform set_config('request.jwt.claim.sub', joiner_user::text, true);
+  if public.join_space(group_id) <> 'joined'
+    or (select notification_setting from public.space_members where space_id=group_id and user_id=joiner_id) <> 'all'
+  then
+    raise exception 'an official space member must start with all notifications';
+  end if;
+
   if public.join_space(community_id) <> 'requested' then
     raise exception 'a request-policy space must queue the join';
   end if;
@@ -288,6 +297,9 @@ begin
   perform public.set_space_join_policy(community_id, 'request');
 
   perform public.approve_join_request(community_id, joiner_id);
+  if (select notification_setting from public.space_members where space_id=community_id and user_id=joiner_id) <> 'mentions' then
+    raise exception 'a community member must start with mention notifications';
+  end if;
   perform public.set_space_join_policy(community_id, 'public');
   if (select join_policy from public.spaces where id = community_id) <> 'public' then
     raise exception 'join policy change failed once the queue was empty';

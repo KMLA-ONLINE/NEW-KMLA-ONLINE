@@ -7,7 +7,7 @@ import type { AppNotification } from "~/lib/noti/types"
 // 근거는 supabase/schemas/06-notifications.sql 상단.
 
 // 고정 기준 시각. Date.now()로 잡으면 SSR과 브라우저가 다른 시계를 읽어 hydration이 어긋난다.
-const BASE = Date.parse("2026-07-12T09:00:00Z")
+const BASE = Date.parse("2026-07-24T09:00:00Z")
 const minutesAgo = (minutes: number) => new Date(BASE - minutes * 60_000).toISOString()
 
 export const mockNotifications: AppNotification[] = [

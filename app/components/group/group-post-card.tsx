@@ -44,7 +44,7 @@ export function GroupPostCard({
 
   // 3줄 클램프 상태에서 실제로 잘렸는지 마운트 시 측정해 "더 보기"를 필요할 때만 띄운다.
   // effect가 아니라 ref 콜백이라 set-state-in-effect 린트에 걸리지 않는다.
-  const measureContent = useCallback((node: HTMLParagraphElement | null) => {
+  const measureContent = useCallback((node: HTMLDivElement | null) => {
     if (node) setClampable(node.scrollHeight > node.clientHeight + 1)
   }, [])
 
@@ -139,7 +139,7 @@ export function GroupPostCard({
             <Twemoji text={post.title} />
           </Link>
         </h2>
-        <p
+        <div
           ref={measureContent}
           onClick={toggleFromContent}
           className={cn(
@@ -148,10 +148,10 @@ export function GroupPostCard({
             (clampable || expanded) && "pointer-coarse:cursor-pointer"
           )}
         >
-          {/* 미리보기라 인라인 서식(굵게/기울임)만: 제목 블록이 3줄 클램프에 끼지 않게 하고,
-              바깥 <p>가 그대로 한 요소로 남아 clamp 측정이 어긋나지 않는다. */}
-          <RichText text={post.content} mode="inline" />
-        </p>
+          {/* 상세 화면과 같은 블록 렌더러로 제목은 유지하되, 카드에서는 연속 개행을 하나로
+              접는다. 바깥 요소에서 전체 블록을 클램프하고 측정해 더 보기 동작을 유지한다. */}
+          <RichText text={post.content.replace(/\n{2,}/g, "\n")} mode="block" />
+        </div>
         {clampable || expanded ? (
           <button
             type="button"

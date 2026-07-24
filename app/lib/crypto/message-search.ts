@@ -6,17 +6,18 @@
  * iMessage도 로컬에서 찾는다. (검색 가능 암호화는 토큰 빈도를 흘리는데, 짧은 메시지의 trigram
  * 빈도는 사실상 평문이라 지키려던 것을 그대로 내주게 된다.)
  *
- * 매칭 규칙은 서버의 그룹 검색(`public.search_messages`)과 **똑같다**: 소문자화, 공백 전부
- * 제거, 부분 문자열. 사용자가 지금 어느 쪽 대화에 있는지를 검색 결과로 눈치채면 안 된다.
+ * 매칭 규칙은 서버의 그룹 검색(`public.search_messages`)과 **똑같다**: NFC 정규화, 소문자화,
+ * 공백 전부 제거, 부분 문자열. 사용자가 지금 어느 쪽 대화에 있는지를 검색 결과로 눈치채면 안
+ * 된다.
  */
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { Database } from "~/lib/supabase/database.types"
 import { MessageCrypto, type MessageKeyRow } from "./message"
 
-/** 서버의 `regexp_replace(lower(x), '\s+', '', 'g')`와 같은 정규화. */
+/** 서버의 `regexp_replace(lower(normalize(x, nfc)), '\s+', '', 'g')`와 같은 정규화. */
 export function normalizeSearchText(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, "")
+  return text.normalize("NFC").toLowerCase().replace(/\s+/g, "")
 }
 
 export type DirectMessageMatch = {
@@ -35,6 +36,120 @@ export type DirectMessageSearchResult = {
    * UI는 이걸 그대로 말해야 한다. 조용히 자르면 "그런 메시지 없네"로 읽힌다.
    */
   reachedStart: boolean
+}
+
+type IndexedMessage = DirectMessageMatch & { normalizedContent: string; trigrams: string[] }
+
+function searchTrigrams(text: string): string[] {
+  const characters = [...text]
+  if (characters.length < 3) return []
+
+  const values = new Set<string>()
+  for (let index = 0; index <= characters.length - 3; index++) {
+    values.add(characters.slice(index, index + 3).join(""))
+  }
+  return [...values]
+}
+
+/**
+ * 잠금 해제된 한 세션 안에서만 사는 1:1 검색 인덱스. 평문이나 검색 토큰을 IndexedDB/서버에
+ * 남기지 않으면서, 한 번 끝까지 복호화한 대화를 다음 검색부터 네트워크 없이 찾는다.
+ *
+ * 실제 메시지 목록을 연결할 때 수신·편집은 `upsert`, 삭제는 `remove`로 반영해야 한다. 그 갱신을
+ * 받지 않는 인덱스는 새 메시지를 스스로 알 수 없으므로 모듈 전역 singleton으로 두지 않는다.
+ */
+export class DirectMessageSearchIndex {
+  private readonly messages = new Map<number, IndexedMessage>()
+  private readonly postings = new Map<string, Set<number>>()
+  private complete = false
+
+  get isComplete(): boolean {
+    return this.complete
+  }
+
+  get size(): number {
+    return this.messages.size
+  }
+
+  upsert(message: DirectMessageMatch): void {
+    this.remove(message.messageId)
+
+    const normalizedContent = normalizeSearchText(message.content)
+    const trigrams = searchTrigrams(normalizedContent)
+    this.messages.set(message.messageId, { ...message, normalizedContent, trigrams })
+
+    for (const trigram of trigrams) {
+      let ids = this.postings.get(trigram)
+      if (!ids) {
+        ids = new Set()
+        this.postings.set(trigram, ids)
+      }
+      ids.add(message.messageId)
+    }
+  }
+
+  remove(messageId: number): void {
+    const previous = this.messages.get(messageId)
+    if (!previous) return
+
+    this.messages.delete(messageId)
+    for (const trigram of previous.trigrams) {
+      const ids = this.postings.get(trigram)
+      ids?.delete(messageId)
+      if (ids?.size === 0) this.postings.delete(trigram)
+    }
+  }
+
+  markComplete(): void {
+    this.complete = true
+  }
+
+  clear(): void {
+    this.messages.clear()
+    this.postings.clear()
+    this.complete = false
+  }
+
+  search(query: string, limit = 50): DirectMessageSearchResult {
+    const needle = normalizeSearchText(query.trim())
+    if (needle === "") return { matches: [], scanned: 0, reachedStart: this.complete }
+
+    const trigrams = searchTrigrams(needle)
+    let candidateIds: number[]
+
+    if (trigrams.length === 0) {
+      candidateIds = [...this.messages.keys()]
+    } else {
+      const postingLists = trigrams.map((trigram) => this.postings.get(trigram))
+      if (postingLists.some((ids) => !ids)) {
+        return { matches: [], scanned: 0, reachedStart: this.complete }
+      }
+
+      postingLists.sort((left, right) => left!.size - right!.size)
+      candidateIds = [...postingLists[0]!].filter((messageId) =>
+        postingLists.slice(1).every((ids) => ids!.has(messageId))
+      )
+    }
+
+    candidateIds.sort((left, right) => right - left)
+    const matches: DirectMessageMatch[] = []
+    let scanned = 0
+    for (const messageId of candidateIds) {
+      const message = this.messages.get(messageId)!
+      scanned++
+      if (!message.normalizedContent.includes(needle)) continue
+
+      matches.push({
+        messageId: message.messageId,
+        senderId: message.senderId,
+        createdAt: message.createdAt,
+        content: message.content,
+      })
+      if (matches.length >= limit) break
+    }
+
+    return { matches, scanned, reachedStart: this.complete }
+  }
 }
 
 type Row = {
@@ -56,6 +171,8 @@ export type SearchOptions = {
    * 여기서 멈추면 `reachedStart: false`로 정직하게 알린다.
    */
   scanLimit?: number
+  /** 전체 스캔을 세션 동안 재사용할 메모리 전용 인덱스. */
+  index?: DirectMessageSearchIndex
 }
 
 export async function searchDirectMessages(
@@ -63,10 +180,11 @@ export async function searchDirectMessages(
   crypto: MessageCrypto,
   conversationId: number,
   query: string,
-  { limit = 50, scanLimit = 5000 }: SearchOptions = {}
+  { limit = 50, scanLimit = 5000, index }: SearchOptions = {}
 ): Promise<DirectMessageSearchResult> {
   const needle = normalizeSearchText(query.trim())
   if (needle === "") return { matches: [], scanned: 0, reachedStart: true }
+  if (index?.isComplete) return index.search(needle, limit)
 
   const matches: DirectMessageMatch[] = []
   // 첫 페이지는 커서를 아예 넘기지 않는다 -- RPC의 기본값(null)이 "가장 최근부터"다.
@@ -105,13 +223,16 @@ export async function searchDirectMessages(
         continue
       }
 
+      const match = {
+        messageId: row.message_id,
+        senderId: row.sender_id,
+        createdAt: row.created_at,
+        content,
+      }
+      index?.upsert(match)
+
       if (normalizeSearchText(content).includes(needle)) {
-        matches.push({
-          messageId: row.message_id,
-          senderId: row.sender_id,
-          createdAt: row.created_at,
-          content,
-        })
+        matches.push(match)
         // 더 오래된 곳에 결과가 더 있을 수 있다. 여기서 reachedStart를 true라고 하면
         // UI가 "이게 전부입니다"라고 말하게 된다.
         if (matches.length >= limit) return { matches, scanned, reachedStart: false }
@@ -119,7 +240,10 @@ export async function searchDirectMessages(
     }
 
     // 요청한 것보다 적게 왔다 = 대화의 처음까지 왔다.
-    if (rows.length < pageSize) return { matches, scanned, reachedStart: true }
+    if (rows.length < pageSize) {
+      index?.markComplete()
+      return { matches, scanned, reachedStart: true }
+    }
 
     before = rows[rows.length - 1].message_id
   }

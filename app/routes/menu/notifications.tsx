@@ -30,7 +30,8 @@ export default function NotificationSettingsPage() {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <MenuSubHeader title="알림 설정" />
       <p className="text-muted-foreground text-sm">
-        알림은 그룹마다 따로 정합니다. 새로 가입하면 멘션만 받는 상태로 시작합니다.
+        알림은 그룹마다 따로 정합니다. 새로 가입하면 공식 그룹은 전체, 비공식 그룹은 멘션만
+        받습니다.
       </p>
       <ul className="bg-card divide-border/70 divide-y overflow-hidden rounded-xl border">
         {settings.map(({ space, setting }) => (

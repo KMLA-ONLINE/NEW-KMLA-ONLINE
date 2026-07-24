@@ -43,15 +43,28 @@ begin
   update public.profiles set type='teacher', status='accepted' where id=profile1;
   insert into public.spaces (type,name) values ('group','notification retention') returning id into space1;
   insert into public.space_members (space_id,user_id,role) values (space1,profile1,'owner');
-  insert into public.notifications (recipient_id,type,space_id,read_at)
-  values (profile1,'space_role_changed',space1,now()-interval '61 days');
+  insert into public.notifications (recipient_id,type,space_id,read_at,created_at) values
+    (profile1,'space_role_changed',space1,null,now()-interval '31 days'),
+    (profile1,'space_role_changed',space1,now(),now()-interval '31 days'),
+    (profile1,'space_role_changed',space1,now(),now()-interval '29 days'),
+    (profile1,'space_role_changed',space1,null,now()-interval '1 hour');
+
+  perform set_config('request.jwt.claim.sub',user1::text,true);
+  if public.get_unread_notification_count() <> 1 then
+    raise exception 'unread badge must only count notifications from the last 24 hours';
+  end if;
 
   perform set_config('request.jwt.claim.role','service_role',true);
-  if public.purge_read_notifications() <> 1 then
-    raise exception 'read notification retention purge failed';
+  if public.purge_notifications() <> 2 then
+    raise exception 'notification retention purge failed';
   end if;
-  if exists (select 1 from public.notifications where recipient_id=profile1) then
-    raise exception 'read notification was not removed after 60 days';
+  if (select count(*) from public.notifications where recipient_id=profile1) <> 2
+    or not exists(
+      select 1 from public.notifications
+      where recipient_id=profile1 and created_at > now()-interval '30 days'
+    )
+  then
+    raise exception 'notifications must be removed by creation time after 30 days';
   end if;
 end $$;
 

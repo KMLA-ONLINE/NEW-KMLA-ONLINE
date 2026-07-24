@@ -120,7 +120,7 @@ export default function GroupPostDetailPage() {
                 </header>
 
                 <div>
-                  <h2 className="text-xl font-semibold">
+                  <h2 className="mb-2 text-xl font-semibold">
                     <Twemoji text={post.title} />
                   </h2>
                   <RichText text={post.content} mode="block" className="mt-1 text-sm" />

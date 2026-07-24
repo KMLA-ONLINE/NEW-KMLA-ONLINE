@@ -76,6 +76,11 @@ export default function GroupNewPostPage() {
   const { isConfirmingDiscard, allowNextClose, confirmDiscard, cancelDiscard } =
     useCloseConfirmation(checkIsDirty)
 
+  const publish = () => {
+    allowNextClose()
+    close()
+  }
+
   const previewImages = attachments.flatMap((item) =>
     item.url ? [{ key: String(item.id), src: item.url, onRemove: () => remove(item.id) }] : []
   )
@@ -111,14 +116,7 @@ export default function GroupNewPostPage() {
             {/* TODO(backend): create_post RPC 연동 시 성공 응답을 받은 뒤에만 close()를 부른다.
                 실패하면 모달을 닫지 않고 에러 토스트만 보여준 채 제목/본문/첨부/카테고리/익명
                 여부(draft)를 그대로 유지해, 사용자가 다시 시도하거나 고쳐 쓸 수 있게 한다. */}
-            <Button
-              size="sm"
-              disabled={isRequiredAndSuspended}
-              onClick={() => {
-                allowNextClose()
-                close()
-              }}
-            >
+            <Button type="button" size="sm" disabled={isRequiredAndSuspended} onClick={publish}>
               게시
             </Button>
           </DialogHeader>

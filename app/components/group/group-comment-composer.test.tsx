@@ -43,6 +43,7 @@ describe("GroupCommentComposer anonymity policy", () => {
     renderComposer({ anonymityPolicy: "optional", onSubmit })
 
     fireEvent.click(screen.getByRole("button", { name: "실명으로 작성 중. 눌러서 익명으로" }))
+    fireEvent.click(screen.getByRole("button", { name: "익명으로 변경" }))
     writeAndSend()
 
     expect(onSubmit).toHaveBeenCalledWith("댓글", true, undefined)

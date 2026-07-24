@@ -96,6 +96,8 @@ export default function MenuPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <h1 className="text-2xl font-semibold">메뉴</h1>
+
       <Link
         to="/profile"
         className="bg-card hover:bg-muted/60 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors"

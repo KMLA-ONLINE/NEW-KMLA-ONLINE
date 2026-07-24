@@ -1280,13 +1280,29 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.get_encrypted_message_bodies(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text), public.remove_group_member(bigint,bigint) from public, anon, authenticated, service_role;
+-- 그룹 대화 이름 변경. 그룹 멤버면 누구나 자유롭게 바꿀 수 있다(생성자/운영진 제한 없음).
+-- security definer라 authenticated에 conversations.name update grant가 없어도 통과하고,
+-- conversations_shape_check(공백 제거 후 1~100자)를 함수가 미리 검증해 말이 되는 에러로 돌려준다.
+create function public.rename_group_conversation(p_conversation_id bigint,p_name text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare next_name text := btrim(coalesce(p_name,''));
+begin
+  perform private.require_current_profile(true);
+  if char_length(next_name) < 1 or char_length(next_name) > 100 then raise exception 'group name must be 1 to 100 characters'; end if;
+  if not exists(select 1 from public.conversations where id=p_conversation_id and type='group') then raise exception 'group conversation required'; end if;
+  if not private.is_conversation_member(p_conversation_id) then raise exception 'not a member of this conversation'; end if;
+  update public.conversations set name=next_name where id=p_conversation_id;
+end;
+$$;
+
+revoke execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4), public.get_encrypted_message_bodies(bigint,bigint,int4), public.soft_delete_message(bigint), public.search_messages(text,bigint), public.send_message_with_attachments(bigint,jsonb,bigint,text), public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text), public.remove_group_member(bigint,bigint), public.rename_group_conversation(bigint,text) from public, anon, authenticated, service_role;
 grant execute on function public.create_direct_conversation(bigint), public.list_conversations(), public.get_unread_message_count(), public.get_chat_messages(bigint,bigint,int4) to authenticated;
 grant execute on function public.soft_delete_message(bigint) to authenticated;
 grant execute on function public.search_messages(text,bigint), public.get_encrypted_message_bodies(bigint,bigint,int4) to authenticated;
 grant execute on function public.send_message_with_attachments(bigint,jsonb,bigint,text) to authenticated;
 grant execute on function public.send_encrypted_message(bigint,text,jsonb,bigint,jsonb), public.edit_encrypted_message(bigint,text) to authenticated;
 grant execute on function public.remove_group_member(bigint,bigint) to authenticated;
+grant execute on function public.rename_group_conversation(bigint,text) to authenticated;
 
 create function public.cleanup_conversation(p_conversation_id bigint)
 returns void language plpgsql security definer set search_path='' as $$

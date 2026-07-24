@@ -29,13 +29,13 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 | 함수                                    | 인증     | 목적                                                                |
 | --------------------------------------- | -------- | ------------------------------------------------------------------- |
 | `list_notifications(before_id?, limit)` | accepted | 알림함 keyset. 익명이면 actor를 지우고, 대상을 pub_id로 풀어 내린다 |
-| `get_unread_notification_count()`       | accepted | 내비 뱃지용. 100에서 세기를 멈춘다(뱃지는 99+ 위를 구분하지 않는다) |
+| `get_unread_notification_count()`       | accepted | 최근 24시간의 안 읽은 알림만 세는 내비 뱃지용. 100에서 멈춘다      |
 
 ### 운영 정리
 
 | 함수                                            | 인증         | 목적                                                        |
 | ----------------------------------------------- | ------------ | ----------------------------------------------------------- |
-| `purge_read_notifications(older_than?, limit?)` | service_role | 읽은 지 기본 60일 지난 알림을 제한된 배치 단위로 hard delete |
+| `purge_notifications(older_than?, limit?)` | service_role | 생성된 지 기본 30일 지난 알림을 읽음 여부와 무관하게 오래된 순으로 제한된 배치 단위 hard delete |
 
 **"모두 읽음"에 RPC는 없다** — `update notifications set read_at=now() where read_at is null` 한 줄이면 된다(RLS가 내 행으로 가두고 컬럼 grant가 `read_at`만 연다).
 

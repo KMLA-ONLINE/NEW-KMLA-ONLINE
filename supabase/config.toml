@@ -158,7 +158,7 @@ site_url = "http://localhost:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# 비밀번호 재설정 메일이 /reset-password로 떨어져야 한다 (app/routes/reset-password.tsx).
+# 비밀번호 재설정 메일이 /reset-password로 떨어져야 한다 (app/routes/auth/reset-password.tsx).
 # 허용 목록에 없으면 Supabase가 조용히 site_url로 되돌려, 링크를 열어도 아무 일이 없다.
 additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/**"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).

@@ -63,7 +63,7 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 
 - `spaces` — `type`(group=공식/community=비공식), `join_policy`, `post_policy`(`all`|`managers`), `anonymity_policy`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크·storage 경로용, 소문자·숫자·하이픈 3~50자, unique)
 - `space_anonymity_suspensions` — `(space_id, user_id)` PK. 직접 SELECT는 본인에게만 허용한다. 관리자는 행이나 신원을 열람하지 못하고 콘텐츠별 상태와 조치 결과의 제한된 신호만 받는다. 설계 근거는 [03-content](03-content.md)
-- `space_members` — `(space_id, user_id)` PK. 역할(위 표), 알림 설정, 개인용 `pinned_at`(그룹 상단 고정), ban 상태
+- `space_members` — `(space_id, user_id)` PK. 역할(위 표), 알림 설정, 개인용 `pinned_at`(그룹 상단 고정), ban 상태. 새 멤버의 알림은 공식 그룹(`group`)이면 `all`, 비공식 그룹(`community`)이면 `mentions`로 시작하며 이후 본인이 변경할 수 있다
   `required` 공간에서는 owner/admin만 전체 명부를 보고 manager/member는 자기 행만 본다.
 - `space_invites` — `token`(unique 비밀값)으로 식별. **`target_user_id`가 null이면 공유 링크, 값이 있으면 그 사람만 수락 가능.** `on delete cascade`인 이유: set null이면 대상 지정 초대가 조용히 공유 링크로 격하된다
 - `space_join_requests` — `(space_id, user_id)` PK. 조회·삭제는 본인 또는 관리자
@@ -99,6 +99,8 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 | -------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
 | `set_space_member_role(space_id, user_id, role)`   | 관리자    | 역할 변경. **owner는 세우지도 내리지도 못한다**(위 "owner와 admin은 대등하다") |
 | `transfer_space_ownership(space_id, new_owner_id)` | **owner** | 소유권 이양. 대상은 현재 admin이어야 한다                                        |
+
+멤버십 생성 경로마다 기본값을 반복하지 않고 `trg_set_space_member_notification_default`가 모든 `space_members` INSERT에 동일한 알림 기본값을 적용한다. 기존 멤버의 설정은 바꾸지 않는다.
 
 ### 운영 정리
 

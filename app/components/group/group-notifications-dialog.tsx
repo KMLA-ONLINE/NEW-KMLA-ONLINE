@@ -11,8 +11,8 @@ import {
 } from "~/components/ui/dialog"
 
 // 단일 알림 설정 -- schema space_members.notification_setting(off/mentions/all)과 1:1.
-// "mentions"는 나와 관련된 활동(내 글·댓글에 달린 반응 + 멘션)을 뜻하고, 기본값도 스키마와
-// 같은 mentions다. 앱내/푸시 채널 분리는 컬럼 하나에 안 담겨 단일 단계로 합쳤다.
+// "mentions"는 나와 관련된 활동(내 글·댓글에 달린 반응 + 멘션)을 뜻한다. 앱내/푸시 채널
+// 분리는 컬럼 하나에 안 담겨 단일 단계로 합쳤다.
 type NotificationSetting = "all" | "mentions" | "off"
 
 // 딥링크·뒤로가기가 필요 없는 단순 설정이라 라우트가 아니라 상태로 여는 모달로 둔다.
@@ -20,13 +20,15 @@ type NotificationSetting = "all" | "mentions" | "off"
 export function GroupNotificationsDialog({
   open,
   onOpenChange,
+  initialSetting = "mentions",
   mentionsAllowed = true,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  initialSetting?: NotificationSetting
   mentionsAllowed?: boolean
 }) {
-  const [setting, setSetting] = useState<NotificationSetting>("mentions")
+  const [setting, setSetting] = useState<NotificationSetting>(initialSetting)
   const options: { value: NotificationSetting; label: string; description: string }[] = [
     { value: "all", label: "전체", description: "이 그룹의 모든 새 게시물을 알립니다" },
     {
