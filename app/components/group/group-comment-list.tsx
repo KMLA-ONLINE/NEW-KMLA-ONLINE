@@ -243,8 +243,7 @@ function GroupCommentItem({
               </p>
             </div>
             <div className="text-muted-foreground mt-1 ml-3 flex items-center gap-3 text-xs">
-              {/* 익명 작성 제한 중에도 반응은 허용한다. TODO(backend): required 공간에서는
-                  comment_reactions.is_anonymous를 DB가 자동으로 true로 기록하고 user_id는 숨긴다. */}
+              {/* 익명 작성 제한 중에도 반응은 허용하며 required 공간의 반응은 DB가 익명으로 저장한다. */}
               <div className="relative">
                 {pickerOpen ? (
                   <>
@@ -326,7 +325,7 @@ function GroupCommentItem({
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-muted-foreground text-xs font-normal"></DropdownMenuLabel>
-                    {/* TODO(backend): 확인 후 suspend_comment_author_anonymity(id) /
+                    {/* TODO(wiring): 확인 후 suspend_comment_author_anonymity(id) /
                         undo_comment_anonymity_suspension(id). 후자는 void다 -- 자세한 이유는
                         group-post-menu.tsx의 같은 항목 주석 참고. 취소는 확인 모달 없음(처벌이 아니라서). */}
                     {comment.isAuthorAnonymitySuspended ? (

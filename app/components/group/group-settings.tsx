@@ -548,8 +548,7 @@ const ANONYMITY_OPTIONS: {
   },
 ]
 
-// TODO(backend): owner/admin(can_manage_space)만 spaces.anonymity_policy를 갱신한다. 정책 변경은
-// 이후 활동에만 적용하고 posts, comments, reactions의 당시 익명 여부는 절대 소급 변경하지 않는다.
+// TODO(wiring): 확인 후 spaces.anonymity_policy를 갱신한다. RLS가 owner/admin만 허용한다.
 function AnonymousSection({
   policy,
   onChange,

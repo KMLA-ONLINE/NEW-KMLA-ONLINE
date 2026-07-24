@@ -138,12 +138,13 @@ DB 테스트는 권한 누출, 암호화 키 노출, 잘못된 profile visibilit
 | `01-identity.sql`      | 있음    | Auth trigger, profile lifecycle, approval queue, key vault |
 | `02-spaces.sql`        | 있음    | Space 생성, 가입 정책, 영구 삭제, owner invariant          |
 | `03-content.sql`       | 있음    | Post/comment read RPC, anonymous label, tombstone          |
+| `04-reactions.sql`     | 있음    | Reactor keyset, anonymous reaction snapshot and aggregation |
 | `05-chat.sql`          | 있음    | Group plaintext contract, 1:1 E2EE contract                |
 | `06-notifications.sql` | 있음    | Read RPC limit contract                                    |
 | `09-storage.sql`       | 없음    | Cleanup queue, bucket/MIME allowlist 일치 여부             |
 | `10-rls.sql`           | 있음    | Client 역할에서의 runtime RLS 동작                         |
 
-`04-reactions`, `07-utilities`, `08-clubs`에는 도메인별 테스트 파일이 없다. 대신 `00-privileges.sql`의 schema-wide 검사 대상에 포함된다.
+`07-utilities`, `08-clubs`에는 도메인별 테스트 파일이 없다. 대신 `00-privileges.sql`의 schema-wide 검사 대상에 포함된다.
 
 ### 권한 및 RLS 검증
 

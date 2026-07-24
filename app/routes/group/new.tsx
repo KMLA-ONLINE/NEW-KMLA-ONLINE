@@ -129,8 +129,7 @@ export default function GroupNewPostPage() {
                 그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
                 거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
             <div className="flex items-center gap-3">
-              {/* TODO(backend): required 공식 그룹은 운영진 귀속을 자동 적용한다. 비공식 그룹은 요청을
-                  받되 owner/admin/manager인지 다시 검사한 뒤 author_attribution을 스냅샷으로 저장한다. */}
+              {/* DB 트리거가 required 공식 그룹의 운영진 귀속을 자동 적용하고 비공식 그룹의 선택 권한을 검증한다. */}
               {staffAttributionMode === "optional" ? (
                 <GroupStaffAttributionToggle
                   staff={staffAttributed}
@@ -174,8 +173,7 @@ export default function GroupNewPostPage() {
               placeholder="제목"
               className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
             />
-            {/* required 공간에는 멘션 선택 UI를 제공하지 않는다. TODO(backend): post_mentions와
-                comment_mentions insert도 대상 space가 required면 거부해 직접 API 우회를 막는다. */}
+            {/* required 공간에는 멘션 UI가 없고 DB 트리거도 직접 INSERT를 거부한다. */}
             <GroupContentEditor contentRef={contentRef} />
 
             <GroupAttachmentPreview images={previewImages} files={previewFiles} />

@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -264,18 +264,21 @@ export type Database = {
         Row: {
           comment_id: number
           created_at: string
+          is_anonymous: boolean
           reaction_type_id: number
           user_id: number
         }
         Insert: {
           comment_id: number
           created_at?: string
+          is_anonymous?: boolean
           reaction_type_id: number
           user_id: number
         }
         Update: {
           comment_id?: number
           created_at?: string
+          is_anonymous?: boolean
           reaction_type_id?: number
           user_id?: number
         }
@@ -305,6 +308,9 @@ export type Database = {
       }
       comments: {
         Row: {
+          author_attribution:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           content: string | null
           created_at: string
@@ -317,6 +323,9 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           content?: string | null
           created_at?: string
@@ -329,6 +338,9 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id?: number
           content?: string | null
           created_at?: string
@@ -1023,18 +1035,21 @@ export type Database = {
       post_reactions: {
         Row: {
           created_at: string
+          is_anonymous: boolean
           post_id: number
           reaction_type_id: number
           user_id: number
         }
         Insert: {
           created_at?: string
+          is_anonymous?: boolean
           post_id: number
           reaction_type_id: number
           user_id: number
         }
         Update: {
           created_at?: string
+          is_anonymous?: boolean
           post_id?: number
           reaction_type_id?: number
           user_id?: number
@@ -1065,6 +1080,9 @@ export type Database = {
       }
       posts: {
         Row: {
+          author_attribution:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           category_id: number | null
           content: string
@@ -1083,6 +1101,9 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           category_id?: number | null
           content: string
@@ -1101,6 +1122,9 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id?: number
           category_id?: number | null
           content?: string
@@ -1555,7 +1579,7 @@ export type Database = {
       }
       spaces: {
         Row: {
-          allow_anonymous_posts: boolean
+          anonymity_policy: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url: string | null
           created_at: string
           created_by: number | null
@@ -1573,7 +1597,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          allow_anonymous_posts?: boolean
+          anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
@@ -1591,7 +1615,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          allow_anonymous_posts?: boolean
+          anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
@@ -1740,6 +1764,7 @@ export type Database = {
       create_post_with_attachments: {
         Args: {
           p_attachments?: Json
+          p_author_attribution?: Database["public"]["Enums"]["author_attribution"]
           p_category_id?: number
           p_content: string
           p_is_anonymous?: boolean
@@ -1750,7 +1775,7 @@ export type Database = {
       }
       create_space: {
         Args: {
-          p_allow_anonymous_posts?: boolean
+          p_anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           p_description?: string
           p_join_policy?: Database["public"]["Enums"]["space_join_policy"]
           p_name: string
@@ -1886,6 +1911,7 @@ export type Database = {
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -1904,15 +1930,24 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_post_anonymous_reaction_counts: {
+        Args: { p_post_id: number }
+        Returns: {
+          reaction_count: number
+          reaction_type_id: number
+        }[]
+      }
       get_post_comments: {
         Args: { p_after_id?: number; p_limit?: number; p_post_id: number }
         Returns: {
           anonymous_label: string
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           comment_id: number
           content: string
           created_at: string
           is_anonymous: boolean
+          is_author_anonymity_suspended: boolean
           is_deleted: boolean
           is_mine: boolean
           my_reaction_id: number
@@ -1970,6 +2005,7 @@ export type Database = {
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -2034,6 +2070,7 @@ export type Database = {
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -2117,6 +2154,7 @@ export type Database = {
         Args: { p_query: string; p_space_id: number }
         Returns: {
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           content_snippet: string
           created_at: string
           post_id: number
@@ -2223,6 +2261,7 @@ export type Database = {
     Enums: {
       app_role: "user" | "admin"
       attachment_kind: "image" | "audio" | "video" | "file"
+      author_attribution: "staff"
       club_type: "major" | "general"
       conversation_type: "direct" | "group"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
@@ -2246,6 +2285,7 @@ export type Database = {
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
+      space_anonymity_policy: "disabled" | "optional" | "required"
       space_join_policy: "public" | "request" | "invite_only"
       space_post_policy: "all" | "managers"
       space_type: "group" | "community"
@@ -2381,6 +2421,7 @@ export const Constants = {
     Enums: {
       app_role: ["user", "admin"],
       attachment_kind: ["image", "audio", "video", "file"],
+      author_attribution: ["staff"],
       club_type: ["major", "general"],
       conversation_type: ["direct", "group"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],
@@ -2405,6 +2446,7 @@ export const Constants = {
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
+      space_anonymity_policy: ["disabled", "optional", "required"],
       space_join_policy: ["public", "request", "invite_only"],
       space_post_policy: ["all", "managers"],
       space_type: ["group", "community"],

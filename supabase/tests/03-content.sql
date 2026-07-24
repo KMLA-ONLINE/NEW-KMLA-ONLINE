@@ -268,6 +268,116 @@ begin
   end;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- 3단계 익명 정책, 운영진 귀속, required 우회 차단
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  owner_user uuid := '81111111-1111-4111-8111-aaaaaaaaaaaa';
+  manager_user uuid := '82222222-2222-4222-8222-bbbbbbbbbbbb';
+  member_user uuid := '83333333-3333-4333-8333-cccccccccccc';
+  owner_id bigint; manager_id bigint; member_id bigint;
+  official_id bigint; community_id bigint; disabled_id bigint; optional_id bigint;
+  official_post bigint; community_post bigint; target_comment bigint;
+  like_id bigint;
+begin
+  insert into auth.users(id,email) values
+    (owner_user,'anonymity-owner@example.com'),
+    (manager_user,'anonymity-manager@example.com'),
+    (member_user,'anonymity-member@example.com');
+  select id into owner_id from public.profiles where auth_user_id=owner_user;
+  select id into manager_id from public.profiles where auth_user_id=manager_user;
+  select id into member_id from public.profiles where auth_user_id=member_user;
+  update public.profiles set type='teacher',status='accepted'
+  where id in (owner_id,manager_id,member_id);
+
+  insert into public.spaces(type,name,anonymity_policy) values
+    ('group','required official','required') returning id into official_id;
+  insert into public.spaces(type,name,anonymity_policy) values
+    ('community','required community','required') returning id into community_id;
+  insert into public.spaces(type,name,anonymity_policy) values
+    ('community','disabled anonymity','disabled') returning id into disabled_id;
+  insert into public.spaces(type,name,anonymity_policy) values
+    ('community','optional anonymity','optional') returning id into optional_id;
+  insert into public.space_members(space_id,user_id,role) values
+    (official_id,owner_id,'owner'),(official_id,manager_id,'manager'),(official_id,member_id,'member'),
+    (community_id,owner_id,'owner'),(community_id,member_id,'member'),
+    (disabled_id,owner_id,'owner'),(optional_id,owner_id,'owner');
+
+  -- required 공식 그룹의 운영진은 입력값과 무관하게 운영진 익명으로 고정된다.
+  insert into public.posts(space_id,author_id,title,content,is_anonymous)
+  values(official_id,owner_id,'official staff','body',false) returning id into official_post;
+  if not exists(
+    select 1 from public.posts
+    where id=official_post and is_anonymous and author_attribution='staff'
+  ) then raise exception 'required official staff post attribution was not enforced'; end if;
+
+  insert into public.comments(post_id,author_id,content,is_anonymous)
+  values(official_post,manager_id,'staff reply',false) returning id into target_comment;
+  if not exists(
+    select 1 from public.comments
+    where id=target_comment and is_anonymous and author_attribution='staff'
+  ) then raise exception 'required official staff comment attribution was not enforced'; end if;
+
+  -- 일반 멤버가 staff를 위조해도 일반 익명으로 정규화된다.
+  insert into public.posts(space_id,author_id,title,content,is_anonymous,author_attribution)
+  values(official_id,member_id,'member anonymous','body',false,'staff') returning id into community_post;
+  if not exists(
+    select 1 from public.posts
+    where id=community_post and is_anonymous and author_attribution is null
+  ) then raise exception 'required member post must be anonymous without staff attribution'; end if;
+
+  -- required에서는 의미론적 멘션 행을 만들 수 없다.
+  begin
+    insert into public.post_mentions(post_id,user_id) values(community_post,owner_id);
+    raise exception 'required-anonymity post mentions must be rejected';
+  exception when others then
+    if sqlerrm not like '%mentions are not available%' then raise; end if;
+  end;
+
+  -- 비공식 required 운영진은 일반 익명이 기본이고 staff를 명시적으로 선택할 수 있다.
+  insert into public.posts(space_id,author_id,title,content)
+  values(community_id,owner_id,'community anonymous','body') returning id into community_post;
+  if not exists(select 1 from public.posts where id=community_post and is_anonymous and author_attribution is null) then
+    raise exception 'required community staff must default to ordinary anonymity';
+  end if;
+  insert into public.posts(space_id,author_id,title,content,author_attribution)
+  values(community_id,owner_id,'community staff','body','staff') returning id into community_post;
+  if not exists(select 1 from public.posts where id=community_post and is_anonymous and author_attribution='staff') then
+    raise exception 'required community staff attribution choice was not preserved';
+  end if;
+
+  -- disabled는 익명 입력을 실명으로, optional은 선택값 그대로 정규화한다.
+  insert into public.posts(space_id,author_id,title,content,is_anonymous)
+  values(disabled_id,owner_id,'forced named','body',true) returning id into community_post;
+  if (select is_anonymous from public.posts where id=community_post) then
+    raise exception 'disabled policy must force named content';
+  end if;
+  insert into public.posts(space_id,author_id,title,content,is_anonymous)
+  values(optional_id,owner_id,'chosen anonymous','body',true) returning id into community_post;
+  if not (select is_anonymous from public.posts where id=community_post) then
+    raise exception 'optional policy must preserve the anonymous choice';
+  end if;
+
+  -- required 정지 중에는 false를 보내도 강제 익명이 먼저 적용되어 작성이 막힌다. 반응은 허용된다.
+  insert into public.space_anonymity_suspensions(space_id,user_id,suspended_until)
+  values(official_id,member_id,now()+interval '1 day');
+  begin
+    insert into public.comments(post_id,author_id,content,is_anonymous)
+    values(official_post,member_id,'blocked',false);
+    raise exception 'a suspended member must not bypass required anonymity with false';
+  exception when others then
+    if sqlerrm not like '%anonymous posting is not available%' then raise; end if;
+  end;
+  select id into like_id from public.reaction_types where key='like';
+  insert into public.post_reactions(post_id,user_id,reaction_type_id)
+  values(official_post,member_id,like_id);
+  if not exists(
+    select 1 from public.post_reactions
+    where post_id=official_post and user_id=member_id and is_anonymous
+  ) then raise exception 'required reactions must remain available and anonymous during suspension'; end if;
+end $$;
+
 do $$
 declare
   user1 uuid := '11111111-1111-4111-8111-eeeeeeeeeeee';

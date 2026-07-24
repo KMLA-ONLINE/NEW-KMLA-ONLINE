@@ -5,9 +5,7 @@
 
 import type { Database } from "~/lib/supabase/database.types"
 
-// TODO(backend): space_anonymity_policy enum과 spaces.anonymity_policy 컬럼으로 옮긴다.
-// 기존 allow_anonymous_posts=false/true는 각각 disabled/optional로 이관한다.
-export type GroupAnonymityPolicy = "disabled" | "optional" | "required"
+export type GroupAnonymityPolicy = Database["public"]["Enums"]["space_anonymity_policy"]
 
 export type GroupSpace = {
   name: string
@@ -188,11 +186,11 @@ export type GroupPost = {
   pubId: string
   title: string
   content: string
-  /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
+  /** 익명 또는 운영진 귀속 글이면 null이며 개인 작성자 신원은 내려주지 않는다. */
   author: GroupPostAuthor | null
   /**
-   * required 공식 그룹에서 운영 권한으로 작성한 글이면 `staff`. 개인 신원은 숨기되 공식 발언임을
-   * 나타낸다. 게시 당시 귀속을 저장하고 이후 변경할 수 없으며 현재 역할로 다시 계산하면 안 된다.
+   * required 공간에서 운영진 귀속으로 작성한 글이면 `staff`. 공식 그룹은 자동, 비공식 그룹은
+   * 작성자가 선택한다. 게시 당시 값을 저장하며 현재 역할로 다시 계산하면 안 된다.
    */
   authorAttribution?: "staff" | null
   /**
@@ -248,7 +246,7 @@ export type GroupComment = {
   /** comments.parent_id. null이면 최상위, 값이 있으면 그 부모 댓글의 id (대댓글). */
   parentId: number | null
   /**
-   * 익명 댓글이거나(is_anonymous) 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
+   * 익명·운영진 귀속 댓글이거나 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
    * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
    */
   author: GroupPostAuthor | null
@@ -261,10 +259,7 @@ export type GroupComment = {
    * 글에선 다른 번호를 받으므로 여러 글에 걸쳐 이어 붙일 수 없다).
    */
   anonymousLabel?: string | null
-  /**
-   * 이 익명 댓글 작성자가 현재 정지 중인지. TODO(backend): get_post_comments가 관리자에게만
-   * is_author_anonymity_suspended를 내려주고, 일반 멤버에게는 항상 false를 반환한다.
-   */
+  /** 관리자에게만 실제 값이 내려오고 일반 멤버에게는 항상 false인 현재 익명 정지 상태. */
   isAuthorAnonymitySuspended?: boolean
   /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
   isMine?: boolean

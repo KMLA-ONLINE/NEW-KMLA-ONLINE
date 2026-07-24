@@ -142,9 +142,7 @@ export default function GroupPage() {
         ? "automatic"
         : "optional"
       : "none"
-  // 항상 익명 공간의 실명 명부는 owner/admin만 본다. UI만 숨겨서는 user_id를 직접 조회할 수
-  // 있으므로 TODO(backend): space_members_select도 해당 공간에서는 본인 행 또는 can_manage_space만
-  // 허용하고, 일반 멤버에게는 spaces.member_count만 제공한다.
+  // required 공간의 전체 명부는 owner/admin만 본다. RLS도 manager/member에게 자기 행만 허용한다.
   const canViewMemberDirectory = anonymityPolicy !== "required" || canManage
   const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
   const tab: GroupTab =

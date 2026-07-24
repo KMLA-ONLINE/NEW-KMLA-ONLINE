@@ -11,9 +11,8 @@ import { cn } from "~/lib/utils"
 // 공간을 만드는 화면. 서버에는 create_space RPC 하나뿐이고 spaces에는 insert grant가 없다 --
 // 그래서 여기서 모으는 값이 곧 그 RPC의 인자다.
 //
-// TODO(backend): space_anonymity_policy와 spaces.anonymity_policy를 추가하고 create_space가
-// p_anonymity_policy를 받게 한 뒤 action에서 호출한다. 지금은 로컬 state만 만지고 저장하지 않는다.
-// TODO(backend): 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
+// TODO(wiring): clientAction에서 create_space를 호출한다. 지금은 로컬 state만 만지고 저장하지 않는다.
+// 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
 // spaces_active_group_name_key(unique), 슬러그는 'pub id already taken'. 프론트 검사는 형식까지다.
 
 const JOIN_POLICY_OPTIONS: { value: SpaceDraft["joinPolicy"]; label: string; hint: string }[] = [
@@ -87,7 +86,7 @@ export default function CreateSpacePage() {
   const [pubId, setPubId] = useState("")
   const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("public")
   const [postPolicy, setPostPolicy] = useState<SpaceDraft["postPolicy"]>("all")
-  // 기존 그룹 동작과 DB allow_anonymous_posts=true의 의미를 이어받는 기본값이다.
+  // DB spaces.anonymity_policy의 기본값과 같다.
   const [anonymityPolicy, setAnonymityPolicy] = useState<SpaceDraft["anonymityPolicy"]>("optional")
 
   const trimmedName = name.trim()

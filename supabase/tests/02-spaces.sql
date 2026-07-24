@@ -17,6 +17,14 @@ begin
     raise exception 'space join policy enum contract failed';
   end if;
 
+  if (
+    select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid=e.enumtypid
+    where t.typname='space_anonymity_policy'
+  ) <> array['disabled','optional','required'] then
+    raise exception 'space anonymity policy enum contract failed';
+  end if;
+
   if not has_column_privilege('authenticated', 'public.space_members', 'pinned_at', 'UPDATE')
     or to_regprocedure('public.join_space(bigint)') is null
     or to_regprocedure('public.accept_space_invite(text)') is null
@@ -40,10 +48,10 @@ begin
   end if;
 
   -- 공간의 생애주기. 만드는 문은 authenticated에게, 지우는 문은 service_role에게만 열려 있다.
-  if not has_function_privilege('authenticated', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean)', 'EXECUTE')
+  if not has_function_privilege('authenticated', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.set_space_join_policy(bigint,public.space_join_policy)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.finalize_space_image(bigint,text)', 'EXECUTE')
-    or has_function_privilege('anon', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.soft_delete_space(bigint)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.purge_due_spaces(int4)', 'EXECUTE')
     or not has_function_privilege('service_role', 'public.purge_due_spaces(int4)', 'EXECUTE')
