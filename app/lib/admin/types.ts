@@ -45,13 +45,6 @@ export type AppAdminProfile = {
   isMe?: boolean
 }
 
-export const PROFILE_TYPE_LABEL: Record<PendingProfile["type"], string> = {
-  student: "학생",
-  teacher: "교사",
-  alumni: "졸업생",
-}
-
-export const TRACK_LABEL: Record<Database["public"]["Enums"]["profile_track"], string> = {
-  domestic: "국내반",
-  international: "국제반",
-}
+// 프로필 타입/트랙 라벨은 profile 도메인이 단일 출처다(같은 enum, 같은 표기). 관리 화면도
+// 그대로 재노출해 쓴다 -- 예전엔 여기 따로 둬서 teacher가 "교사"/"선생님"으로 갈렸다.
+export { PROFILE_TYPE_LABEL, TRACK_LABEL } from "~/lib/profile/types"

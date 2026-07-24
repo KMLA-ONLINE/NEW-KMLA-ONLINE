@@ -5,7 +5,7 @@
 // (1) actor_id의 select grant가 회수돼 있고(익명), (2) 테이블엔 내부 bigint뿐이라 딥링크에
 // 필요한 pub_id가 없다. 그래서 읽기는 list_notifications() 하나로만 간다.
 
-import type { GroupMemberRole } from "~/lib/group/types"
+import type { GroupMemberRole, GroupPostSpace } from "~/lib/group/types"
 import type { Database } from "~/lib/supabase/database.types"
 
 /**
@@ -28,13 +28,6 @@ export type NotificationActor = {
   name: string
   /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
-}
-
-export type NotificationSpace = {
-  /** spaces.pub_id 슬러그. 딥링크(/groups/:pubId)가 이걸로 간다. */
-  pubId: string
-  name: string
-  type: Database["public"]["Enums"]["space_type"]
 }
 
 export type NotificationPost = {
@@ -76,9 +69,10 @@ export type AppNotification = {
   /**
    * 아래 셋은 종류에 따라 채워진다(notifications_target_shape_check가 강제).
    * 콘텐츠·운영 알림은 space가 항상 있고, 글/댓글 알림은 post가 항상 있다. 타입이 nullable인 건
-   * 컬럼이 nullable이기 때문일 뿐이다.
+   * 컬럼이 nullable이기 때문일 뿐이다. 피드와 같은 최소 space 참조(GroupPostSpace)를 쓴다 --
+   * pubId가 딥링크(/groups/:pubId) 대상이다.
    */
-  space: NotificationSpace | null
+  space: GroupPostSpace | null
   post: NotificationPost | null
   comment: NotificationComment | null
   payload: NotificationPayload | null

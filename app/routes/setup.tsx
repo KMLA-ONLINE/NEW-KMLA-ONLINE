@@ -360,7 +360,7 @@ export default function Setup() {
                       <SelectGroup>
                         <SelectItem value="student">재학생</SelectItem>
                         <SelectItem value="alumni">졸업생</SelectItem>
-                        <SelectItem value="teacher">선생님</SelectItem>
+                        <SelectItem value="teacher">교사</SelectItem>
                       </SelectGroup>
                     </SelectContent>
                   </Select>
@@ -422,7 +422,7 @@ export default function Setup() {
                     <ChevronLeft />
                   </button>
                   <h1 className="text-lg font-semibold">
-                    {isStudent ? "재학생 정보" : isAlumni ? "졸업생 정보" : "선생님 정보"}
+                    {isStudent ? "재학생 정보" : isAlumni ? "졸업생 정보" : "교사 정보"}
                   </h1>
                 </div>
 
