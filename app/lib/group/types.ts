@@ -5,9 +5,7 @@
 
 import type { Database } from "~/lib/supabase/database.types"
 
-// TODO(backend): space_anonymity_policy enum과 spaces.anonymity_policy 컬럼으로 옮긴다.
-// 기존 allow_anonymous_posts=false/true는 각각 disabled/optional로 이관한다.
-export type GroupAnonymityPolicy = "disabled" | "optional" | "required"
+export type GroupAnonymityPolicy = Database["public"]["Enums"]["space_anonymity_policy"]
 
 export type GroupSpace = {
   name: string
@@ -74,30 +72,28 @@ export type GroupPostAuthor = {
   avatarUrl: string | null
 }
 
-/**
- * 이 글에 반응한 한 사람. 익명 반응은 프로필 필드를 클라이언트에 내리지 않는다. 실제 백엔드는
- * 익명 행을 개인 단위로 내리지 않고 반응 타입별 인원수로 집계해야 한다.
- */
-export type GroupPostReactor =
-  | {
-      isAnonymous: false
-      /** profiles.id */
-      id: number
-      /** profiles.name */
-      name: string
-      /** profiles.avatar_url 기반 서명 URL. */
-      avatarUrl: string | null
-      reactionTypeId: number
-      createdAt: string
-    }
-  | {
-      isAnonymous: true
-      id: null
-      name: null
-      avatarUrl: null
-      reactionTypeId: number
-      createdAt: string
-    }
+/** 공개 신원으로 반응한 한 사람. 익명 반응자는 이 배열에 절대 들어오지 않는다. */
+export type GroupPostReactor = {
+  /** profiles.id */
+  id: number
+  /** profiles.name */
+  name: string
+  /** profiles.avatar_url 기반 서명 URL. */
+  avatarUrl: string | null
+  reactionTypeId: number
+  createdAt: string
+}
+
+/** 익명 반응은 운영진 여부도 구분하지 않고, 개인 행·시각 없이 타입별 인원수만 전달한다. */
+export type GroupAnonymousReactionCount = {
+  reactionTypeId: number
+  count: number
+}
+
+export type GroupPostReactionDetails = {
+  identified: GroupPostReactor[]
+  anonymousCounts: GroupAnonymousReactionCount[]
+}
 
 /**
  * 이 글이 놓인 space의 최소 정보. 피드처럼 **여러 space의 글을 한 흐름에 모을 때만** 채운다 --
@@ -190,8 +186,13 @@ export type GroupPost = {
   pubId: string
   title: string
   content: string
-  /** null이면 익명 글(is_anonymous) -- 작성자 신원은 내려주지 않는다. */
+  /** 익명 또는 운영진 귀속 글이면 null이며 개인 작성자 신원은 내려주지 않는다. */
   author: GroupPostAuthor | null
+  /**
+   * required 공간에서 운영진 귀속으로 작성한 글이면 `staff`. 공식 그룹은 자동, 비공식 그룹은
+   * 작성자가 선택한다. 게시 당시 값을 저장하며 현재 역할로 다시 계산하면 안 된다.
+   */
+  authorAttribution?: "staff" | null
   /**
    * 이 글의 작성자가 지금 익명 정지 중인지(is_author_anonymity_suspended). "익명 제한 취소" 메뉴
    * 항목을 이 값이 true일 때만 보여준다 -- 정지 중이 아닌데 취소 버튼이 떠 있으면 눌러도 아무
@@ -234,12 +235,10 @@ export type GroupPost = {
   /** 눌린 반응 타입 아이콘(reaction_types.icon)을 많은 순으로. 우측 요약 표시용. */
   topReactions: string[]
   /**
-   * 반응한 사람들 -- 요약 이모지를 눌렀을 때 뜨는 "누가 어떤 이모지로" 목록 모달용.
-   * **실제 백엔드는 목록/상세 RPC가 아니라 모달을 열 때 별도 RPC로 페이지 단위로 읽는다**
-   * (반응이 수백이면 목록마다 실어 내리는 건 낭비다). 그래서 map-post는 이 필드를 채우지 않고
-   * 여기서도 optional이다 -- 없으면 요약 이모지는 클릭 불가. 목엔 그 로더가 없어 미리 합성해 둔다.
+   * 반응 상세. 실명 반응자는 페이지 단위 목록, 익명 반응자는 타입별 count만 담는다. 실제
+   * 백엔드는 모달을 열 때 별도 RPC로 읽고, 목록/상세 RPC와 map-post는 이 필드를 채우지 않는다.
    */
-  reactors?: GroupPostReactor[]
+  reactionDetails?: GroupPostReactionDetails
 }
 
 export type GroupComment = {
@@ -247,10 +246,12 @@ export type GroupComment = {
   /** comments.parent_id. null이면 최상위, 값이 있으면 그 부모 댓글의 id (대댓글). */
   parentId: number | null
   /**
-   * 익명 댓글이거나(is_anonymous) 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
+   * 익명·운영진 귀속 댓글이거나 삭제된 댓글이면 null. 서버가 지워서 내려주므로 클라이언트에는
    * 애초에 도착하지 않는다 -- author_id는 select grant에서 빠져 있어 우회 조회도 불가능하다.
    */
   author: GroupPostAuthor | null
+  /** required 그룹에서 운영진으로 남긴 댓글. 서버가 역할에서 파생해 저장하며 이후 변경할 수 없다. */
+  authorAttribution?: "staff" | null
   /**
    * 익명 댓글의 표시 이름: "익명1", "익명2", 또는 익명 글의 글쓴이면 "글쓴이". 익명이 아니거나
    * 삭제됐으면 null. **번호는 서버가 매긴다** -- 클라이언트가 매기려면 작성자별 키가 필요한데
@@ -258,6 +259,8 @@ export type GroupComment = {
    * 글에선 다른 번호를 받으므로 여러 글에 걸쳐 이어 붙일 수 없다).
    */
   anonymousLabel?: string | null
+  /** 관리자에게만 실제 값이 내려오고 일반 멤버에게는 항상 false인 현재 익명 정지 상태. */
+  isAuthorAnonymitySuspended?: boolean
   /** 내가 쓴 댓글인지(author_id === 현재 프로필). 익명이어도 true다(수정/삭제 메뉴 노출용). */
   isMine?: boolean
   /**

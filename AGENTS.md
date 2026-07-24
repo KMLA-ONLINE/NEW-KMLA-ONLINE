@@ -7,6 +7,7 @@
 - `npm` is the package manager here. Use the committed `package-lock.json`; do not assume `pnpm` or a monorepo tool.
 - Tailwind CSS v4 is loaded from `app/app.css`.
 - shadcn is configured in `components.json` with style `radix-vega`.
+- Never use `AlertDialog`. Use the regular `Dialog` component for confirmations and consequential actions.
 - Supabase helpers live in `app/lib/supabase/client.ts` (browser `createBrowserClient`). There is no server client — SPA has no request to build one from.
 - **Auth runs in the browser.** Direct messages are end-to-end encrypted, and the key that opens them is derived from the password — so the raw password must never reach any server. SPA has no server `action` to be tempted into, and `login`/`signup`/`reset-password` call the browser Supabase client and send only a derived `authHash`. Do not add a server that handles the password. See [docs/e2ee.md](docs/e2ee.md).
 
@@ -70,7 +71,7 @@ The policy below is settled. Build each piece when the wait it covers becomes re
 - **Loaders `await` their data.** Do not return promises for `<Suspense>` / `<Await>` unless a specific route needs a streamed skeleton. That choice reshapes the loader into critical vs deferred data, so make it per route, and only once the wait is measured.
 - **Navigation:** nav items are `NavLink`s carrying `prefetch="intent"`, which warms the route's code-split chunk even before it has a loader. When loaders exist, give the clicked item its own pending state via the `isPending` render prop — feedback belongs on the element the user touched, not at the far edge of the screen.
 - **A thin global top bar** covers navigations with no source element: browser back/forward, `redirect()` from an action, programmatic `navigate()`. Not built yet. It needs a delay before showing and a minimum hold after, or it strobes on every click; start around 120ms and 300ms and tune against real loader timings. Indeterminate, with no faked progress — a `div` and a CSS transition beat a progress library.
-- **Mutations** show pending on the submitting control, not globally (see the `Loader2` button state in `app/routes/login.tsx`). A `fetcher` is local, so its feedback is local.
+- **Mutations** show pending on the submitting control, not globally (see the `Loader2` button state in `app/routes/auth/login.tsx`). A `fetcher` is local, so its feedback is local.
 - **Skeletons** are for lists that append rows (paginated feed, older chat messages), where one row component covers it. Avoid the kind that mirrors a whole page layout: it drifts from the component it imitates. Never replace an already-painted page with a full-page spinner.
 
 ## Database Schema Workflow

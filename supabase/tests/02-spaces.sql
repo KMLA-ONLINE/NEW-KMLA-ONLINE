@@ -1,8 +1,5 @@
--- 공간: 가입 정책과 멤버십 RPC의 존재 계약.
+-- 공간: 가입 정책, 멤버십, 운영 권한과 삭제 수명주기 계약.
 -- supabase/schemas/02-spaces.sql
---
--- 전부 카탈로그 검사라 픽스처가 없다. 정책이 실제로 어떻게 동작하는지(초대 승인, 소유권
--- 이양, manager의 3가지 권한)를 찔러보는 테스트는 아직 없다 -- docs/db/README.md의 "검증" 참고.
 
 begin;
 
@@ -15,6 +12,14 @@ begin
     where t.typname = 'space_join_policy'
   ) <> array['public', 'request', 'invite_only'] then
     raise exception 'space join policy enum contract failed';
+  end if;
+
+  if (
+    select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid=e.enumtypid
+    where t.typname='space_anonymity_policy'
+  ) <> array['disabled','optional','required'] then
+    raise exception 'space anonymity policy enum contract failed';
   end if;
 
   if not has_column_privilege('authenticated', 'public.space_members', 'pinned_at', 'UPDATE')
@@ -40,10 +45,10 @@ begin
   end if;
 
   -- 공간의 생애주기. 만드는 문은 authenticated에게, 지우는 문은 service_role에게만 열려 있다.
-  if not has_function_privilege('authenticated', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean)', 'EXECUTE')
+  if not has_function_privilege('authenticated', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.set_space_join_policy(bigint,public.space_join_policy)', 'EXECUTE')
     or not has_function_privilege('authenticated', 'public.finalize_space_image(bigint,text)', 'EXECUTE')
-    or has_function_privilege('anon', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean)', 'EXECUTE')
+    or has_function_privilege('anon', 'public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.soft_delete_space(bigint)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.purge_due_spaces(int4)', 'EXECUTE')
     or not has_function_privilege('service_role', 'public.purge_due_spaces(int4)', 'EXECUTE')
@@ -221,10 +226,11 @@ begin
 
   community_id := public.create_space('community', '  중고 장터  ', null, null, 'request');
 
-  -- 만든 사람은 owner이고 member_count는 1에서 시작한다. owner가 0명인 공간은 애초에 만들 수 없다.
+  -- 만든 사람은 owner이고 member_count는 1에서 시작한다. 비공식 그룹의 새 멤버는 멘션만 받는다.
   if not exists(
     select 1 from public.space_members
     where space_id = community_id and user_id = founder_id and role = 'owner'
+      and notification_setting = 'mentions'
   ) or (select member_count from public.spaces where id = community_id) <> 1 then
     raise exception 'space creator must be the owner of a 1-member space';
   end if;
@@ -239,8 +245,10 @@ begin
 
   perform set_config('request.jwt.claim.sub', admin_user::text, true);
   group_id := public.create_space('group', '학생회', '자치 활동', 'student-council');
-  if (select pub_id from public.spaces where id = group_id) <> 'student-council' then
-    raise exception 'explicit pub id was not honoured';
+  if (select pub_id from public.spaces where id = group_id) <> 'student-council'
+    or (select notification_setting from public.space_members where space_id=group_id and user_id=admin_id) <> 'all'
+  then
+    raise exception 'official space creation defaults failed';
   end if;
 
   begin
@@ -255,6 +263,12 @@ begin
   -- -------------------------------------------------------------------------
 
   perform set_config('request.jwt.claim.sub', joiner_user::text, true);
+  if public.join_space(group_id) <> 'joined'
+    or (select notification_setting from public.space_members where space_id=group_id and user_id=joiner_id) <> 'all'
+  then
+    raise exception 'an official space member must start with all notifications';
+  end if;
+
   if public.join_space(community_id) <> 'requested' then
     raise exception 'a request-policy space must queue the join';
   end if;
@@ -280,6 +294,9 @@ begin
   perform public.set_space_join_policy(community_id, 'request');
 
   perform public.approve_join_request(community_id, joiner_id);
+  if (select notification_setting from public.space_members where space_id=community_id and user_id=joiner_id) <> 'mentions' then
+    raise exception 'a community member must start with mention notifications';
+  end if;
   perform public.set_space_join_policy(community_id, 'public');
   if (select join_policy from public.spaces where id = community_id) <> 'public' then
     raise exception 'join policy change failed once the queue was empty';

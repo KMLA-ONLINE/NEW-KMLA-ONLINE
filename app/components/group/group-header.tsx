@@ -33,6 +33,7 @@ export function GroupHeader({
   viewMode,
   onViewModeChange,
   onViewMembers,
+  canViewMembers,
   canCurate,
   onViewSettings,
 }: {
@@ -42,6 +43,8 @@ export function GroupHeader({
   onViewModeChange: (mode: PostViewMode) => void
   /** "멤버 N명"을 누르면 멤버 탭으로. 탭은 부모(group 라우트)의 로컬 상태라 콜백으로 올린다. */
   onViewMembers: () => void
+  /** 항상 익명 그룹에서는 owner/admin만 실명 멤버 명부를 볼 수 있다. */
+  canViewMembers: boolean
   canCurate: boolean
   onViewSettings: () => void
 }) {
@@ -61,7 +64,7 @@ export function GroupHeader({
           <img src={group.coverImageUrl} alt="" className="size-full object-cover" />
         ) : null}
       </div>
-      <div className="flex items-start gap-5 p-4">
+      <div className="flex items-start gap-5 p-4 py-2 sm:py-4">
         <div className="bg-muted border-border hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-2xl font-semibold shadow-xs sm:flex sm:size-20">
           {group.imageUrl ? (
             <img src={group.imageUrl} alt="" className="size-full object-cover" />
@@ -92,9 +95,13 @@ export function GroupHeader({
             <VisibilityIcon className="size-3.5 shrink-0" aria-hidden="true" />
             <span>
               {visibilityLabel} ·{" "}
-              <button type="button" onClick={onViewMembers} className="hover:underline">
-                멤버 {group.memberCount}명
-              </button>
+              {canViewMembers ? (
+                <button type="button" onClick={onViewMembers} className="hover:underline">
+                  멤버 {group.memberCount}명
+                </button>
+              ) : (
+                <>멤버 {group.memberCount}명</>
+              )}
             </span>
           </p>
           {group.anonymityPolicy === "required" ? (
@@ -147,7 +154,12 @@ export function GroupHeader({
         </div>
       </div>
 
-      <GroupNotificationsDialog open={notiOpen} onOpenChange={setNotiOpen} />
+      <GroupNotificationsDialog
+        open={notiOpen}
+        onOpenChange={setNotiOpen}
+        initialSetting={group.type === "group" ? "all" : "mentions"}
+        mentionsAllowed={group.anonymityPolicy !== "required"}
+      />
       <GroupLeaveDialog group={group} open={leaveOpen} onOpenChange={setLeaveOpen} />
     </section>
   )

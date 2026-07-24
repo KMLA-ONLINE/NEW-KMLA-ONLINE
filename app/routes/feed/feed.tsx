@@ -16,7 +16,11 @@ const FEED_PAGE_SIZE = 6
 // 안에서만 의미가 있어(무슨 기준으로 맨 위?) 피드엔 없다. ISO 문자열이라 사전식이 곧 시간순.
 const feedPosts = [...mockFeedPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
-export const handle = { mobileContentEdge: "bleed" as const }
+export const handle = {
+  mobileContentEdge: "bleed" as const,
+  showMobileHeader: true,
+  autoHideMobileChrome: true,
+}
 
 export default function AppHomePage() {
   const [viewMode, setViewMode] = usePostViewMode()

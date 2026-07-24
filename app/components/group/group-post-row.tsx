@@ -17,7 +17,7 @@ export function GroupPostRow({
   isVisited?: boolean
   onVisit?: () => void
 }) {
-  const authorName = post.author?.name ?? "익명"
+  const authorName = post.author?.name ?? (post.authorAttribution === "staff" ? "운영진" : "익명")
   // 카드와 같은 규칙: 피드(space 있음)에선 그룹을 명시한 절대 경로, 그룹 안에선 라우트 기준 상대 경로.
   const postPath = post.space
     ? `/groups/${post.space.pubId}/posts/${post.pubId}`
@@ -59,6 +59,7 @@ export function GroupPostRow({
           </>
         ) : null}
         <span className="truncate">{authorName}</span>
+        {post.isMine && post.author === null ? <Badge variant="secondary">나</Badge> : null}
         <span aria-hidden="true">·</span>
         <RelativeTime value={post.createdAt} />
         <GroupEditedMark at={post.updatedAt} />

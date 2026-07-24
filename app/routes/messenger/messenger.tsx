@@ -300,6 +300,27 @@ export default function MessengerPage() {
     )
   }
 
+  // Frontend-only until chat_notification_settings is wired through a client action.
+  const setRoomMuted = (roomId: ConversationId, muted: boolean) => {
+    setRoomSummaries((previousRooms) =>
+      previousRooms.map((room) => (room.id === roomId ? { ...room, muted } : room))
+    )
+  }
+
+  // Frontend-only: 아직 그룹 이름 변경 RPC가 없다(create_group_chat[_with_members]만 존재).
+  // TODO(backend): update_conversation_name(p_conversation_id, p_name) 류의 RPC를 붙이고,
+  // 성공 응답을 받은 뒤에만 이 낙관적 갱신을 확정한다. 길이(1~100자) 검증은 서버의
+  // conversations_shape_check가 최종 방어선이다.
+  const renameGroup = (roomId: ConversationId, name: string) => {
+    const nextName = name.trim()
+    if (!nextName) {
+      return
+    }
+    setRoomSummaries((previousRooms) =>
+      previousRooms.map((room) => (room.id === roomId ? { ...room, name: nextName } : room))
+    )
+  }
+
   const clearFocusedMessage = useCallback(() => setFocusedMessageId(null), [])
 
   const openSearchResult = (messageId: MessageId) => {
@@ -667,6 +688,8 @@ export default function MessengerPage() {
             onOpenMembers={() => navigate(`/messenger/${selectedRoom.id}/members`)}
             onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
             onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
+            onMutedChange={(muted) => setRoomMuted(selectedRoom.id, muted)}
+            onRenameGroup={(name) => renameGroup(selectedRoom.id, name)}
           />
         ) : null}
 
@@ -770,6 +793,8 @@ export default function MessengerPage() {
                 onOpenMembers={() => navigate(`/messenger/${selectedRoom.id}/members`)}
                 onOpenPinnedMessages={() => navigate(`/messenger/${selectedRoom.id}/pinned`)}
                 onOpenSearch={() => navigate(`/messenger/${selectedRoom.id}/search`)}
+                onMutedChange={(muted) => setRoomMuted(selectedRoom.id, muted)}
+                onRenameGroup={(name) => renameGroup(selectedRoom.id, name)}
               />
             ) : null}
 

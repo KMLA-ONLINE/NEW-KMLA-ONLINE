@@ -1,7 +1,8 @@
-import { PinIcon } from "lucide-react"
+import { PinIcon, VenetianMaskIcon } from "lucide-react"
 import { Link } from "react-router"
 
 import { SpaceAvatar } from "~/components/space/space-avatar"
+import { Badge } from "~/components/ui/badge"
 import { formatMemberCount } from "~/lib/space/format"
 import type { SpaceSummary } from "~/lib/space/types"
 import { cn } from "~/lib/utils"
@@ -19,13 +20,21 @@ export function SpaceRow({ space, onTogglePin }: { space: SpaceSummary; onToggle
       <SpaceAvatar space={space} className="size-11 text-base" />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">
-          {/* after:inset-0으로 줄 전체를 덮어 어디를 눌러도 열린다. 링크가 이거 하나뿐이라
-              스크린리더가 줄을 중복해서 읽지 않고, 링크 이름은 그룹 이름 그대로다. */}
-          <Link to={`/groups/${space.pubId}`} className="after:absolute after:inset-0">
-            {space.name}
-          </Link>
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-semibold">
+            {/* after:inset-0으로 줄 전체를 덮어 어디를 눌러도 열린다. 링크가 이거 하나뿐이라
+                스크린리더가 줄을 중복해서 읽지 않고, 링크 이름은 그룹 이름 그대로다. */}
+            <Link to={`/groups/${space.pubId}`} className="after:absolute after:inset-0">
+              {space.name}
+            </Link>
+          </p>
+          {space.anonymityPolicy === "required" ? (
+            <Badge variant="secondary">
+              <VenetianMaskIcon data-icon="inline-start" aria-hidden="true" />
+              항상 익명
+            </Badge>
+          ) : null}
+        </div>
         <p className="text-muted-foreground truncate text-xs">
           {/* 공식 그룹은 전교생이 속해 있어 멤버 수가 다 같다 -- 신호가 없으니 안 보여준다. */}
           {space.type === "community" ? (

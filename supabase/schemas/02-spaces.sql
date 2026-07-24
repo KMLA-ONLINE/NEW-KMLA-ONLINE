@@ -1,9 +1,3 @@
--- 역할은 두 축이다. (1) 운영 권한: can_manage_space() = owner/admin. (2) 글 작성 권한: manager.
--- manager는 "메인 글은 manager 이상만, 댓글은 멤버 전원"인 공지형 그룹을 위한 예약값이라
--- can_manage_space가 이 값을 안 보는 건 설계다. 다만 아직 그 축을 읽는 곳이 없어 member와
--- 구분되지 않는다 -- 살리려면 spaces에 공간별 스위치(예: post_policy) + posts_insert 정책 +
--- create_post_with_attachments(security definer라 RLS를 지나친다)의 검사가 같이 필요하다.
--- is_space_member의 p_allowed_roles가 정확히 그때 쓰라고 있는 인자다. 자세한 건 docs/db/domains/02-spaces.md.
 create type public.member_role as enum ('owner', 'admin', 'manager', 'member');
 create type public.notification_setting as enum ('off', 'mentions', 'all');
 -- 참여(읽기/쓰기)는 언제나 멤버십이 있어야 한다. 정책은 '어떻게 멤버가 되는가'만 가른다.
@@ -18,6 +12,7 @@ create type public.space_type as enum ('group', 'community');
 -- 그게 member_role의 manager가 존재하는 이유이고, 그래서 이 축은 can_manage_space(운영 권한)와
 -- 별개다: manager는 글을 쓸 수 있지만 그룹 설정·모더레이션은 여전히 못 한다.
 create type public.space_post_policy as enum ('all', 'managers');
+create type public.space_anonymity_policy as enum ('disabled', 'optional', 'required');
 
 create table public.spaces (
   id bigserial primary key,
@@ -36,10 +31,8 @@ create table public.spaces (
   cover_image_url text null,
   join_policy public.space_join_policy not null default 'public',
   post_policy public.space_post_policy not null default 'all',
-  -- 이 공간에서 익명 글/댓글을 쓸 수 있는지. 끄면 새 익명 글이 안 만들어진다(trg_enforce_anonymous_
-  -- allowed). 이미 올라간 익명 글은 그대로 익명이다 -- is_anonymous는 불변이고, 소급해서 까면
-  -- 익명을 믿고 쓴 사람을 배신하는 것이다.
-  allow_anonymous_posts boolean not null default true,
+  -- 새 활동에 적용할 익명 정책. 기존 글·댓글·반응은 작성 당시 스냅샷을 유지한다.
+  anonymity_policy public.space_anonymity_policy not null default 'optional',
   member_count int4 not null default 0,
   created_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
@@ -48,21 +41,13 @@ create table public.spaces (
   deleted_by bigint null references public.profiles (id) on delete set null
 );
 
--- 익명 작성 권한의 한시적 정지. 관리자가 익명 글의 작성자를 **모른 채로** 그 사람의 익명 권한만 뺏는다.
---
--- 왜 밴이 아니라 익명 정지인가: 밴은 익명을 깬다. 밴은 해제·감사·이의신청 때문에 관리자가 목록을
--- 봐야만 하는데, 익명 글의 작성자를 밴하면 그 목록에 새로 뜬 단 한 명이 곧 작성자다(집합 차집합 한 번).
--- 반면 익명 정지는 스스로 만료되므로 관리자가 볼 이유가 없고, 그래서 **관리자에게 아무 관측 가능한
--- 상태도 남기지 않을 수 있다.** RLS가 본인에게만 보여준다. 관리자는 효과만 얻고 정보는 못 얻는다.
---
--- 처방도 더 정확하다: 문제가 "익명을 악용한다"면 뺏을 것은 익명이지 계정이 아니다.
+-- 익명 작성 권한의 한시적 정지. 관리자는 작성자 신원이나 정지 행을 열람할 수 없고 콘텐츠 id를
+-- 통해서만 조치한다. 조치 결과의 제한된 연결 정보는 03-content.sql의 suspend_anonymity 계약에 있다.
 create table public.space_anonymity_suspensions (
   space_id bigint not null references public.spaces (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,
   suspended_until timestamptz not null,
-  -- 누범 횟수. 관리자는 이 사람이 전에도 정지됐는지 알 수 없으므로(그게 익명의 조건이다) 누범
-  -- 가중을 스스로 판단할 수가 없다. 그래서 서버가 대신 센다 -- suspend_anonymity가 이 값으로
-  -- 형량을 배가한다. 관리자는 여전히 아무것도 관측하지 못한다.
+  -- 관리자가 사전에 열람할 수 없는 누범 횟수. 서버가 형량을 계산하고 조치 응답에 결과만 공개한다.
   strike_count int4 not null default 1,
   suspended_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
@@ -184,13 +169,7 @@ create function private.can_participate_space(p_space_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_space_member(p_space_id)
 $$;
--- 게시판을 정리할 수 있는지 = owner/admin/manager. **운영 권한(can_manage_space)과 다른 층이다.**
--- manager가 가진 건 정확히 셋뿐이다: 글 고정/해제, 카테고리 관리, 그리고 post_policy='managers'인
--- 그룹에서의 글쓰기. 그룹 설정을 바꾸거나, 초대장을 만들거나, 가입을 승인하거나, 남의 글을 지우거나,
--- 익명을 정지시키는 건 여전히 못 한다 -- 그건 전부 can_manage_space다.
---
--- 이 구분이 요점이다: 게시판을 굴리는 일(고정·분류)과 사람·규칙을 다루는 일(설정·모더레이션·권한)은
--- 다른 신뢰를 요구한다. 공지 그룹의 학생회 간부는 앞엣것만 필요하다.
+-- 게시판 정리 권한(owner/admin/manager)은 사람·규칙을 관리하는 can_manage_space와 별개다.
 create function private.can_curate_space(p_space_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_space_member(p_space_id, array['owner','admin','manager']::public.member_role[])
@@ -228,6 +207,26 @@ begin
 end;
 $$;
 
+-- 새 멤버의 알림 기본값은 공간 성격을 따른다. 공식 그룹은 학교 공지를 놓치지 않도록 전체,
+-- 비공식 그룹은 가입만으로 알림이 과해지지 않도록 멘션만 받는다. 모든 가입 RPC와 공간 생성이
+-- space_members INSERT로 모이므로 트리거 한 곳에서 강제해 새 가입 경로가 추가돼도 규칙이 빠지지 않는다.
+create function private.set_space_member_notification_default()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  select case when s.type='group' then 'all'::public.notification_setting else 'mentions'::public.notification_setting end
+  into new.notification_setting
+  from public.spaces s
+  where s.id=new.space_id;
+  return new;
+end;
+$$;
+
+create trigger trg_set_space_member_notification_default
+before insert on public.space_members
+for each row execute function private.set_space_member_notification_default();
+
+revoke execute on function private.set_space_member_notification_default() from public, anon, authenticated, service_role;
+
 create constraint trigger trg_validate_space_owner
 after insert or update or delete on public.space_members
 deferrable initially deferred
@@ -235,12 +234,12 @@ for each row execute function private.validate_space_owner();
 
 revoke execute on function private.validate_space_owner() from public, anon, authenticated, service_role;
 
--- 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고, 내가 정지 중이 아니어야 한다.
+-- 지금 이 공간에서 익명으로 쓸 수 있는지. disabled가 아니고, 내가 정지 중이 아니어야 한다.
 -- posts/comments의 insert 트리거가 이걸 강제한다 -- RPC에서만 막으면 컬럼 grant로 테이블에 직접
 -- insert해서 우회할 수 있다.
 create function private.can_post_anonymously(p_space_id bigint, p_user_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
-  select exists(select 1 from public.spaces s where s.id=p_space_id and s.allow_anonymous_posts)
+  select exists(select 1 from public.spaces s where s.id=p_space_id and s.anonymity_policy<>'disabled')
     and not exists(
       select 1 from public.space_anonymity_suspensions x
       where x.space_id=p_space_id and x.user_id=p_user_id and x.suspended_until > now()
@@ -248,25 +247,54 @@ returns boolean language sql stable security definer set search_path = '' as $$
 $$;
 revoke execute on function private.can_post_anonymously(bigint,bigint) from public, anon, authenticated, service_role;
 
-create function private.enforce_anonymous_allowed()
+create function private.enforce_content_anonymity()
 returns trigger language plpgsql security definer set search_path = '' as $$
-declare target_space_id bigint;
+declare
+  target_space_id bigint;
+  target_policy public.space_anonymity_policy;
+  target_type public.space_type;
+  author_role public.member_role;
 begin
-  if not new.is_anonymous then return new; end if;
-
   if tg_table_name='posts' then
     target_space_id := new.space_id;
   else
     select p.space_id into target_space_id from public.posts p where p.id=new.post_id;
   end if;
 
+  select s.anonymity_policy, s.type into target_policy, target_type
+  from public.spaces s where s.id=target_space_id and s.deleted_at is null;
+  if not found then raise exception 'space not found'; end if;
+
+  select sm.role into author_role
+  from public.space_members sm
+  where sm.space_id=target_space_id and sm.user_id=new.author_id and sm.banned_at is null;
+
+  -- 운영진 귀속은 항상 익명 공간에서만 쓴다. 공식 그룹은 자동, 비공식 그룹은 작성자가 선택한다.
+  if target_policy='required' and author_role=any(array['owner','admin','manager']::public.member_role[]) then
+    if target_type='group' then
+      new.author_attribution := 'staff';
+    elsif new.author_attribution<>'staff' then
+      new.author_attribution := null;
+    end if;
+  else
+    new.author_attribution := null;
+  end if;
+
+  if target_policy='required' then
+    new.is_anonymous := true;
+  elsif target_policy='disabled' then
+    new.is_anonymous := false;
+  end if;
+
   if not private.can_post_anonymously(target_space_id, new.author_id) then
-    raise exception 'anonymous posting is not available in this space';
+    if new.is_anonymous then
+      raise exception 'anonymous posting is not available in this space';
+    end if;
   end if;
   return new;
 end;
 $$;
-revoke execute on function private.enforce_anonymous_allowed() from public, anon, authenticated, service_role;
+revoke execute on function private.enforce_content_anonymity() from public, anon, authenticated, service_role;
 
 alter table public.spaces enable row level security;
 alter table public.space_members enable row level security;
@@ -290,13 +318,25 @@ create policy spaces_select on public.spaces for select to authenticated using (
   )
 );
 -- 관리자(owner/admin)가 고칠 수 있는 건 컬럼 grant가 정한다: name, description,
--- allow_anonymous_posts, post_policy.
+-- anonymity_policy, post_policy.
 -- join_policy는 전환 시 대기 중인 가입 요청을 먼저 처리해야 해서 set_space_join_policy가 맡는다.
--- member_count는 캐시라 join/leave RPC만 건드린다. image_url은 finalize_space_image가 맡는다.
+-- member_count는 멤버십 변경 RPC들이 관리한다. image_url은 finalize_space_image가 맡는다.
 create policy spaces_update on public.spaces for update to authenticated
   using (deleted_at is null and private.can_manage_space(id))
   with check (deleted_at is null and private.can_manage_space(id));
-create policy space_members_select on public.space_members for select to authenticated using (private.is_space_member(space_id));
+-- required 공간의 명부는 owner/admin만 본다. 일반 멤버와 manager는 자기 행만 읽어 개인 설정과
+-- 멤버십 상태를 유지하고, 다른 사람의 소속은 열람할 수 없다.
+create policy space_members_select on public.space_members for select to authenticated using (
+  private.is_space_member(space_id)
+  and (
+    user_id=private.current_profile_id()
+    or private.can_manage_space(space_id)
+    or not exists(
+      select 1 from public.spaces s
+      where s.id=space_members.space_id and s.anonymity_policy='required'
+    )
+  )
+);
 create policy space_members_update on public.space_members for update to authenticated using (user_id=private.current_profile_id() and private.is_space_member(space_id)) with check (user_id=private.current_profile_id() and private.is_space_member(space_id));
 create policy space_invites_select on public.space_invites for select to authenticated using (private.can_manage_space(space_id));
 -- 본인 요청 또는 관리하는 공간의 요청만 조회. delete는 요청 취소(본인) 및 거절(매니저)을
@@ -310,10 +350,10 @@ create policy space_categories_insert on public.space_categories for insert to a
 create policy space_categories_update on public.space_categories for update to authenticated using (private.can_curate_space(space_id)) with check (private.can_curate_space(space_id));
 create policy space_categories_delete on public.space_categories for delete to authenticated using (private.can_curate_space(space_id));
 
-grant select (id,pub_id,type,name,description,image_url,cover_image_url,join_policy,post_policy,allow_anonymous_posts,member_count,created_at,deleted_at) on public.spaces to authenticated;
+grant select (id,pub_id,type,name,description,image_url,cover_image_url,join_policy,post_policy,anonymity_policy,member_count,created_at,deleted_at) on public.spaces to authenticated;
 -- suspended_by는 뺀다. 본인은 정지 사실과 기간만 알면 되고, 누가 걸었는지까지 알면 보복 대상이 된다.
 grant select (space_id,user_id,suspended_until) on public.space_anonymity_suspensions to authenticated;
-grant update (name,description,allow_anonymous_posts,post_policy) on public.spaces to authenticated;
+grant update (name,description,anonymity_policy,post_policy) on public.spaces to authenticated;
 grant select on public.space_members to authenticated;
 grant update (notification_setting,pinned_at) on public.space_members to authenticated;
 grant select on public.space_invites to authenticated;
@@ -521,7 +561,7 @@ create function public.create_space(
   p_pub_id text default null,
   p_join_policy public.space_join_policy default 'public',
   p_post_policy public.space_post_policy default 'all',
-  p_allow_anonymous_posts boolean default true
+  p_anonymity_policy public.space_anonymity_policy default 'optional'
 )
 returns bigint language plpgsql security definer set search_path = '' as $$
 declare caller_id bigint := private.require_current_profile(true); new_space_id bigint;
@@ -531,8 +571,8 @@ begin
     raise exception 'pub id already taken';
   end if;
 
-  insert into public.spaces(type,name,description,join_policy,post_policy,allow_anonymous_posts,created_by)
-  values(p_type,btrim(p_name),nullif(btrim(coalesce(p_description,'')),''),p_join_policy,p_post_policy,p_allow_anonymous_posts,caller_id)
+  insert into public.spaces(type,name,description,join_policy,post_policy,anonymity_policy,created_by)
+  values(p_type,btrim(p_name),nullif(btrim(coalesce(p_description,'')),''),p_join_policy,p_post_policy,p_anonymity_policy,caller_id)
   returning id into new_space_id;
 
   insert into public.space_members(space_id,user_id,role) values(new_space_id,caller_id,'owner');
@@ -646,8 +686,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
-grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,boolean), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;
+revoke execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) from public, anon, authenticated, service_role;
+grant execute on function public.join_space(bigint), public.leave_space(bigint), public.create_space(public.space_type,text,text,text,public.space_join_policy,public.space_post_policy,public.space_anonymity_policy), public.set_space_join_policy(bigint,public.space_join_policy), public.create_space_invite(bigint,bigint,timestamptz), public.accept_space_invite(text), public.revoke_space_invite(bigint), public.approve_join_request(bigint,bigint), public.set_space_member_role(bigint,bigint,public.member_role), public.transfer_space_ownership(bigint,bigint) to authenticated;
 revoke execute on function private.purge_space(bigint) from public, anon, authenticated, service_role;
 revoke execute on function public.soft_delete_space(bigint), public.purge_due_spaces(int4) from public, anon, authenticated, service_role;
 grant execute on function public.soft_delete_space(bigint), public.purge_due_spaces(int4) to service_role;

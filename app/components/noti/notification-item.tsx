@@ -1,6 +1,7 @@
 import {
   AtSignIcon,
   CornerDownRightIcon,
+  HeartIcon,
   MailIcon,
   MessageSquareIcon,
   ShieldIcon,
@@ -14,6 +15,7 @@ import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router"
 
 import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { RelativeTime } from "~/components/relative-time"
 import { ROLE_LABEL } from "~/lib/group/format"
 import type { AppNotification, NotificationType } from "~/lib/noti/types"
@@ -62,7 +64,7 @@ function Em({ children }: { children: ReactNode }) {
  * 링크를 걸지 않는다.
  */
 function describe(notification: AppNotification): Descriptor {
-  const { actor, actorIsAnonymous, space, post, comment, payload } = notification
+  const { actor, actorAttribution, actorIsAnonymous, space, post, comment, payload } = notification
 
   const spaceName = space?.name ?? "그룹"
   const spaceHref = space ? `/groups/${space.pubId}` : null
@@ -77,15 +79,18 @@ function describe(notification: AppNotification): Descriptor {
   // 2) 그 프로필이 사라졌다: actor_id가 on delete set null이라 실명으로 쓴 사람이라도 계정이
   //    지워지면 null이 된다(actorIsAnonymous=false). 이걸 익명이라고 부르면, 익명이 아니었던
   //    사람을 익명이었다고 말하는 셈이다.
-  const subject = actor ? (
-    <>
-      <Em>{actor.name}</Em>님이
-    </>
-  ) : actorIsAnonymous ? (
-    <Em>익명의 사용자가</Em>
-  ) : (
-    <Em>탈퇴한 사용자가</Em>
-  )
+  const subject =
+    actorAttribution === "staff" ? (
+      <Em>운영진이</Em>
+    ) : actor ? (
+      <>
+        <Em>{actor.name}</Em>님이
+      </>
+    ) : actorIsAnonymous ? (
+      <Em>익명의 사용자가</Em>
+    ) : (
+      <Em>탈퇴한 사용자가</Em>
+    )
 
   switch (notification.type) {
     case "post_comment":
@@ -119,6 +124,19 @@ function describe(notification: AppNotification): Descriptor {
         message: <>{subject} 댓글에서 나를 언급했습니다</>,
         snippet,
       }
+    case "reaction_summary": {
+      const reactionCount = payload?.reaction_count ?? 1
+      return {
+        icon: HeartIcon,
+        tone: TONE.neutral,
+        href: postHref,
+        message: (
+          <>
+            내 {comment ? "댓글" : "글"}에 <Em>새 반응 {reactionCount}개</Em>가 있습니다
+          </>
+        ),
+      }
+    }
     case "space_join_request":
       // 그룹의 가입요청 탭이 로컬 상태라 URL로 못 짚는다. 일단 그룹까지만 보낸다.
       return {
@@ -238,7 +256,9 @@ export function NotificationItem({
           <>
             {/* 탈퇴한 사용자는 이니셜이 없다. "?"는 "이름을 알 수 없는 사람"으로 읽히고, 익명의
                 마스크와도 구분된다(익명은 신원이 없는 것이지 사라진 것이 아니다). */}
-            {notification.actorIsAnonymous ? (
+            {notification.actorAttribution === "staff" ? (
+              <GroupStaffAvatar size="lg" />
+            ) : notification.actorIsAnonymous ? (
               <AnonymousAvatar size="lg" />
             ) : (
               <ProfileAvatar

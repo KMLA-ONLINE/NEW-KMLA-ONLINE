@@ -83,9 +83,10 @@ describe("password derivation", () => {
       // This is the whole security claim. Supabase Auth stores a bcrypt of
       // `authHash`; even handed the pre-image itself, it does not open the vault,
       // because HKDF's two outputs are independent.
-      await expect(
-        open(base64ToBytes(alice.authHash), base64ToBytes(alice.stored.wrapped_user_key))
-      ).rejects.toThrow()
+      const authHash = Uint8Array.from(alice.authHash.match(/../g)!, (pair) =>
+        Number.parseInt(pair, 16)
+      )
+      await expect(open(authHash, base64ToBytes(alice.stored.wrapped_user_key))).rejects.toThrow()
     },
     TIMEOUT
   )
@@ -157,14 +158,20 @@ describe("messages", () => {
   })
 
   it(
-    "leaves an eavesdropper with nothing, even one holding the wrapped key",
+    "leaves an eavesdropper with nothing, even when they try the captured wrapped key",
     async () => {
       const aliceCrypto = new MessageCrypto(alice.keys)
       const sent = await aliceCrypto.encrypt("비밀", recipientsOf(bob))
 
       const eve = await createAccount("eve", "eve@kmla.hs.kr")
+      const captured = {
+        ...sent.keys[0],
+        // Route the captured envelope to Eve so the test reaches the DH unwrap
+        // instead of stopping at the unrelated-recipient check.
+        recipient_public_key: bytesToBase64(eve.keys.identity.publicKey),
+      }
       await expect(
-        new MessageCrypto(eve.keys).decrypt(sent.contentCiphertext, sent.keys[0])
+        new MessageCrypto(eve.keys).decrypt(sent.contentCiphertext, captured)
       ).rejects.toBeInstanceOf(UndecryptableMessageError)
     },
     TIMEOUT
@@ -178,7 +185,7 @@ describe("messages", () => {
     bytes[bytes.length - 1] ^= 1
     await expect(
       new MessageCrypto(bob.keys).decrypt(bytesToBase64(bytes), sent.keys[0])
-    ).rejects.toThrow()
+    ).rejects.toBeInstanceOf(UndecryptableMessageError)
   })
 
   it("seals attachments and file names under the same message key", async () => {
@@ -282,10 +289,11 @@ describe("seal format", () => {
     }
   })
 
-  it("nonce와 tag를 담기에도 짧은 blob은 열지 않는다", async () => {
-    // version(1) + nonce(12)보다 짧으면 복호화에 넘길 것이 없다. GCM 태그 에러로 새는 대신
-    // 명시적으로 잘렸다고 말한다.
+  it("nonce와 tag를 온전히 담지 못한 blob은 열지 않는다", async () => {
+    // 최소 형식은 version(1) + nonce(12) + tag(16)다. 그보다 짧으면 WebCrypto의 일반적인
+    // 인증 오류로 넘기지 않고 형식이 잘렸다고 명시한다.
     const key = randomBytes(32)
     await expect(open(key, randomBytes(10))).rejects.toThrow(/truncated/)
+    await expect(open(key, randomBytes(28))).rejects.toThrow(/truncated/)
   })
 })

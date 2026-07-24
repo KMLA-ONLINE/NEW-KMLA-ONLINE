@@ -20,9 +20,21 @@ Source: [`supabase/schemas/02-spaces.sql`](../../../supabase/schemas/02-spaces.s
 
 대기 요청은 `space_members`가 아니라 `space_join_requests`에 산다. 승인 전까지는 멤버가 아니므로 멤버십 불변식(owner 유일성, `member_count`)을 건드리지 않는다.
 
+## 익명 정책 (`space_anonymity_policy`)
+
+| 값                 | 새 글·댓글                    | 새 반응             |
+| ------------------ | ----------------------------- | ------------------- |
+| `disabled`         | 실명으로 강제                 | 실명                |
+| `optional` (기본) | 작성자가 실명/익명 선택       | 실명                |
+| `required`         | 익명으로 강제, 멘션 저장 금지 | 타입별 집계만 공개  |
+
+정책은 새 활동에만 적용한다. 글·댓글의 `is_anonymous`/`author_attribution`과 반응의 `is_anonymous`는 작성 당시 스냅샷이라 정책 변경으로 소급해서 바뀌지 않는다. `required` 공간에서 익명 정지 중인 사용자는 실명 입력으로 우회할 수 없고 글·댓글 작성 전체가 막히지만, 반응은 계속 할 수 있다.
+
+`required` 공식 그룹(`type='group'`)에서 owner/admin/manager가 쓴 글·댓글은 자동으로 `staff` 귀속된다. 비공식 그룹(`community`) 운영진은 일반 익명이 기본이고 작성할 때 `staff`를 선택할 수 있다. 일반 멤버가 `staff`를 보내면 서버가 제거한다.
+
 ## 역할 (`member_role`)
 
-권한은 **두 층**이다: 게시판을 굴리는 일과, 사람·규칙을 다루는 일. 다른 신뢰를 요구한다 — 공지 그룹의 간부는 글을 고정하고 말머리를 정리하면 되지 남을 강퇴하거나 익명을 벗길 필요가 없다.
+권한은 **두 층**이다: 게시판을 굴리는 일과, 사람·규칙을 다루는 일. 공지 그룹의 간부는 글을 고정하고 말머리를 정리하면 되지 익명 권한을 정지하거나 멤버를 관리할 필요는 없다.
 
 | 권한                                                           | 헬퍼                      | owner | admin | manager | member |
 | -------------------------------------------------------------- | ------------------------- | ----- | ----- | ------- | ------ |
@@ -31,8 +43,6 @@ Source: [`supabase/schemas/02-spaces.sql`](../../../supabase/schemas/02-spaces.s
 | `post_policy='managers'` 그룹에서 **메인 글 작성**             | `can_post_in_space()`     | O     | O     | **O**   | X      |
 | 댓글·반응, 그리고 `post_policy='all'`이면 글 작성              | `can_participate_space()` | O     | O     | O       | O      |
 | **소유권 이양**                                                | (owner 본인만)            | **O** | X     | X       | X      |
-
-`manager`가 가진 건 위 표의 셋뿐이다. 설정도, 초대도, 가입 승인도, 남의 글 삭제도, 익명 정지도, 역할 변경도 못 한다.
 
 **용어 함정**: 코드가 운영 권한을 `can_manage_space`라 부르고 예외 메시지도 `'space manager required'`라, 코드의 "manager"는 대개 **`manager` 역할이 아니라 owner/admin**을 뜻한다. 이름이 정확히 반대로 겹친다. (그래서 `set_post_pinned`의 거절 메시지는 `'space curator required'`다.)
 
@@ -51,9 +61,10 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 
 ## 테이블
 
-- `spaces` — `type`(group=공식/community=비공식), `join_policy`, `post_policy`(`all`|`managers`), `allow_anonymous_posts`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크·storage 경로용, 소문자·숫자·하이픈 3~50자, unique)
-- `space_anonymity_suspensions` — `(space_id, user_id)` PK. 익명 작성 권한의 한시적 정지. **RLS가 본인에게만 보여준다** — 관리자에게 보이면 익명 글 작성자를 특정하는 통로가 된다. 설계 근거는 [03-content](03-content.md)
-- `space_members` — `(space_id, user_id)` PK. 역할(위 표), 알림 설정, 개인용 `pinned_at`(그룹 상단 고정), ban 상태
+- `spaces` — `type`(group=공식/community=비공식), `join_policy`, `post_policy`(`all`|`managers`), `anonymity_policy`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크·storage 경로용, 소문자·숫자·하이픈 3~50자, unique)
+- `space_anonymity_suspensions` — `(space_id, user_id)` PK. 직접 SELECT는 본인에게만 허용한다. 관리자는 행이나 신원을 열람하지 못하고 콘텐츠별 상태와 조치 결과의 제한된 신호만 받는다. 설계 근거는 [03-content](03-content.md)
+- `space_members` — `(space_id, user_id)` PK. 역할(위 표), 알림 설정, 개인용 `pinned_at`(그룹 상단 고정), ban 상태. 새 멤버의 알림은 공식 그룹(`group`)이면 `all`, 비공식 그룹(`community`)이면 `mentions`로 시작하며 이후 본인이 변경할 수 있다
+  `required` 공간에서는 owner/admin만 전체 명부를 보고 manager/member는 자기 행만 본다.
 - `space_invites` — `token`(unique 비밀값)으로 식별. **`target_user_id`가 null이면 공유 링크, 값이 있으면 그 사람만 수락 가능.** `on delete cascade`인 이유: set null이면 대상 지정 초대가 조용히 공유 링크로 격하된다
 - `space_join_requests` — `(space_id, user_id)` PK. 조회·삭제는 본인 또는 관리자
 - `space_categories` — 그룹별 게시판/말머리. `(space_id, lower(btrim(name)))` unique, `sort_order`로 표시 순서. 조회는 멤버 전원, 관리는 `can_curate_space`
@@ -89,6 +100,8 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 | `set_space_member_role(space_id, user_id, role)`   | 관리자    | 역할 변경. **owner는 세우지도 내리지도 못한다**(위 "owner와 admin은 대등하다") |
 | `transfer_space_ownership(space_id, new_owner_id)` | **owner** | 소유권 이양. 대상은 현재 admin이어야 한다                                        |
 
+멤버십 생성 경로마다 기본값을 반복하지 않고 `trg_set_space_member_notification_default`가 모든 `space_members` INSERT에 동일한 알림 기본값을 적용한다. 기존 멤버의 설정은 바꾸지 않는다.
+
 ### 운영 정리
 
 | 함수                          | 인증         | 목적                                                    |
@@ -116,8 +129,8 @@ owner에게 삭제 버튼이 없는 것은 의도다. 그룹 하나에는 남의
 | `private.can_curate_space(space_id)`              | 게시판 정리 = owner/admin/**manager**                                    |
 | `private.can_participate_space(space_id)`         | 참여 = 멤버 (모든 공간이 멤버십을 요구하므로 `is_space_member`와 같다)   |
 | `private.can_post_in_space(space_id)`             | 메인 글 작성. `post_policy='managers'`면 `can_curate_space`, 아니면 참여 |
-| `private.can_post_anonymously(space_id, user_id)` | 공간이 익명을 허용하고 + 내가 정지 중이 아닌지                           |
-| `private.enforce_anonymous_allowed()`             | posts/comments insert 트리거 (아래 Trigger)                              |
+| `private.can_post_anonymously(space_id, user_id)` | 정책이 `disabled`가 아니고 + 내가 정지 중이 아닌지                        |
+| `private.enforce_content_anonymity()`             | 글·댓글의 정책, 정지, 운영진 귀속을 강제하는 insert 트리거 함수           |
 | `private.purge_space(space_id)`                   | 공간 하나를 흔적까지 삭제. blob이 남아 있으면 `false`(건너뜀)            |
 
 ## Trigger
@@ -127,15 +140,14 @@ owner에게 삭제 버튼이 없는 것은 의도다. 그룹 하나에는 남의
 | 트리거                     | 테이블          | 이벤트                                | side effect                                           |
 | -------------------------- | --------------- | ------------------------------------- | ----------------------------------------------------- |
 | `trg_validate_space_owner` | `space_members` | AFTER I/U/D (**deferred constraint**) | 커밋 시점에 owner가 정확히 1명이 아니면 트랜잭션 거부 |
-익명 강제 트리거(`trg_enforce_anonymous_allowed_*`)는 `posts`/`comments`에 걸리므로 [03-content](03-content.md)에 있다. 트리거 **함수**(`private.enforce_anonymous_allowed`)만 여기 산다 — 판단 기준(`allow_anonymous_posts`, 익명 정지)이 전부 space의 것이라서다.
+익명 강제 트리거(`trg_enforce_anonymous_allowed_*`)는 `posts`/`comments`에 걸리므로 [03-content](03-content.md)에 있다. 트리거 **함수**(`private.enforce_content_anonymity`)만 여기 산다 — 판단 기준(`anonymity_policy`, 공간 종류, 멤버 역할, 익명 정지)이 전부 space의 것이라서다.
 
 익명 강제가 RPC가 아니라 **트리거**인 이유: posts/comments는 컬럼 grant로 직접 insert할 수 있어, RPC에서만 막으면 테이블에 바로 꽂아 우회된다.
 
 ## 주의
 
-- `spaces`의 update는 **컬럼 단위**로 관리자에게만: `name`, `description`, `allow_anonymous_posts`, `post_policy`. 나머지는 각자 RPC가 맡는다 — `join_policy`는 `set_space_join_policy`, `image_url`은 `finalize_space_image`(storage 도메인), `member_count`는 캐시라 공간 생성·가입·탈퇴·초대 수락·가입 승인 RPC가 관리한다.
+- `spaces`의 update는 **컬럼 단위**로 관리자에게만: `name`, `description`, `anonymity_policy`, `post_policy`. 나머지는 각자 RPC가 맡는다 — `join_policy`는 `set_space_join_policy`, `image_url`은 `finalize_space_image`(storage 도메인), `member_count`는 캐시라 공간 생성·가입·탈퇴·초대 수락·가입 승인 RPC가 관리한다.
 - **`pub_id`는 생성 시점에 정해지고 불변이다.** update 컬럼 grant에 없고 바꾸는 RPC도 없다 — storage 경로가 이 값으로 짜여 있어서(`post-files/{pub_id}/{uuid}`, `space-images/{pub_id}/{uuid}`) 슬러그를 바꾸면 이미 올라간 모든 첨부의 경로 검사가 어긋난다. 열려면 object를 새 경로로 옮기고 `storage_path`를 다시 쓰는 배치가 먼저 있어야 한다.
 - **가입 정책 전환은 대기 요청을 넘어가지 못한다.** `request`에서 벗어나는 순간 남아 있던 요청은 아무도 승인할 수 없는 유령이 된다(`approve_join_request`는 여전히 돌지만 그 공간의 요청함을 띄울 화면이 사라진다). 서버가 대신 일괄 수락/거절해 주지도 않는다 — 그건 관리자가 내릴 판단이지 정책 전환의 부수 효과일 수 없다. 그래서 먼저 비우게 하고 막는다(`'resolve pending join requests first'`).
-- **`allow_anonymous_posts`를 꺼도 이미 올라간 익명 글은 그대로 익명이다.** `posts.is_anonymous`는 불변이라(update grant에 없다) 소급해서 작성자가 공개되지 않는다 — 익명을 믿고 쓴 사람을 배신하지 않는다.
-- `member_count`는 밴되지 않은 `space_members` 행 수. 계정 삭제(identity 도메인)는 여기를 안 건드려 약간 과다 계수되지만 드물고 `greatest(-1,0)` 클램프가 있다. 정확한 수가 필요하면 `count(*)`.
+- `member_count`는 멤버십 변경 RPC가 관리하는 근사 캐시다. 밴과 계정 삭제는 이 값을 조정하지 않으므로 정확한 수가 필요하면 `count(*)`로 계산한다.
 - 초대장의 사용 횟수 제한(`max_uses`)은 없앴다 — 공유 링크는 기한으로, 대상 지정 초대는 그 사람만 수락하므로 본질적으로 1회다.

@@ -8,6 +8,7 @@ import { GroupPostActionBar } from "~/components/group/group-post-action-bar"
 import { GroupPostFiles } from "~/components/group/group-post-files"
 import { GroupPostImageGrid } from "~/components/group/group-post-image-grid"
 import { GroupPostMenu } from "~/components/group/group-post-menu"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { RichText } from "~/components/rich-text/rich-text"
@@ -31,7 +32,8 @@ export function GroupPostCard({
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
   canCurate?: boolean
 }) {
-  const authorName = post.author?.name ?? "익명"
+  const isStaffPost = post.authorAttribution === "staff"
+  const authorName = post.author?.name ?? (isStaffPost ? "운영진" : "익명")
   // 피드(space 있음)에선 다른 그룹의 글이라 그룹을 명시한 절대 경로로 링크한다. 그룹 안
   // (space 없음)에선 지금까지처럼 라우트 기준 상대 경로 -- 둘 다 상세/수정으로 옳게 간다.
   const postPath = post.space
@@ -42,7 +44,7 @@ export function GroupPostCard({
 
   // 3줄 클램프 상태에서 실제로 잘렸는지 마운트 시 측정해 "더 보기"를 필요할 때만 띄운다.
   // effect가 아니라 ref 콜백이라 set-state-in-effect 린트에 걸리지 않는다.
-  const measureContent = useCallback((node: HTMLParagraphElement | null) => {
+  const measureContent = useCallback((node: HTMLDivElement | null) => {
     if (node) setClampable(node.scrollHeight > node.clientHeight + 1)
   }, [])
 
@@ -92,12 +94,19 @@ export function GroupPostCard({
       >
         {post.author ? (
           <ProfileAvatarLink profile={post.author} size="lg" />
+        ) : isStaffPost ? (
+          <GroupStaffAvatar size="lg" />
         ) : (
           <AnonymousAvatar size="lg" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{authorName}</span>
+            {post.isMine && post.author === null ? (
+              <Badge variant="secondary" className="shrink-0">
+                나
+              </Badge>
+            ) : null}
             {post.category ? (
               <Badge variant="secondary" className="shrink-0">
                 {post.category.name}
@@ -112,7 +121,7 @@ export function GroupPostCard({
         <GroupPostMenu
           isMine={post.isMine}
           isPinned={post.isPinned}
-          isAnonymous={post.author === null}
+          isAnonymous={post.author === null && !isStaffPost}
           isAnonymitySuspended={post.isAuthorAnonymitySuspended}
           canManage={canManage}
           canCurate={canCurate}
@@ -130,7 +139,7 @@ export function GroupPostCard({
             <Twemoji text={post.title} />
           </Link>
         </h2>
-        <p
+        <div
           ref={measureContent}
           onClick={toggleFromContent}
           className={cn(
@@ -139,10 +148,10 @@ export function GroupPostCard({
             (clampable || expanded) && "pointer-coarse:cursor-pointer"
           )}
         >
-          {/* 미리보기라 인라인 서식(굵게/기울임)만: 제목 블록이 3줄 클램프에 끼지 않게 하고,
-              바깥 <p>가 그대로 한 요소로 남아 clamp 측정이 어긋나지 않는다. */}
-          <RichText text={post.content} mode="inline" />
-        </p>
+          {/* 상세 화면과 같은 블록 렌더러로 제목은 유지하되, 카드에서는 연속 개행을 하나로
+              접는다. 바깥 요소에서 전체 블록을 클램프하고 측정해 더 보기 동작을 유지한다. */}
+          <RichText text={post.content.replace(/\n{2,}/g, "\n")} mode="block" />
+        </div>
         {clampable || expanded ? (
           <button
             type="button"
@@ -169,7 +178,7 @@ export function GroupPostCard({
         commentCount={post.commentCount}
         topReactions={post.topReactions}
         reactionTypes={reactionTypes}
-        reactors={post.reactors}
+        reactionDetails={post.reactionDetails}
         postPath={postPath}
         className="mt-1"
       />

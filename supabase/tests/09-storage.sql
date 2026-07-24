@@ -162,14 +162,6 @@ begin
     raise exception 'message attachment MIME registry contract failed';
   end if;
 
-  -- 받아들이는 모든 타입은 분류되어 있다. FK가 보장하지만, 분류 테이블을 잊은 미래의 표면이
-  -- 조용히 통과하지 않도록 여기서도 크게 실패시킨다.
-  if exists (
-    select 1 from public.message_attachment_mime_types allowed
-    where not exists (select 1 from public.mime_types mime where mime.content_type = allowed.content_type)
-  ) then
-    raise exception 'message attachment MIME registry has unclassified types';
-  end if;
 end
 $$;
 

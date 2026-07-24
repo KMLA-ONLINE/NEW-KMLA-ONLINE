@@ -53,6 +53,8 @@ export type GroupOutletContext = {
   canCurate: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
+  anonymitySuspendedUntil: string | null
+  staffAttributionMode: "automatic" | "optional" | "none"
 }
 
 type GroupTab = "posts" | "members" | "settings"
@@ -113,6 +115,9 @@ export default function GroupPage() {
       : mockGroup.anonymityPolicy
   const [anonymityPolicy, setAnonymityPolicy] =
     useState<GroupAnonymityPolicy>(initialAnonymityPolicy)
+  const typePreview = searchParams.get("type")
+  const groupType =
+    typePreview === "group" || typePreview === "community" ? typePreview : mockGroup.type
   // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
   // 로컬 object URL이라 새로고침하면 사라진다.
   const imageUrl = mockGroup.imageUrl
@@ -131,9 +136,18 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
   const canCurate = canManage || viewerRole === "manager"
+  const staffAttributionMode: GroupOutletContext["staffAttributionMode"] =
+    anonymityPolicy === "required" && canCurate
+      ? groupType === "group"
+        ? "automatic"
+        : "optional"
+      : "none"
+  // required 공간의 전체 명부는 owner/admin만 본다. RLS도 manager/member에게 자기 행만 허용한다.
+  const canViewMemberDirectory = anonymityPolicy !== "required" || canManage
   const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
   const tab: GroupTab =
-    requestedTab === "members" || (requestedTab === "settings" && canCurate)
+    (requestedTab === "members" && canViewMemberDirectory) ||
+    (requestedTab === "settings" && canCurate)
       ? requestedTab
       : "posts"
   const isPushedGroupViewEntry = Boolean(
@@ -169,10 +183,12 @@ export default function GroupPage() {
   const canPostAnonymously =
     anonymityPolicy !== "disabled" && mockGroup.anonymitySuspendedUntil === null
   // 항상 익명인 그룹에서 익명 작성이 제한되면 실명으로 우회할 수 없으므로 글·댓글 작성도 막힌다.
+  // 공식 그룹 운영진도 예외가 아니다 -- 역할 권한으로 `운영진` 귀속 글을 써서 제재를 우회할 수 없다.
   const canPost = roleCanPost && (anonymityPolicy !== "required" || canPostAnonymously)
 
   const liveGroup = {
     ...mockGroup,
+    type: groupType,
     imageUrl,
     joinPolicy,
     postPolicy,
@@ -198,7 +214,9 @@ export default function GroupPage() {
 
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
-  const visibleTabs = TABS.filter((item) => !item.curateOnly || canCurate)
+  const visibleTabs = TABS.filter(
+    (item) => (item.id !== "members" || canViewMemberDirectory) && (!item.curateOnly || canCurate)
+  )
 
   // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
   // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
@@ -290,6 +308,7 @@ export default function GroupPage() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onViewMembers={() => setTab("members")}
+        canViewMembers={canViewMemberDirectory}
         canCurate={canCurate}
         onViewSettings={() => setTab("settings")}
       />
@@ -461,6 +480,8 @@ export default function GroupPage() {
             canCurate,
             anonymityPolicy,
             canPostAnonymously,
+            anonymitySuspendedUntil: mockGroup.anonymitySuspendedUntil,
+            staffAttributionMode,
           } satisfies GroupOutletContext
         }
       />

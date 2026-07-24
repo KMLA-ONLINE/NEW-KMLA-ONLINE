@@ -14,7 +14,7 @@
 | 답글         | 본문·반응 삭제, tombstone 전환                | 7일 뒤 가능한 행만 hard delete     | 활성 하위 답글의 조상 tombstone             |
 | 메시지       | 본문/암호문·첨부 metadata·반응·키 봉투 삭제 | 시간 기반 hard delete 없음         | 메시지 관계·시각·삭제 metadata            |
 | Storage blob | cleanup queue 등록 또는 참조 제거              | Edge Function이 object 삭제        | 실패한 queue 항목                           |
-| 알림         | 관련 대상 hard delete 시 FK cascade            | 읽음 후 60일 뒤 hard delete        | 읽지 않은 알림과 60일 이내 읽은 알림        |
+| 알림         | 관련 대상 hard delete 시 FK cascade            | 생성 30일 뒤 hard delete           | 생성 30일 이내 알림                          |
 
 ## 프로필과 Auth
 
@@ -87,7 +87,7 @@ hard purge는 댓글·반응·알림·글·가입 요청·초대·익명 정지 
 
 ## 알림
 
-읽은 `notifications`는 `read_at` 기준 60일 뒤 `purge_read_notifications()`가 hard delete한다. 읽지 않은 알림은 시간 기준으로 지우지 않는다. 그 밖에는 수신자 profile, 참조한 Space, post, comment가 hard delete될 때 FK cascade로 사라진다. 일반 탈퇴는 profile을 hard delete하지 않으므로 수신자 cascade는 보통 발생하지 않는다.
+`notifications`는 읽음 여부와 무관하게 `created_at` 기준 30일 뒤 `purge_notifications()`가 오래된 순서로 hard delete한다. 그 밖에는 수신자 profile, 참조한 Space, post, comment가 hard delete될 때 FK cascade로 사라진다. 일반 탈퇴는 profile을 hard delete하지 않으므로 수신자 cascade는 보통 발생하지 않는다.
 
 채팅은 별도 notification 행을 만들지 않는다. 읽음 상태는 `chat_read_states`, 알림 설정은 `chat_notification_settings`에 보관한다.
 

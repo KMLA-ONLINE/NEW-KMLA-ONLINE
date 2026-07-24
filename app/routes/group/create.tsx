@@ -4,16 +4,25 @@ import { Link, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import { SLUG_HINT, isValidSlug, randomPubId, type SpaceDraft } from "~/lib/group/create"
 import { cn } from "~/lib/utils"
 
+export const handle = { showMobileTabBar: false }
+
 // 공간을 만드는 화면. 서버에는 create_space RPC 하나뿐이고 spaces에는 insert grant가 없다 --
 // 그래서 여기서 모으는 값이 곧 그 RPC의 인자다.
 //
-// TODO(backend): space_anonymity_policy와 spaces.anonymity_policy를 추가하고 create_space가
-// p_anonymity_policy를 받게 한 뒤 action에서 호출한다. 지금은 로컬 state만 만지고 저장하지 않는다.
-// TODO(backend): 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
+// TODO(wiring): clientAction에서 create_space를 호출한다. 지금은 로컬 state만 만지고 저장하지 않는다.
+// 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
 // spaces_active_group_name_key(unique), 슬러그는 'pub id already taken'. 프론트 검사는 형식까지다.
 
 const JOIN_POLICY_OPTIONS: { value: SpaceDraft["joinPolicy"]; label: string; hint: string }[] = [
@@ -82,27 +91,35 @@ export default function CreateSpacePage() {
   const isAppAdmin = searchParams.get("as") === "admin"
 
   const [type, setType] = useState<SpaceDraft["type"]>("community")
+  const [officialConfirmOpen, setOfficialConfirmOpen] = useState(false)
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [pubId, setPubId] = useState("")
-  const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("public")
+  const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("invite_only")
   const [postPolicy, setPostPolicy] = useState<SpaceDraft["postPolicy"]>("all")
+  // DB spaces.anonymity_policy의 기본값과 같다.
   const [anonymityPolicy, setAnonymityPolicy] = useState<SpaceDraft["anonymityPolicy"]>("optional")
 
   const trimmedName = name.trim()
   const slugTouched = pubId.trim().length > 0
   const slugValid = !slugTouched || isValidSlug(pubId.trim())
   const canSubmit = trimmedName.length > 0 && slugValid
+  const joinPolicyLabel = JOIN_POLICY_OPTIONS.find((option) => option.value === joinPolicy)?.label
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!canSubmit) return
+    setCreateConfirmOpen(true)
+  }
+
+  const createSpace = () => {
     // 슬러그를 비우면 서버가 컬럼 default(랜덤 12자)를 채운다. 여기서 흉내만 낸다.
     const slug = slugTouched ? pubId.trim() : randomPubId()
     toast.success(`${type === "group" ? "공식 그룹" : "그룹"}을 만들었습니다`)
     // 백엔드 미연동 미리보기에서 생성한 정책을 그룹 화면에 전달한다. 실제 생성 RPC가 붙으면
     // loader가 spaces.anonymity_policy를 읽으므로 이 query parameter는 제거한다.
-    navigate(`/groups/${slug}?anonymity=${anonymityPolicy}`)
+    navigate(`/groups/${slug}?anonymity=${anonymityPolicy}&type=${type}`)
   }
 
   return (
@@ -138,7 +155,7 @@ export default function CreateSpacePage() {
                   {
                     value: "group",
                     label: "공식 그룹",
-                    hint: "학교 조직을 그대로 옮긴 그룹입니다. 이름은 학교 전체에서 하나뿐이어야 합니다",
+                    hint: "학교 공식 그룹입니다",
                   },
                 ] as const
               ).map((option) => (
@@ -147,7 +164,19 @@ export default function CreateSpacePage() {
                   type="button"
                   role="radio"
                   aria-checked={type === option.value}
-                  onClick={() => setType(option.value)}
+                  onClick={() => {
+                    if (option.value === "group" && type !== "group") {
+                      setOfficialConfirmOpen(true)
+                      return
+                    }
+                    if (option.value === "community" && type !== "community") {
+                      setType("community")
+                      setJoinPolicy("invite_only")
+                      setPubId("")
+                      return
+                    }
+                    setType(option.value)
+                  }}
                   className={cn(
                     "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
                     type === option.value && "bg-muted"
@@ -184,31 +213,38 @@ export default function CreateSpacePage() {
             />
           </Field>
 
-          <Field label="주소" hint={slugValid ? SLUG_HINT : undefined}>
-            <div className="flex items-center gap-1">
-              <span className="text-muted-foreground shrink-0 text-sm">/groups/</span>
-              <Input
-                name="pubId"
-                value={pubId}
-                onChange={(event) => setPubId(event.target.value)}
-                placeholder="비워두면 자동으로 정해집니다"
-                aria-invalid={!slugValid}
-              />
-            </div>
-            {slugValid ? null : <span className="text-destructive text-xs">{SLUG_HINT}</span>}
-          </Field>
+          {joinPolicy === "invite_only" ? null : (
+            <Field label="주소" hint={slugValid ? SLUG_HINT : undefined}>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground shrink-0 text-sm">/groups/</span>
+                <Input
+                  name="pubId"
+                  value={pubId}
+                  onChange={(event) => setPubId(event.target.value)}
+                  placeholder="비워두면 자동으로 정해집니다"
+                  aria-invalid={!slugValid}
+                />
+              </div>
+              {slugValid ? null : <span className="text-destructive text-xs">{SLUG_HINT}</span>}
+            </Field>
+          )}
         </Card>
 
         <Card>
           <div role="radiogroup" aria-label="가입 정책" className="flex flex-col gap-1">
             <span className="text-sm font-medium">가입 정책</span>
-            {JOIN_POLICY_OPTIONS.map((option) => (
+            {JOIN_POLICY_OPTIONS.filter(
+              (option) => type === "community" || option.value === "public"
+            ).map((option) => (
               <button
                 key={option.value}
                 type="button"
                 role="radio"
                 aria-checked={joinPolicy === option.value}
-                onClick={() => setJoinPolicy(option.value)}
+                onClick={() => {
+                  setJoinPolicy(option.value)
+                  if (option.value === "invite_only") setPubId("")
+                }}
                 className={cn(
                   "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
                   joinPolicy === option.value && "bg-muted"
@@ -248,7 +284,7 @@ export default function CreateSpacePage() {
             <span className="min-w-0">
               <span className="block text-sm font-medium">글쓰기 제한</span>
               <span className="text-muted-foreground mt-1 block text-xs">
-                켜면 매니저 이상만 게시물을 올립니다. 댓글, 반응은 그대로 멤버 모두 달 수 있습니다.
+                매니저 이상만 게시물을 올릴 수 있습니다. 댓글, 반응은 모두 달 수 있습니다.
               </span>
             </span>
             <input
@@ -269,6 +305,52 @@ export default function CreateSpacePage() {
           </Button>
         </div>
       </form>
+
+      <Dialog open={officialConfirmOpen} onOpenChange={setOfficialConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>공식 그룹으로 전환할까요?</DialogTitle>
+            <DialogDescription>공식 그룹은 이름과 활동에 공식성이 부여됩니다.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOfficialConfirmOpen(false)}>
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setType("group")
+                setJoinPolicy("public")
+                setOfficialConfirmOpen(false)
+              }}
+            >
+              공식 그룹으로 전환
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createConfirmOpen} onOpenChange={setCreateConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>이 그룹을 만들까요?</DialogTitle>
+          </DialogHeader>
+          <dl className="bg-muted/50 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg p-4 text-sm">
+            <dt className="text-muted-foreground">이름</dt>
+            <dd className="min-w-0 truncate font-medium">{trimmedName}</dd>
+            <dt className="text-muted-foreground">가입 정책</dt>
+            <dd>{joinPolicyLabel}</dd>
+          </dl>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateConfirmOpen(false)}>
+              돌아가기
+            </Button>
+            <Button type="button" onClick={createSpace}>
+              그룹 만들기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

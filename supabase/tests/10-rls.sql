@@ -26,7 +26,8 @@ declare
   applicant_id bigint;
   home_id bigint;
   outside_id bigint;
-  post_id bigint;
+  home_post_id bigint;
+  like_id bigint;
   leaked bigint;
   invite_token text;
 begin
@@ -49,10 +50,16 @@ begin
   -- alice가 익명으로 글을 쓴다. bob은 이 글을 읽을 수 있지만 **누가 썼는지는 알 수 없어야** 한다.
   insert into public.posts (space_id, author_id, title, content, is_anonymous)
   values (home_id, alice_id, '익명 글', '본문', true)
-  returning id into post_id;
+  returning id into home_post_id;
 
   insert into public.space_members (space_id, user_id, role) values (home_id, bob_id, 'member');
   update public.spaces set member_count = 2 where id = home_id;
+
+  -- required로 전환한 뒤의 반응은 익명 스냅샷이며, 명부도 owner/admin 외에는 숨긴다.
+  update public.spaces set anonymity_policy='required' where id=home_id;
+  select id into like_id from public.reaction_types where key='like';
+  insert into public.post_reactions(post_id,user_id,reaction_type_id)
+  values(home_post_id,alice_id,like_id);
 
   -- alice의 익명 정지 기록. 관리자에게도 보이면 안 되고(그게 익명의 조건이다) bob에게는 더더욱.
   insert into public.space_anonymity_suspensions (space_id, user_id, suspended_until)
@@ -73,15 +80,27 @@ begin
   -- `select author_id from posts where is_anonymous`로 작성자 명단이 그대로 나온다. 그래서 select가
   -- 컬럼 단위다. 이 단언이 없으면 그 grant가 되살아나도(diff의 drop+create가 흔히 그런다) 조용하다.
   begin
-    select author_id into leaked from public.posts where id = post_id;
+    select author_id into leaked from public.posts where id = home_post_id;
     raise exception 'authenticated must not be able to read posts.author_id (% leaked)', leaked;
   exception when insufficient_privilege then
     null;
   end;
 
   -- 글 자체는 읽힌다. 위 검사가 "아무것도 못 읽는다"로 통과하는 가짜가 아니라는 뜻이다.
-  if not exists (select 1 from public.posts where id = post_id) then
+  if not exists (select 1 from public.posts where id = home_post_id) then
     raise exception 'a member must still be able to read the post itself';
+  end if;
+
+  -- required 명부에서 일반 멤버는 자기 행만 볼 수 있다.
+  if exists(select 1 from public.space_members where space_id=home_id and user_id=alice_id)
+    or not exists(select 1 from public.space_members where space_id=home_id and user_id=bob_id)
+  then
+    raise exception 'required-space member directory leaked to a regular member';
+  end if;
+
+  -- 다른 사람의 익명 반응 행은 직접 조회할 수 없다. 타입별 count는 전용 RPC로만 읽는다.
+  if exists(select 1 from public.post_reactions where post_id=home_post_id and user_id=alice_id) then
+    raise exception 'an anonymous reaction row leaked to another member';
   end if;
 
   -- -------------------------------------------------------------------------

@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { AnonymousAvatar, ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { RelativeTime } from "~/components/relative-time"
 import { Button } from "~/components/ui/button"
+import { Badge } from "~/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -32,6 +34,20 @@ import { cn } from "~/lib/utils"
 // 바로 실행하지 않고 확인 모달을 한 번 거친다. group-post-menu.tsx와 같은 패턴.
 type ConfirmAction = "delete" | "suspend-anonymity" | null
 
+function countActiveReplies(commentId: number, childrenOf: Map<number, GroupComment[]>): number {
+  let count = 0
+  const pending = [...(childrenOf.get(commentId) ?? [])]
+
+  while (pending.length > 0) {
+    const reply = pending.pop()
+    if (!reply) continue
+    if (!reply.isDeleted) count += 1
+    pending.push(...(childrenOf.get(reply.id) ?? []))
+  }
+
+  return count
+}
+
 // 평면 댓글 목록을 parentId로 스레드화해 렌더한다. 대댓글은 부모 아래로 들여쓰며,
 // 임의 깊이를 재귀로 처리한다(comments.parent_id).
 export function GroupCommentList({
@@ -40,6 +56,7 @@ export function GroupCommentList({
   canManage,
   anonymityPolicy,
   canPostAnonymously,
+  staffAttributionMode,
 }: {
   comments: GroupComment[]
   reactionTypes: ReactionType[]
@@ -47,6 +64,7 @@ export function GroupCommentList({
   canManage?: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
+  staffAttributionMode: "automatic" | "optional" | "none"
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -106,6 +124,7 @@ export function GroupCommentList({
           canManage={canManage}
           anonymityPolicy={anonymityPolicy}
           canPostAnonymously={canPostAnonymously}
+          staffAttributionMode={staffAttributionMode}
         />
       ))}
     </ul>
@@ -122,6 +141,7 @@ function GroupCommentItem({
   canManage,
   anonymityPolicy,
   canPostAnonymously,
+  staffAttributionMode,
   depth = 0,
 }: {
   comment: GroupComment
@@ -135,11 +155,14 @@ function GroupCommentItem({
   canManage?: boolean
   anonymityPolicy: GroupAnonymityPolicy
   canPostAnonymously: boolean
+  staffAttributionMode: "automatic" | "optional" | "none"
   depth?: number
 }) {
   // 익명이면 서버가 매긴 라벨을 쓴다("익명1", "익명2", 익명 글의 글쓴이면 "글쓴이"). 클라이언트가
   // 번호를 매기려면 작성자별 키가 필요한데 그게 곧 author_id고, 그러면 익명이 깨진다.
-  const displayName = (item: GroupComment) => item.author?.name ?? item.anonymousLabel ?? "익명"
+  const displayName = (item: GroupComment) =>
+    item.author?.name ??
+    (item.authorAttribution === "staff" ? "운영진" : (item.anonymousLabel ?? "익명"))
 
   const name = displayName(comment)
   const replies = childrenOf.get(comment.id) ?? []
@@ -152,7 +175,24 @@ function GroupCommentItem({
   const [reaction, setReaction] = useState<ReactionType | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [replying, setReplying] = useState(false)
+  const [repliesExpanded, setRepliesExpanded] = useState(false)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
+  const replyCount = depth === 0 ? countActiveReplies(comment.id, childrenOf) : 0
+  // 답글은 최상위 댓글 단위로 한꺼번에 펼친다. 하위 답글은 @부모 칩으로 관계를 표시하므로
+  // 각 깊이마다 다시 접으면 스레드 흐름을 따라가기 어렵다.
+  const showReplies = depth > 0 || repliesExpanded
+  const replyToggle =
+    depth === 0 && replyCount > 0 ? (
+      <button
+        type="button"
+        aria-expanded={repliesExpanded}
+        aria-controls={`comment-${comment.id}-replies`}
+        className="text-muted-foreground hover:text-foreground mt-2 ml-10 text-xs font-semibold hover:underline"
+        onClick={() => setRepliesExpanded((value) => !value)}
+      >
+        {repliesExpanded ? "답글 숨기기" : `답글 ${replyCount}개 보기`}
+      </button>
+    ) : null
 
   // 삭제된 댓글은 답글이 살아 있는 동안만 자리를 지킨다(없애면 답글 사슬이 끊긴다). 본문·작성자·
   // 반응·답글·메뉴는 전부 사라지고 자국만 남지만, 자식 답글은 그대로 이어서 렌더한다.
@@ -171,8 +211,12 @@ function GroupCommentItem({
             삭제된 댓글입니다
           </p>
         </div>
-        {replies.length > 0 ? (
-          <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
+        {replyToggle}
+        {replies.length > 0 && showReplies ? (
+          <ul
+            id={`comment-${comment.id}-replies`}
+            className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}
+          >
             {replies.map((reply) => (
               <GroupCommentItem
                 key={reply.id}
@@ -185,6 +229,7 @@ function GroupCommentItem({
                 canManage={canManage}
                 anonymityPolicy={anonymityPolicy}
                 canPostAnonymously={canPostAnonymously}
+                staffAttributionMode={staffAttributionMode}
                 depth={depth + 1}
               />
             ))}
@@ -197,7 +242,13 @@ function GroupCommentItem({
   return (
     <li>
       <div className="flex gap-2">
-        {comment.author ? <ProfileAvatarLink profile={comment.author} /> : <AnonymousAvatar />}
+        {comment.author ? (
+          <ProfileAvatarLink profile={comment.author} />
+        ) : comment.authorAttribution === "staff" ? (
+          <GroupStaffAvatar />
+        ) : (
+          <AnonymousAvatar />
+        )}
         <div className="flex min-w-0 flex-1 items-start gap-1">
           <div className="min-w-0">
             <div
@@ -207,7 +258,12 @@ function GroupCommentItem({
                 highlightedId === comment.id && "ring-ring ring-2"
               )}
             >
-              <p className="text-xs font-semibold">{name}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-semibold">{name}</p>
+                {comment.isMine && comment.author === null ? (
+                  <Badge variant="secondary">나</Badge>
+                ) : null}
+              </div>
               <p className="text-sm">
                 {parentName ? (
                   <button
@@ -222,9 +278,7 @@ function GroupCommentItem({
               </p>
             </div>
             <div className="text-muted-foreground mt-1 ml-3 flex items-center gap-3 text-xs">
-              {/* 반응: 클릭하면 위로 quick reaction 피커, 이미 눌렀으면 클릭으로 해제.
-                  TODO(backend): required 공간에서는 comment_reactions.is_anonymous를 DB가 자동으로
-                  true로 기록하고 user_id는 읽기 응답에서 숨긴다. */}
+              {/* 익명 작성 제한 중에도 반응은 허용하며 required 공간의 반응은 DB가 익명으로 저장한다. */}
               <div className="relative">
                 {pickerOpen ? (
                   <>
@@ -261,7 +315,11 @@ function GroupCommentItem({
               <button
                 type="button"
                 className="font-medium hover:underline"
-                onClick={() => setReplying((value) => !value)}
+                onClick={() => {
+                  const nextReplying = !replying
+                  setReplying(nextReplying)
+                  if (nextReplying && depth === 0) setRepliesExpanded(true)
+                }}
               >
                 답글
               </button>
@@ -306,13 +364,16 @@ function GroupCommentItem({
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-muted-foreground text-xs font-normal"></DropdownMenuLabel>
-                    {/* TODO(backend): 확인 후 suspend_comment_author_anonymity(id) /
+                    {/* TODO(wiring): 확인 후 suspend_comment_author_anonymity(id) /
                         undo_comment_anonymity_suspension(id). 후자는 void다 -- 자세한 이유는
                         group-post-menu.tsx의 같은 항목 주석 참고. 취소는 확인 모달 없음(처벌이 아니라서). */}
-                    <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
-                      익명 작성 제한
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+                    {comment.isAuthorAnonymitySuspended ? (
+                      <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
+                        익명 작성 제한
+                      </DropdownMenuItem>
+                    )}
                   </>
                 ) : null}
               </DropdownMenuContent>
@@ -348,8 +409,28 @@ function GroupCommentItem({
         </DialogContent>
       </Dialog>
 
-      {replies.length > 0 || replying ? (
-        <ul className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}>
+      {replyToggle}
+      {(replies.length > 0 && showReplies) || replying ? (
+        <ul
+          id={`comment-${comment.id}-replies`}
+          className={cn("mt-3 flex flex-col gap-3", depth === 0 && "pl-10")}
+        >
+          {replying ? (
+            <li>
+              <GroupCommentComposer
+                autoFocus
+                className=""
+                placeholder={`${name}님에게 답글 남기기…`}
+                onSubmit={() => {
+                  setReplying(false)
+                  if (depth === 0) setRepliesExpanded(true)
+                }}
+                anonymityPolicy={anonymityPolicy}
+                canPostAnonymously={canPostAnonymously}
+                staffAttributionMode={staffAttributionMode}
+              />
+            </li>
+          ) : null}
           {replies.map((reply) => (
             <GroupCommentItem
               key={reply.id}
@@ -362,21 +443,10 @@ function GroupCommentItem({
               canManage={canManage}
               anonymityPolicy={anonymityPolicy}
               canPostAnonymously={canPostAnonymously}
+              staffAttributionMode={staffAttributionMode}
               depth={depth + 1}
             />
           ))}
-          {replying ? (
-            <li>
-              <GroupCommentComposer
-                autoFocus
-                className=""
-                placeholder={`${name}님에게 답글 남기기…`}
-                onSubmit={() => setReplying(false)}
-                anonymityPolicy={anonymityPolicy}
-                canPostAnonymously={canPostAnonymously}
-              />
-            </li>
-          ) : null}
         </ul>
       ) : null}
     </li>

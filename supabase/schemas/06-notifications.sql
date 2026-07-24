@@ -86,9 +86,9 @@ alter table public.notifications
 -- 알림함은 최신순 keyset. bigserial은 단조 증가라 커서가 id 하나로 끝난다(글은 고정 때문에
 -- (created_at, id) 복합 커서가 필요했지만 알림엔 고정이 없다).
 create index idx_notifications_recipient on public.notifications (recipient_id, id desc);
-create index idx_notifications_unread on public.notifications (recipient_id) where read_at is null;
-create index idx_notifications_read_at on public.notifications (read_at, id)
-where read_at is not null;
+create index idx_notifications_unread on public.notifications (recipient_id, created_at desc)
+where read_at is null;
+create index idx_notifications_created_at on public.notifications (created_at, id);
 
 -- 한 댓글은 한 사람에게 알림을 하나만 만든다. 답글이면서 멘션이면 멘션이 이긴다
 -- (notify_on_comment_mention이 종류만 올린다). 이 인덱스가 없으면 댓글 하나로 알림이 두 개 뜬다.
@@ -179,7 +179,8 @@ begin
 end;
 $$;
 
--- 내비 뱃지용. 뱃지는 99+ 위를 구분하지 않으므로 100에서 세기를 멈춘다(get_unread_message_count와
+-- 내비 뱃지용. 최근 24시간만 반영하고, 뱃지는 99+ 위를 구분하지 않으므로 100에서 세기를
+-- 멈춘다(get_unread_message_count와
 -- 같은 계약). 채팅 쪽에서 cross join lateral이 필요했던 이유 -- LIMIT이 해시 조인 위에 있으면
 -- 해시를 다 만든 뒤에야 잘라서 상한이 소용없다 -- 는 여기 없다. 조인이 없어서 LIMIT이
 -- idx_notifications_unread 스캔 바로 위에 앉는다.
@@ -197,15 +198,15 @@ begin
   select count(*)::bigint into result
   from (
     select 1 from public.notifications n
-    where n.recipient_id=caller_id and n.read_at is null
+    where n.recipient_id=caller_id and n.read_at is null and n.created_at >= now()-interval '24 hours'
     limit 100
   ) capped;
   return result;
 end;
 $$;
 
-create function public.purge_read_notifications(
-  p_older_than interval default interval '60 days',
+create function public.purge_notifications(
+  p_older_than interval default interval '30 days',
   p_limit int4 default 1000
 )
 returns bigint language plpgsql security definer set search_path = '' as $$
@@ -214,14 +215,14 @@ declare
   purged bigint;
 begin
   perform private.require_service_role();
-  if p_limit not between 1 and 5000 then raise exception 'limit must be between 1 and 5000'; end if;
-  if p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
+  if p_limit is null or p_limit not between 1 and 5000 then raise exception 'limit must be between 1 and 5000'; end if;
+  if p_older_than is null or p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
   cutoff := now() - p_older_than;
 
   with targets as (
     select n.id from public.notifications n
-    where n.read_at < cutoff
-    order by n.read_at,n.id
+    where n.created_at < cutoff
+    order by n.created_at,n.id
     limit p_limit
   )
   delete from public.notifications n using targets t where n.id=t.id;
@@ -230,9 +231,9 @@ begin
 end;
 $$;
 
-revoke execute on function public.list_notifications(bigint,int4), public.get_unread_notification_count(), public.purge_read_notifications(interval,int4) from public, anon, authenticated, service_role;
+revoke execute on function public.list_notifications(bigint,int4), public.get_unread_notification_count(), public.purge_notifications(interval,int4) from public, anon, authenticated, service_role;
 grant execute on function public.list_notifications(bigint,int4), public.get_unread_notification_count() to authenticated;
-grant execute on function public.purge_read_notifications(interval,int4) to service_role;
+grant execute on function public.purge_notifications(interval,int4) to service_role;
 
 -- 알림을 만드는 건 전부 트리거다. RPC가 아닌 이유: comments/post_mentions/comment_mentions에는
 -- insert 컬럼 grant가 있어 클라이언트가 테이블에 직접 쓴다. 생성을 RPC에만 걸면 테이블로 바로

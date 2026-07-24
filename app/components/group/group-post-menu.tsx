@@ -111,12 +111,15 @@ export function GroupPostMenu({
           {canManage && isAnonymous ? (
             <>
               <DropdownMenuSeparator />
-              {/* TODO(backend): 확인 후 suspend_post_author_anonymity(id). 응답의 suspended_days로
-      "N일간 익명 작성을 제한했습니다" 토스트를 띄운다. */}
-              <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
-                익명 작성 제한
-              </DropdownMenuItem>
-              {isAnonymitySuspended ? <DropdownMenuItem>익명 제한 취소</DropdownMenuItem> : null}
+              {/* TODO(wiring): 확인 후 suspend_post_author_anonymity(id). 응답의 suspended_days로
+                  "N일간 익명 작성을 제한했습니다" 토스트를 띄운다. */}
+              {isAnonymitySuspended ? (
+                <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
+                  익명 작성 제한
+                </DropdownMenuItem>
+              )}
             </>
           ) : null}
         </DropdownMenuContent>
