@@ -3,7 +3,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { MenuSubHeader } from "~/components/menu/menu-sub-header"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import {
@@ -278,9 +278,7 @@ function ConfirmDialog({
         </DialogHeader>
 
         <div className="bg-muted/50 flex items-center gap-3 rounded-lg border px-3 py-2.5">
-          <Avatar className="size-9">
-            <AvatarFallback className="text-xs">{person.name.charAt(0)}</AvatarFallback>
-          </Avatar>
+          <ProfileAvatar profile={person} className="size-9" />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{person.name}</p>
             <p className="text-muted-foreground truncate text-xs">{facts.join(" · ")}</p>
@@ -323,9 +321,7 @@ function PersonRow({ person, action }: { person: AppAdminProfile; action: React.
 
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <Avatar className="size-9">
-        <AvatarFallback className="text-xs">{person.name.charAt(0)}</AvatarFallback>
-      </Avatar>
+      <ProfileAvatar profile={person} className="size-9" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
           {person.name}

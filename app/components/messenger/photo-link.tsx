@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router"
 
 import { PHOTO_SEARCH_PARAM, PHOTO_VIEWER_LOCATION_STATE } from "~/lib/messenger/constants"
+import type { AttachmentId } from "~/lib/messenger/types"
 
 /**
  * Opens the fullscreen image viewer by putting the attachment id in the URL, so
@@ -12,13 +13,13 @@ export function PhotoLink({
   className,
   children,
 }: {
-  attachmentId: string
+  attachmentId: AttachmentId
   className?: string
   children: React.ReactNode
 }) {
   const [searchParams] = useSearchParams()
   const nextSearchParams = new URLSearchParams(searchParams)
-  nextSearchParams.set(PHOTO_SEARCH_PARAM, attachmentId)
+  nextSearchParams.set(PHOTO_SEARCH_PARAM, String(attachmentId))
 
   return (
     <Link

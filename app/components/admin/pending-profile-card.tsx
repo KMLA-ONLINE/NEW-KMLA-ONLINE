@@ -1,7 +1,7 @@
 import { useState } from "react"
 
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { RelativeTime } from "~/components/relative-time"
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Checkbox } from "~/components/ui/checkbox"
@@ -64,10 +64,7 @@ export function PendingProfileCard({
         className="mt-1"
       />
 
-      <Avatar className="size-10 shrink-0">
-        {profile.avatarUrl ? <AvatarImage src={profile.avatarUrl} alt="" /> : null}
-        <AvatarFallback>{profile.name.charAt(0)}</AvatarFallback>
-      </Avatar>
+      <ProfileAvatar profile={profile} className="size-10" />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex items-start justify-between gap-3">

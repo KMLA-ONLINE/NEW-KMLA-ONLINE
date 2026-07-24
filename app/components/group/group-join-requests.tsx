@@ -1,5 +1,5 @@
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { RelativeTime } from "~/components/relative-time"
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import type { GroupJoinRequest } from "~/lib/group/types"
 
@@ -23,10 +23,7 @@ export function GroupJoinRequests({
       <ul className="divide-border/70 flex flex-col divide-y">
         {requests.map((request) => (
           <li key={request.id} className="flex items-center gap-3 py-2">
-            <Avatar>
-              {request.avatarUrl ? <AvatarImage src={request.avatarUrl} alt="" /> : null}
-              <AvatarFallback>{request.name.charAt(0)}</AvatarFallback>
-            </Avatar>
+            <ProfileAvatar profile={request} />
             <div className="min-w-0 flex-1">
               {/* 기수를 같이 보여준다. 목록은 잘못 읽어도 다시 보면 되지만, 동명이인 중 엉뚱한
                   사람을 승인하면 그 사람이 이미 그룹 안에 들어와 있다. */}

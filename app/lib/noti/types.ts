@@ -5,7 +5,8 @@
 // (1) actor_id의 select grant가 회수돼 있고(익명), (2) 테이블엔 내부 bigint뿐이라 딥링크에
 // 필요한 pub_id가 없다. 그래서 읽기는 list_notifications() 하나로만 간다.
 
-import type { GroupMemberRole } from "~/lib/group/types"
+import type { GroupMemberRole, GroupPostSpace } from "~/lib/group/types"
+import type { Database } from "~/lib/supabase/database.types"
 
 /**
  * notifications.type (public.notification_type).
@@ -13,38 +14,20 @@ import type { GroupMemberRole } from "~/lib/group/types"
  * 이게 없으면 종류를 구분할 수 없다: "내 글에 댓글"/"내 댓글에 답글"/"댓글에서 멘션"은
  * 대상 FK 모양이 (space, post, comment)로 **완전히 같다**. 아이콘도 문구도 목적지도 다른데.
  *
+ * 콘텐츠(post_comment·comment_reply·post_mention·comment_mention)는
+ * space_members.notification_setting이 게이트하고, 나머지 운영 알림은 끌 수 없다.
+ *
  * 채팅은 여기 없다. 알림함과 채팅은 별개 체계다 -- 안 읽음은 chat_read_states의 커서에서
  * 파생되고 뱃지는 get_unread_message_count()가 맡는다. 근거는 06-notifications.sql 상단.
  */
-export type NotificationType =
-  // 콘텐츠. space_members.notification_setting이 게이트한다.
-  | "post_comment"
-  | "comment_reply"
-  | "post_mention"
-  | "comment_mention"
-  // 운영. 끌 수 없다.
-  | "space_join_request"
-  | "space_join_approved"
-  | "space_join_rejected"
-  | "space_invited"
-  | "space_role_changed"
-  | "space_anonymity_suspended"
-  | "post_removed"
-  | "comment_removed"
+export type NotificationType = Database["public"]["Enums"]["notification_type"]
 
 /** 행위자. 익명이거나 시스템/모더레이션 알림이면 서버가 통째로 null로 지워서 내린다. */
 export type NotificationActor = {
   id: number
   name: string
-  /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 이니셜 폴백. */
+  /** avatars 버킷이 private이라 서명 URL이어야 한다(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
-}
-
-export type NotificationSpace = {
-  /** spaces.pub_id 슬러그. 딥링크(/groups/:pubId)가 이걸로 간다. */
-  pubId: string
-  name: string
-  type: "group" | "community"
 }
 
 export type NotificationPost = {
@@ -86,9 +69,10 @@ export type AppNotification = {
   /**
    * 아래 셋은 종류에 따라 채워진다(notifications_target_shape_check가 강제).
    * 콘텐츠·운영 알림은 space가 항상 있고, 글/댓글 알림은 post가 항상 있다. 타입이 nullable인 건
-   * 컬럼이 nullable이기 때문일 뿐이다.
+   * 컬럼이 nullable이기 때문일 뿐이다. 피드와 같은 최소 space 참조(GroupPostSpace)를 쓴다 --
+   * pubId가 딥링크(/groups/:pubId) 대상이다.
    */
-  space: NotificationSpace | null
+  space: GroupPostSpace | null
   post: NotificationPost | null
   comment: NotificationComment | null
   payload: NotificationPayload | null

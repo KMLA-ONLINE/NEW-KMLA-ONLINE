@@ -1,15 +1,25 @@
-export type RoomType = "direct" | "group"
+import type { Database, Tables } from "~/lib/supabase/database.types"
+
+export type ProfileId = Tables<"profiles">["id"]
+export type ConversationId = Tables<"conversations">["id"]
+export type PersistedMessageId = Tables<"messages">["id"]
+export type PersistedAttachmentId = Tables<"message_attachments">["id"]
+export type LocalMessageId = `local-${string}`
+export type LocalAttachmentId = `local-file-${string}`
+export type MessageId = PersistedMessageId | LocalMessageId
+export type AttachmentId = PersistedAttachmentId | LocalAttachmentId
+export type RoomType = Database["public"]["Enums"]["conversation_type"]
 
 export type MessageGroupPosition = "single" | "start" | "middle" | "end"
 
 export type Participant = {
-  id: string
+  id: ProfileId
   name: string
-  initials: string
+  avatarUrl: Tables<"profiles">["avatar_url"]
 }
 
 export type MessageAttachment = {
-  id: string
+  id: AttachmentId
   src?: string
   name: string
   contentType?: string
@@ -21,13 +31,13 @@ export type MessageAttachment = {
 }
 
 export type ReplyPreview = {
-  messageId: string
+  messageId: MessageId
   author: string
   text: string
 }
 
 export type MessageReaction = {
-  userId: string
+  userId: ProfileId
   value: string
 }
 
@@ -36,27 +46,32 @@ export type MessageReaction = {
 export type MessageStatus = "sending" | "failed"
 
 export type Message = {
-  id: string
-  senderId: string
+  id: MessageId
+  senderId: ProfileId
   content?: string
   status?: MessageStatus
   createdAt: string
   deletedAt?: string
-  deletedBy?: string
+  deletedBy?: ProfileId
   attachments?: MessageAttachment[]
   replyTo?: ReplyPreview
   reactions?: MessageReaction[]
   read?: boolean
-  readBy?: string[]
+  readBy?: ProfileId[]
   pinnedAt?: string
-  pinnedBy?: string
+  pinnedBy?: ProfileId
+}
+
+export type LocalMessage = Omit<Message, "id" | "status"> & {
+  id: LocalMessageId
+  status: MessageStatus
 }
 
 export type Room = {
-  id: string
+  id: ConversationId
   type: RoomType
   name: string
-  initials: string
+  avatarUrl: string | null
   participants: Participant[]
   messages: Message[]
   unreadCount?: number

@@ -1,11 +1,12 @@
 import type { GroupPostSpace } from "~/lib/group/types"
+import type { Database } from "~/lib/supabase/database.types"
 
 /**
  * space_members.notification_setting (public.notification_setting enum).
  * 알림은 **space마다** 따로 정한다 -- 전역 스위치는 스키마에 없다. 그래서 이 화면이 하는 일은
  * "내가 속한 space들의 설정을 한자리에서 바꾸는 것"이지 새 전역 값을 만드는 게 아니다.
  */
-export type NotificationSetting = "all" | "mentions" | "off"
+export type NotificationSetting = Database["public"]["Enums"]["notification_setting"]
 
 export type SpaceNotification = {
   space: GroupPostSpace

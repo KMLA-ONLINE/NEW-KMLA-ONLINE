@@ -32,8 +32,12 @@ import {
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
 import type {
+  ConversationId,
+  LocalMessage,
+  LocalMessageId,
   Message,
   MessageAttachment,
+  MessageId,
   MessageStatus,
   ReplyPreview,
   Room,
@@ -51,7 +55,7 @@ function getRoomSummary(room: Room): RoomSummary {
     id: room.id,
     type: room.type,
     name: room.name,
-    initials: room.initials,
+    avatarUrl: room.avatarUrl,
     participants: room.participants,
     unreadCount: room.unreadCount,
     muted: room.muted,
@@ -61,7 +65,33 @@ function getRoomSummary(room: Room): RoomSummary {
 }
 
 function getInitialMessagesByRoomId() {
-  return Object.fromEntries(seedRooms.map((room) => [room.id, room.messages]))
+  return Object.fromEntries(seedRooms.map((room) => [room.id, room.messages])) as Record<
+    ConversationId,
+    Message[]
+  >
+}
+
+function parseConversationId(value: string | undefined): ConversationId | null {
+  if (!value || !/^\d+$/.test(value)) {
+    return null
+  }
+
+  const id = Number(value)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+// 최신 메시지가 있는 방이 위로 오도록 정렬한다(카톡 등과 동일). 메시지를 보내면 해당 방의
+// lastMessageAt이 갱신되므로, 렌더마다 이 정렬을 다시 태우는 것만으로 그 방이 맨 위로 올라온다.
+// 메시지가 하나도 없는 방(lastMessageAt 없음)은 시간을 0으로 두어 맨 아래로 내려간다.
+//
+// roomSummaries를 in-place로 sort하면 state 배열을 mutate하게 되므로 반드시 복사본을 정렬한다.
+// TODO(backend): 서버 연동 시 이 정렬은 방 목록 쿼리의 `order by last_message_at desc`가 대신한다.
+function sortRoomsByRecency(rooms: RoomSummary[]): RoomSummary[] {
+  return [...rooms].sort((first, second) => {
+    const firstTime = first.lastMessageAt ? new Date(first.lastMessageAt).getTime() : 0
+    const secondTime = second.lastMessageAt ? new Date(second.lastMessageAt).getTime() : 0
+    return secondTime - firstTime
+  })
 }
 
 function updateRoomSummaryMessages(room: RoomSummary, messages: Message[]): RoomSummary {
@@ -160,20 +190,20 @@ export default function MessengerPage() {
   const [roomSummaries, setRoomSummaries] = useState<RoomSummary[]>(() =>
     seedRooms.map((room) => getRoomSummary(room))
   )
-  const [messagesByRoomId, setMessagesByRoomId] = useState<Record<string, Message[]>>(
+  const [messagesByRoomId, setMessagesByRoomId] = useState<Record<ConversationId, Message[]>>(
     getInitialMessagesByRoomId
   )
   const [searchValue, setSearchValue] = useState("")
   const [replyTo, setReplyTo] = useState<ReplyPreview | null>(null)
-  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
+  const [focusedMessageId, setFocusedMessageId] = useState<MessageId | null>(null)
   const isMobile = useIsMobile()
   const imageInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const selectedRoomIdRef = useRef<string | null>(null)
+  const selectedRoomIdRef = useRef<ConversationId | null>(null)
   const objectUrlsRef = useRef<string[]>([])
   // 실패한 전송의 재시도 thunk. 메시지의 임시 id로 키를 잡는다 -- 재시도에 필요한 것(파일/본문/방)을
   // 클로저가 붙들고 있어, Message는 순수 데이터로 남는다.
-  const pendingSendsRef = useRef(new Map<string, () => void>())
+  const pendingSendsRef = useRef(new Map<LocalMessageId, () => void>())
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -184,12 +214,14 @@ export default function MessengerPage() {
   const isMembersOpen = location.pathname.endsWith("/members")
   const isPinnedOpen = location.pathname.endsWith("/pinned")
   const isSearchOpen = location.pathname.endsWith("/search")
-  const selectedRoomId = roomId ?? null
+  const selectedRoomId = parseConversationId(roomId)
 
   const normalizedSearchValue = searchValue.trim().toLowerCase()
-  const filteredRooms = normalizedSearchValue
-    ? roomSummaries.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
-    : roomSummaries
+  const filteredRooms = sortRoomsByRecency(
+    normalizedSearchValue
+      ? roomSummaries.filter((room) => room.name.toLowerCase().includes(normalizedSearchValue))
+      : roomSummaries
+  )
 
   const selectedRoomSummary = roomSummaries.find((room) => room.id === selectedRoomId) ?? null
   const selectedRoom = selectedRoomSummary
@@ -198,7 +230,11 @@ export default function MessengerPage() {
   const openPhotoId = searchParams.get(PHOTO_SEARCH_PARAM)
   const viewerImages =
     selectedRoom && openPhotoId
-      ? getMessageImages(selectedRoom, openPhotoId).map(({ id, src, name }) => ({ id, src, name }))
+      ? getMessageImages(selectedRoom, openPhotoId).map(({ id, src, name }) => ({
+          id: String(id),
+          src,
+          name,
+        }))
       : []
   const isGroupInviteOpen = isInviteOpen && selectedRoomSummary?.type === "group"
   const isSecondaryOpen =
@@ -209,7 +245,7 @@ export default function MessengerPage() {
     isPinnedOpen ||
     isSearchOpen
 
-  const getRoomHref = (roomId: string) =>
+  const getRoomHref = (roomId: ConversationId) =>
     isDetailOpen ? `/messenger/${roomId}/details` : `/messenger/${roomId}`
 
   useEffect(() => {
@@ -256,7 +292,7 @@ export default function MessengerPage() {
     )
   }, [isPushedPhotoEntry, navigate, setSearchParams])
 
-  const selectRoom = (roomId: string) => {
+  const selectRoom = (roomId: ConversationId) => {
     setReplyTo(null)
     setFocusedMessageId(null)
     setRoomSummaries((previousRooms) =>
@@ -266,7 +302,7 @@ export default function MessengerPage() {
 
   const clearFocusedMessage = useCallback(() => setFocusedMessageId(null), [])
 
-  const openSearchResult = (messageId: string) => {
+  const openSearchResult = (messageId: MessageId) => {
     if (!selectedRoom) {
       return
     }
@@ -275,7 +311,7 @@ export default function MessengerPage() {
     navigate(`/messenger/${selectedRoom.id}`)
   }
 
-  const setSelectedRoomMessages = (roomId: string, messages: Message[]) => {
+  const setSelectedRoomMessages = (roomId: ConversationId, messages: Message[]) => {
     setMessagesByRoomId((previousMessagesByRoomId) => ({
       ...previousMessagesByRoomId,
       [roomId]: messages,
@@ -355,7 +391,7 @@ export default function MessengerPage() {
   // TODO(backend): 각 id에 대해 soft_delete_message(id) RPC를 호출한다(sender만 통과, 첨부는
   // cleanup 큐로, 모두에게 삭제된 것으로 표시 -- supabase/schemas/05-chat.sql:914). 단건 RPC뿐이라
   // Promise.all로 병렬 호출하고, 실패한 id만 골라 재시도/에러 토스트를 붙여야 한다.
-  const deleteMessages = (messageIds: string[]) => {
+  const deleteMessages = (messageIds: MessageId[]) => {
     if (!selectedRoom || messageIds.length === 0) {
       return
     }
@@ -404,8 +440,8 @@ export default function MessengerPage() {
   // 특정 방의 특정 메시지 status만 갱신한다. 전체 배열 교체(setSelectedRoomMessages)와 달리 함수형
   // 업데이트라, 전송 중에 방을 바꾸거나 여러 전송이 겹쳐도 항상 최신 상태 위에 안전하게 얹힌다.
   const patchMessageStatus = (
-    roomId: string,
-    messageId: string,
+    roomId: ConversationId,
+    messageId: LocalMessageId,
     status: MessageStatus | undefined
   ) => {
     setMessagesByRoomId((previous) => {
@@ -425,7 +461,11 @@ export default function MessengerPage() {
 
   // 낙관적 전송의 코어. perform이 실제 전송(압축 -> 업로드 -> send RPC) 자리다. 성공하면 status를
   // 지워 "전달됨"으로, 실패하면 "failed"로 두고 재시도 thunk를 붙든다. 재시도는 이 함수를 다시 탄다.
-  const runSend = (roomId: string, messageId: string, perform: () => Promise<void>) => {
+  const runSend = (
+    roomId: ConversationId,
+    messageId: LocalMessageId,
+    perform: () => Promise<void>
+  ) => {
     perform()
       .then(() => {
         pendingSendsRef.current.delete(messageId)
@@ -442,7 +482,9 @@ export default function MessengerPage() {
   }
 
   const retryMessage = (message: Message) => {
-    pendingSendsRef.current.get(message.id)?.()
+    if (typeof message.id === "string") {
+      pendingSendsRef.current.get(message.id)?.()
+    }
   }
 
   const sendMessage = (draft: string) => {
@@ -454,7 +496,7 @@ export default function MessengerPage() {
 
     const roomId = selectedRoom.id
     const now = Date.now()
-    const nextMessage: Message = {
+    const nextMessage: LocalMessage = {
       id: `local-${now}-text`,
       senderId: CURRENT_USER.id,
       content: nextContent,
@@ -498,7 +540,7 @@ export default function MessengerPage() {
     const now = Date.now()
     const imageAttachments = attachments.filter((attachment) => isImageAttachment(attachment))
     const fileAttachments = attachments.filter((attachment) => !isImageAttachment(attachment))
-    const nextMessages: Message[] = []
+    const nextMessages: LocalMessage[] = []
 
     // Attachments are sent immediately instead of being previewed in the
     // composer. The message model still separates attachment shapes: images can

@@ -10,12 +10,12 @@ import {
   TriangleAlertIcon,
 } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Twemoji } from "~/components/ui/twemoji"
 import { MessageAttachmentGroup } from "~/components/messenger/message-attachment-preview"
 import { BubbleOverflowMenu } from "~/components/messenger/message-actions"
+import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { QuickReactionList } from "~/components/quick-reaction-list"
 import { useMessageBubbleGestures } from "~/components/messenger/use-message-bubble-gestures"
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
@@ -29,7 +29,7 @@ import {
   isPinnedMessage,
 } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, MessageGroupPosition, Participant } from "~/lib/messenger/types"
+import type { Message, MessageGroupPosition, MessageId, Participant } from "~/lib/messenger/types"
 
 // The message viewport (RoomPane) is marked with data-scroll-container; popovers
 // anchored "above" a bubble near the top of that scroll area would otherwise get
@@ -126,7 +126,7 @@ export function MessageBubble({
   showName: boolean
   showTime: boolean
   isHighlighted: boolean
-  onOpenReplyTarget: (messageId: string) => void
+  onOpenReplyTarget: (messageId: MessageId) => void
   onReply: (message: Message) => void
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
@@ -140,7 +140,7 @@ export function MessageBubble({
   isSelected: boolean
   /** 내가 보낸, 아직 삭제되지 않은 메시지만 선택 가능하다(soft_delete_message가 sender만 허용). */
   isSelectable: boolean
-  onToggleSelect: (messageId: string) => void
+  onToggleSelect: (messageId: MessageId) => void
 }) {
   const isMine = message.senderId === CURRENT_USER.id
   const isDeleted = isDeletedMessage(message)
@@ -236,14 +236,6 @@ export function MessageBubble({
 
     setOverflowMenuPlacement(getPopoverPlacement(interactionRef.current, 150))
   }, [isOverflowOpen])
-
-  if (message.senderId === "system") {
-    return (
-      <div className="flex justify-center">
-        <Badge variant="secondary">{message.content}</Badge>
-      </div>
-    )
-  }
 
   const actionRail = isSelectionMode ? null : (
     <div className="relative">
@@ -423,11 +415,7 @@ export function MessageBubble({
           ) : null}
           {!isMine ? (
             <div className="flex w-8 shrink-0 items-end">
-              {showAvatar ? (
-                <Avatar>
-                  <AvatarFallback>{author.initials}</AvatarFallback>
-                </Avatar>
-              ) : null}
+              {showAvatar ? <ProfileAvatarLink profile={author} /> : null}
             </div>
           ) : null}
           <div
@@ -592,9 +580,11 @@ export function MessageBubble({
           ) : !isDeleted && readReceipts.length > 0 ? (
             <div className="flex -space-x-1" aria-label="Read by">
               {readReceipts.map((participant) => (
-                <Avatar key={participant.id} className="ring-background mt-2 size-4! ring-1">
-                  <AvatarFallback className="text-[7px]!">{participant.initials}</AvatarFallback>
-                </Avatar>
+                <ProfileAvatarLink
+                  key={participant.id}
+                  profile={participant}
+                  avatarClassName="ring-background mt-2 size-4! ring-1"
+                />
               ))}
             </div>
           ) : null}

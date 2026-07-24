@@ -26,17 +26,22 @@
 - Format app code: `npm run format`
 - Typecheck: `npm run typecheck`
 
+## Subagent Usage
+
+- Use subagents only for independent, well-bounded work that materially saves main-context capacity, improves correctness, or benefits from parallel execution.
+- Do not delegate simple edits, single-file inspection, straightforward lookups, or tasks the main agent can complete directly.
+- Give subagents narrow, non-overlapping scopes and only the context required for their task. Reuse existing findings instead of repeating investigation.
+- Prefer cheaper models for mechanical work when model selection is available. Avoid recursive delegation.
+
 ## Validation
 
-- For normal code changes, run `npm run lint` then `npm run typecheck`.
-- `npm run typecheck` runs `react-router typegen && tsc`; it regenerates `.react-router/types`.
-- `npm test` runs the fast unit suite. `npm run test:e2ee` runs the real local-Supabase E2EE round-trip and fails when the local API is unavailable; use it for crypto work.
-- DB checks live in `supabase/tests/`: run `npm run test:db` against the local DB after `supabase db reset`. One file per domain, each with its own `begin ... rollback` (safe to re-run, and runnable alone: `node supabase/tests/run.mjs 05-chat`). `00-privileges.sql` is not a domain — it holds the schema-wide privilege invariants that catch what `db diff` cannot see. `storage_maintenance_check.ps1` is documented in `supabase/functions/README.md`.
-- **The pre-commit hook enforces the expensive checks, but only for the paths that need them** (`.husky/pre-commit`). There is no test CI — the sole workflow is `.github/workflows/sync-main-to-dev.yml` (branch sync) — so the hook *is* the safety net.
-  - Staging anything under `supabase/` ⇒ `supabase db diff` must return "No schema changes found" (otherwise `test:db` would be checking a stale DB and its green would be a lie), then `npm run test:db` must pass. If local Supabase is not running, the commit is **blocked** rather than silently skipped.
-  - Staging anything under `app/lib/crypto/` ⇒ KDF/AAD unit tests and the required local E2EE round-trip both run; unlike `npm test`, the latter is never silently skipped.
-  - Everything else stays as fast as before: lint + typecheck only. A slow hook trains people to reach for `--no-verify`, which is worse than no hook — they would still believe the check ran.
-- The DB hook is a security boundary, not busywork: `db diff` does not emit function grants, and `00-privileges.sql` previously caught `SECURITY DEFINER` helpers left executable by `PUBLIC` despite lint, typecheck, and diff all passing.
+- For normal code changes, run `npm run lint` and `npm run typecheck`.
+- Use `npm test` for unit tests and `npm run test:e2e` for cryptographic or E2EE changes.
+- For database changes, run `supabase db reset`, `npm run test:db`, and confirm that `supabase db diff` reports `No schema changes found`.
+- The pre-commit hook additionally enforces:
+  - Changes under `supabase/`: clean `supabase db diff` and passing DB tests.
+  - Changes under `app/lib/crypto/`: KDF/AAD tests and the local E2EE round-trip.
+- Do not bypass failed or unavailable required checks.
 
 ## Scope / Generated Files
 
@@ -45,9 +50,9 @@
 
 ## Documentation
 
-- When changing code, schema, migrations, or behavior, update any related Markdown docs in the repo during the same task when such docs already exist.
-- In Markdown prose, write ranges as `1 ~ 100`, never `1~100`. Two unspaced tildes pair up into strikethrough syntax and the preview swallows everything between them. A hyphen (`1-100`) is safe either way.
-- In `docs/db/domains/`, arrange RPC and trigger tables by caller flow under headings, never by SQL declaration or alphabetic order. The canonical grouping rule is in `docs/db/README.md`.
+- Update existing documentation affected by code, schema, migration, or behavior changes in the same task.
+- In Markdown prose, write ranges as `1 ~ 100` or `1-100`, never `1~100`.
+- Follow the ordering rules in `docs/db/README.md` for database-domain documentation.
 
 ## Imports / Aliases
 

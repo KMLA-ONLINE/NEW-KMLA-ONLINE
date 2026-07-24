@@ -41,7 +41,14 @@ export async function mapPostRows(
 ): Promise<GroupPost[]> {
   const urls = await createSignedUrlMap(
     supabase,
-    rows.flatMap((row) => asAttachments(row.attachments))
+    rows.flatMap((row) => {
+      const author = asObject(row.author)
+      const avatarPath = typeof author?.avatar_url === "string" ? author.avatar_url : null
+      return [
+        ...asAttachments(row.attachments),
+        ...(avatarPath ? [{ storage_bucket: "avatars", storage_path: avatarPath }] : []),
+      ]
+    })
   )
 
   return rows.map((row) => {
@@ -68,7 +75,14 @@ export async function mapPostRows(
       // 참이다 -- 내 글엔 수정/삭제가 떠야 하고, 그 사실은 남에게 새지 않는다.
       author:
         typeof author?.id === "number" && typeof author.name === "string"
-          ? { id: author.id, name: author.name }
+          ? {
+              id: author.id,
+              name: author.name,
+              avatarUrl:
+                typeof author.avatar_url === "string"
+                  ? (urls.get(author.avatar_url) ?? null)
+                  : null,
+            }
           : null,
       isAuthorAnonymitySuspended: row.is_author_anonymity_suspended,
       isMine: row.is_mine,

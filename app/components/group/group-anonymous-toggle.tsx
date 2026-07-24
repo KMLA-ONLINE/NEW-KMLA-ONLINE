@@ -1,6 +1,6 @@
 import { ArrowLeftRightIcon } from "lucide-react"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip"
 import { cn } from "~/lib/utils"
 
@@ -37,8 +37,11 @@ export function GroupAnonymousToggle({
             className
           )}
         >
-          {/* 익명이면 마스크 아이콘, 아니면 "나". 아이콘·크기 규칙은 GroupAuthorAvatar 한 곳에만 둔다. */}
-          <GroupAuthorAvatar name="나" anonymous={anonymous} size={size} />
+          {anonymous ? (
+            <AnonymousAvatar size={size} />
+          ) : (
+            <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size={size} />
+          )}
           <span className="bg-background text-muted-foreground absolute -right-0.5 -bottom-0.5 flex rounded-full border p-0.5">
             <ArrowLeftRightIcon className="size-2.5" aria-hidden="true" />
           </span>

@@ -1,6 +1,12 @@
 import { CURRENT_USER, DELETED_MESSAGE_LABEL } from "~/lib/messenger/constants"
 import { formatRelativeTime } from "~/lib/time"
-import type { Message, MessageAttachment, MessageGroupPosition, Room } from "~/lib/messenger/types"
+import type {
+  Message,
+  MessageAttachment,
+  MessageGroupPosition,
+  ProfileId,
+  Room,
+} from "~/lib/messenger/types"
 
 export type LinkedTextSegment =
   | {
@@ -85,15 +91,7 @@ export function getPinnedMessages(room: Room): Message[] {
 }
 
 export function getLastMessage(room: Room) {
-  for (let index = room.messages.length - 1; index >= 0; index -= 1) {
-    const message = room.messages[index]
-
-    if (message?.senderId !== "system") {
-      return message
-    }
-  }
-
-  return undefined
+  return room.messages[room.messages.length - 1]
 }
 
 // Shared by getMessagePreview and getReplyText: both render "what does this
@@ -175,7 +173,7 @@ export function isImageAttachment(attachment: MessageAttachment) {
  */
 export function getMessageImages(room: Room, attachmentId: string) {
   const message = room.messages.find((candidate) =>
-    candidate.attachments?.some((attachment) => attachment.id === attachmentId)
+    candidate.attachments?.some((attachment) => String(attachment.id) === attachmentId)
   )
 
   return (message?.attachments ?? []).filter(
@@ -307,7 +305,7 @@ export function getAttachmentPreview(attachments: MessageAttachment[] | undefine
   )
 }
 
-export function findParticipant(room: Room, participantId: string) {
+export function findParticipant(room: Room, participantId: ProfileId) {
   return room.participants.find((participant) => participant.id === participantId)
 }
 
@@ -320,7 +318,7 @@ export function getMessageAuthor(room: Room, message: Message) {
     findParticipant(room, message.senderId) ?? {
       id: message.senderId,
       name: "알 수 없음",
-      initials: "UN",
+      avatarUrl: null,
     }
   )
 }
@@ -401,7 +399,7 @@ export function getBubbleShapeClass(isMine: boolean, groupPosition: MessageGroup
 export function getMessageGroupPosition(messages: Message[], index: number): MessageGroupPosition {
   const message = messages[index]
 
-  if (!message || message.senderId === "system") {
+  if (!message) {
     return "single"
   }
 
@@ -410,12 +408,10 @@ export function getMessageGroupPosition(messages: Message[], index: number): Mes
   const hasPreviousFromSameSender =
     previousMessage?.senderId === message.senderId &&
     !message.replyTo &&
-    previousMessage.senderId !== "system" &&
     isSameMessageDate(previousMessage, message)
   const hasNextFromSameSender =
     nextMessage?.senderId === message.senderId &&
     !nextMessage.replyTo &&
-    nextMessage.senderId !== "system" &&
     isSameMessageDate(message, nextMessage)
 
   if (hasPreviousFromSameSender && hasNextFromSameSender) {
@@ -445,10 +441,6 @@ export function shouldSeparateMessages(
     return true
   }
 
-  if (previousMessage.senderId === "system" || currentMessage.senderId === "system") {
-    return true
-  }
-
   if (previousMessage.senderId !== currentMessage.senderId) {
     return true
   }
@@ -459,13 +451,13 @@ export function shouldSeparateMessages(
 export function shouldShowMessageTime(messages: Message[], index: number) {
   const message = messages[index]
 
-  if (!message || message.senderId === "system") {
+  if (!message) {
     return false
   }
 
   const nextMessage = messages[index + 1]
 
-  if (!nextMessage || nextMessage.senderId === "system") {
+  if (!nextMessage) {
     return true
   }
 

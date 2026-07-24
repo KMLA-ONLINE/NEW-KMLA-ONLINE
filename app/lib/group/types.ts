@@ -3,11 +3,17 @@
 // the backend won't return -- no "category"/"flair"/"featured", because spaces and
 // posts have none of those.
 
+import type { Database } from "~/lib/supabase/database.types"
+
+// TODO(backend): space_anonymity_policy enum과 spaces.anonymity_policy 컬럼으로 옮긴다.
+// 기존 allow_anonymous_posts=false/true는 각각 disabled/optional로 이관한다.
+export type GroupAnonymityPolicy = "disabled" | "optional" | "required"
+
 export type GroupSpace = {
   name: string
   description: string
   /** spaces.space_type. group=공식, community=비공식. 이 화면은 둘 다 담는다. */
-  type: "group" | "community"
+  type: Database["public"]["Enums"]["space_type"]
   /** spaces.pub_id 슬러그. 공유 링크·상세 URL(/groups/:pubId)에 실린다. */
   pubId: string
   /**
@@ -21,24 +27,24 @@ export type GroupSpace = {
    * finalize_space_cover/clear_space_cover RPC뿐 -- 컬럼 grant에 없다.
    */
   coverImageUrl: string | null
-  joinPolicy: "public" | "request" | "invite_only"
+  joinPolicy: Database["public"]["Enums"]["space_join_policy"]
   /**
    * spaces.post_policy. 누가 **메인 글**을 쓸 수 있는가. 'managers'면 owner/admin/manager만 쓴다
    * (공지형 그룹). 댓글은 이 정책과 무관하게 언제나 멤버 전원에게 열려 있다 -- 공지에 달리는
    * 반응까지 잠그면 게시판이 아니라 공고문이다.
    */
-  postPolicy: "all" | "managers"
+  postPolicy: Database["public"]["Enums"]["space_post_policy"]
   /**
    * 내가 지금 이 그룹에 글을 쓸 수 있는지(private.can_post_in_space). postPolicy가 'all'이면
    * 멤버 전원, 'managers'면 내 viewerRole이 owner/admin/manager일 때만 true. 로더가 파생한다.
    */
   canPost: boolean
-  /** spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(기존 익명 글은 그대로). */
-  allowAnonymous: boolean
+  /** 이후 활동에 적용되는 익명 정책. 이미 작성된 글·댓글·반응의 익명 여부는 바꾸지 않는다. */
+  anonymityPolicy: GroupAnonymityPolicy
   /**
-   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 공간이 익명을 허용하고 + 내가 익명 정지 중이
-   * 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가 남의
-   * 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
+   * 내가 지금 이 공간에서 익명으로 쓸 수 있는지. 정책이 optional/required이고 + 내가 익명 정지
+   * 중이 아니어야 한다. 로더가 space_anonymity_suspensions에서 **내 행만** 읽어 파생한다(RLS가
+   * 남의 정지는 안 보여준다 -- 보이면 익명 글 작성자를 특정하는 통로가 된다).
    */
   canPostAnonymously: boolean
   /** 내가 익명 정지 중이면 해제 시각. 아니면 null. 왜 토글이 없는지 알려주는 데 쓴다. */
@@ -61,28 +67,37 @@ export type GroupSpace = {
 }
 
 export type GroupPostAuthor = {
-  /** profiles.id. 실명 작성자의 프로필 링크와 사진 폴백 색상에 쓴다. */
+  /** profiles.id. 실명 작성자의 프로필 링크에 쓴다. */
   id: number
   name: string
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
+  avatarUrl: string | null
 }
 
 /**
- * 이 글에 반응한 한 사람(post_reactions ⋈ profiles ⋈ reaction_types). "누가 어떤 이모지로
- * 눌렀나" 목록 모달에서 쓴다. 반응자는 **언제나 실명**이다 -- post_reactions.user_id엔 익명
- * 개념이 없어서, 글이 익명이어도 누가 눌렀는지는 드러난다(반응은 익명 글이라도 실명 행동이다).
+ * 이 글에 반응한 한 사람. 익명 반응은 프로필 필드를 클라이언트에 내리지 않는다. 실제 백엔드는
+ * 익명 행을 개인 단위로 내리지 않고 반응 타입별 인원수로 집계해야 한다.
  */
-export type GroupPostReactor = {
-  /** profiles.id */
-  id: number
-  /** profiles.name */
-  name: string
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
-  avatarUrl: string | null
-  /** 이 사람이 누른 반응 타입(reaction_types.id). 어떤 이모지인지는 reactionTypes에서 찾는다. */
-  reactionTypeId: number
-  /** post_reactions.created_at (ISO 8601). "전체" 탭을 시간순으로 정렬하는 데 쓴다. */
-  createdAt: string
-}
+export type GroupPostReactor =
+  | {
+      isAnonymous: false
+      /** profiles.id */
+      id: number
+      /** profiles.name */
+      name: string
+      /** profiles.avatar_url 기반 서명 URL. */
+      avatarUrl: string | null
+      reactionTypeId: number
+      createdAt: string
+    }
+  | {
+      isAnonymous: true
+      id: null
+      name: null
+      avatarUrl: null
+      reactionTypeId: number
+      createdAt: string
+    }
 
 /**
  * 이 글이 놓인 space의 최소 정보. 피드처럼 **여러 space의 글을 한 흐름에 모을 때만** 채운다 --
@@ -94,7 +109,7 @@ export type GroupPostSpace = {
   /** spaces.name */
   name: string
   /** spaces.space_type. group=공식, community=비공식. 출처 아이콘을 가른다. */
-  type: "group" | "community"
+  type: Database["public"]["Enums"]["space_type"]
   /** spaces.pub_id 슬러그. 출처를 누르면 /groups/:pubId 로 간다. */
   pubId: string
 }
@@ -110,7 +125,7 @@ export type GroupCategory = {
 }
 
 /** space_members.role. 한 space에 owner는 정확히 1명(스키마 유니크 제약). */
-export type GroupMemberRole = "owner" | "admin" | "manager" | "member"
+export type GroupMemberRole = Database["public"]["Enums"]["member_role"]
 
 /** space_join_requests 한 행 + 표시용 profiles 필드. request 정책 그룹의 승인 대기 가입 요청. */
 export type GroupJoinRequest = {
@@ -123,7 +138,7 @@ export type GroupJoinRequest = {
    * 되지만, 동명이인 중 엉뚱한 사람을 승인하면 그 사람이 그룹에 들어와 있다.
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
   /** space_join_requests.created_at (ISO 8601). */
   createdAt: string
@@ -142,7 +157,7 @@ export type GroupMember = {
    * type='student'일 때만 cohort를 요구한다).
    */
   cohort: number | null
-  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 이니셜 폴백. */
+  /** profiles.avatar_url 기반 서명 URL(로더가 채움). null이면 공통 사용자 SVG 폴백. */
   avatarUrl: string | null
   role: GroupMemberRole
   /** space_members.joined_at (ISO 8601). */

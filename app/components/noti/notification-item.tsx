@@ -13,7 +13,7 @@ import {
 import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { RelativeTime } from "~/components/relative-time"
 import { ROLE_LABEL } from "~/lib/group/format"
 import type { AppNotification, NotificationType } from "~/lib/noti/types"
@@ -238,11 +238,14 @@ export function NotificationItem({
           <>
             {/* 탈퇴한 사용자는 이니셜이 없다. "?"는 "이름을 알 수 없는 사람"으로 읽히고, 익명의
                 마스크와도 구분된다(익명은 신원이 없는 것이지 사라진 것이 아니다). */}
-            <GroupAuthorAvatar
-              name={notification.actor?.name ?? "?"}
-              anonymous={notification.actorIsAnonymous}
-              size="lg"
-            />
+            {notification.actorIsAnonymous ? (
+              <AnonymousAvatar size="lg" />
+            ) : (
+              <ProfileAvatar
+                profile={notification.actor ?? { name: "알 수 없는 사용자", avatarUrl: null }}
+                size="lg"
+              />
+            )}
             {/* 아바타 위에 얹는 종류 뱃지. ring이 카드 배경색이라 아바타에서 파낸 것처럼 보인다. */}
             <span
               className={cn(

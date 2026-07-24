@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { BellIcon, SearchIcon, XIcon } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { cn } from "~/lib/utils"
@@ -9,11 +9,6 @@ import { cn } from "~/lib/utils"
 type AppHeaderProps = {
   email: string
   className?: string
-}
-
-function getInitials(email: string) {
-  const base = email.split("@")[0] ?? "User"
-  return base.slice(0, 2).toUpperCase()
 }
 
 export function AppHeader({ email, className }: AppHeaderProps) {
@@ -61,9 +56,7 @@ export function AppHeader({ email, className }: AppHeaderProps) {
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <BellIcon />
         </Button>
-        <Avatar className="size-8">
-          <AvatarFallback>{getInitials(email)}</AvatarFallback>
-        </Avatar>
+        <ProfileAvatar profile={{ name: email, avatarUrl: null }} className="size-8" />
       </div>
 
       <div

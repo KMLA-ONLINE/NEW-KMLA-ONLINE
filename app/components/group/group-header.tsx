@@ -1,4 +1,10 @@
-import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
+import {
+  BadgeCheckIcon,
+  Globe2Icon,
+  LockIcon,
+  MoreHorizontalIcon,
+  VenetianMaskIcon,
+} from "lucide-react"
 import { useState } from "react"
 
 import { GroupLeaveDialog } from "~/components/group/group-leave-dialog"
@@ -91,6 +97,12 @@ export function GroupHeader({
               </button>
             </span>
           </p>
+          {group.anonymityPolicy === "required" ? (
+            <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-xs">
+              <VenetianMaskIcon className="size-3.5" aria-hidden="true" />
+              게시물, 댓글, 반응이 모두 익명입니다
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-1 pt-1">
           {/* 알림 설정 Dialog와 나가기 AlertDialog를 여는 메뉴라 non-modal이다. 메뉴와 뒤이어

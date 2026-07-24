@@ -1,8 +1,7 @@
 import { MoreHorizontalIcon, SmilePlusIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { GroupCommentComposer } from "~/components/group/group-comment-composer"
 import { GroupEditedMark } from "~/components/group/group-edited-mark"
 import { QuickReactionList } from "~/components/quick-reaction-list"
@@ -25,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import { Twemoji } from "~/components/ui/twemoji"
-import type { GroupComment } from "~/lib/group/types"
+import type { GroupAnonymityPolicy, GroupComment } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -39,11 +38,15 @@ export function GroupCommentList({
   comments,
   reactionTypes,
   canManage,
+  anonymityPolicy,
+  canPostAnonymously,
 }: {
   comments: GroupComment[]
   reactionTypes: ReactionType[]
   /** owner/admin이면 남의 댓글도 삭제할 수 있다(soft_delete_comment). 수정은 작성자 본인만. */
   canManage?: boolean
+  anonymityPolicy: GroupAnonymityPolicy
+  canPostAnonymously: boolean
 }) {
   const [highlightedId, setHighlightedId] = useState<number | null>(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -101,6 +104,8 @@ export function GroupCommentList({
           highlightedId={highlightedId}
           onNavigate={navigateToComment}
           canManage={canManage}
+          anonymityPolicy={anonymityPolicy}
+          canPostAnonymously={canPostAnonymously}
         />
       ))}
     </ul>
@@ -115,6 +120,8 @@ function GroupCommentItem({
   highlightedId,
   onNavigate,
   canManage,
+  anonymityPolicy,
+  canPostAnonymously,
   depth = 0,
 }: {
   comment: GroupComment
@@ -126,6 +133,8 @@ function GroupCommentItem({
   highlightedId: number | null
   onNavigate: (id: number) => void
   canManage?: boolean
+  anonymityPolicy: GroupAnonymityPolicy
+  canPostAnonymously: boolean
   depth?: number
 }) {
   // 익명이면 서버가 매긴 라벨을 쓴다("익명1", "익명2", 익명 글의 글쓴이면 "글쓴이"). 클라이언트가
@@ -174,6 +183,8 @@ function GroupCommentItem({
                 highlightedId={highlightedId}
                 onNavigate={onNavigate}
                 canManage={canManage}
+                anonymityPolicy={anonymityPolicy}
+                canPostAnonymously={canPostAnonymously}
                 depth={depth + 1}
               />
             ))}
@@ -186,17 +197,7 @@ function GroupCommentItem({
   return (
     <li>
       <div className="flex gap-2">
-        {comment.author ? (
-          <Link
-            to={`/profile/${comment.author.id}`}
-            aria-label={`${name} 프로필 보기`}
-            className="focus-visible:ring-ring shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
-          >
-            <GroupAuthorAvatar name={name} anonymous={false} />
-          </Link>
-        ) : (
-          <GroupAuthorAvatar name={name} anonymous />
-        )}
+        {comment.author ? <ProfileAvatarLink profile={comment.author} /> : <AnonymousAvatar />}
         <div className="flex min-w-0 flex-1 items-start gap-1">
           <div className="min-w-0">
             <div
@@ -221,7 +222,9 @@ function GroupCommentItem({
               </p>
             </div>
             <div className="text-muted-foreground mt-1 ml-3 flex items-center gap-3 text-xs">
-              {/* 반응: 클릭하면 위로 quick reaction 피커, 이미 눌렀으면 클릭으로 해제 */}
+              {/* 반응: 클릭하면 위로 quick reaction 피커, 이미 눌렀으면 클릭으로 해제.
+                  TODO(backend): required 공간에서는 comment_reactions.is_anonymous를 DB가 자동으로
+                  true로 기록하고 user_id는 읽기 응답에서 숨긴다. */}
               <div className="relative">
                 {pickerOpen ? (
                   <>
@@ -357,6 +360,8 @@ function GroupCommentItem({
               highlightedId={highlightedId}
               onNavigate={onNavigate}
               canManage={canManage}
+              anonymityPolicy={anonymityPolicy}
+              canPostAnonymously={canPostAnonymously}
               depth={depth + 1}
             />
           ))}
@@ -367,6 +372,8 @@ function GroupCommentItem({
                 className=""
                 placeholder={`${name}님에게 답글 남기기…`}
                 onSubmit={() => setReplying(false)}
+                anonymityPolicy={anonymityPolicy}
+                canPostAnonymously={canPostAnonymously}
               />
             </li>
           ) : null}

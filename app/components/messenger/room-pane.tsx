@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { ArrowDownIcon, ArrowLeftIcon, InfoIcon, PhoneIcon, PinIcon } from "lucide-react"
 
+import { EmptyRoomState } from "~/components/messenger/empty-room-state"
+import { ConversationAvatar } from "~/components/messenger/conversation-avatar"
 import { MessageActionPanel } from "~/components/messenger/message-actions"
 import { MessageComposer } from "~/components/messenger/message-composer"
 import { MessageList } from "~/components/messenger/message-list"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -23,7 +24,7 @@ import {
 } from "~/lib/messenger/utils"
 import { useIsomorphicLayoutEffect } from "~/lib/use-isomorphic-layout-effect"
 import type { ReactionType } from "~/lib/reactions"
-import type { Message, ReplyPreview, Room } from "~/lib/messenger/types"
+import type { ConversationId, Message, MessageId, ReplyPreview, Room } from "~/lib/messenger/types"
 
 export function RoomPane({
   room,
@@ -60,17 +61,17 @@ export function RoomPane({
   onReact: (message: Message, reaction: string) => void
   onDelete: (message: Message) => void
   /** 모바일/태블릿 다중 선택 삭제 확정 시 호출(선택된 id 목록). */
-  onDeleteMany: (messageIds: string[]) => void
+  onDeleteMany: (messageIds: MessageId[]) => void
   onTogglePin: (message: Message) => void
   onRetry: (message: Message) => void
   onSend: (draft: string) => boolean
-  focusedMessageId?: string | null
+  focusedMessageId?: MessageId | null
   onFocusedMessageHandled?: () => void
 }) {
   const subtitle = getRoomSubtitle(room)
   const latestPinnedMessage = getPinnedMessages(room)[0]
   const messagesViewportRef = useRef<HTMLDivElement>(null)
-  const previousRoomIdRef = useRef<string | null>(null)
+  const previousRoomIdRef = useRef<ConversationId | null>(null)
   const lastMessageId = room.messages[room.messages.length - 1]?.id
   const [isMessageListReady, setIsMessageListReady] = useState(!showBackButton)
   const [isActionPanelOpen, setIsActionPanelOpen] = useState(false)
@@ -79,7 +80,7 @@ export function RoomPane({
   // 모바일/태블릿 다중 삭제 선택 모드. room.id가 바뀌면 RoomPane 자체가 key로 리마운트되므로
   // (messenger.tsx의 <RoomPane key={selectedRoom.id}>) 방을 옮기면 이 상태는 자동으로 초기화된다.
   const [isSelectingMessages, setIsSelectingMessages] = useState(false)
-  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set())
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<MessageId>>(new Set())
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
 
   const openActionPanel = (message: Message) => {
@@ -107,7 +108,7 @@ export function RoomPane({
     setSelectedMessageIds(new Set([message.id]))
   }
 
-  const toggleMessageSelection = (messageId: string) => {
+  const toggleMessageSelection = (messageId: MessageId) => {
     setSelectedMessageIds((previous) => {
       const next = new Set(previous)
       if (next.has(messageId)) {
@@ -241,9 +242,7 @@ export function RoomPane({
                   <ArrowLeftIcon />
                 </Button>
               ) : null}
-              <Avatar size="lg">
-                <AvatarFallback>{room.initials}</AvatarFallback>
-              </Avatar>
+              <ConversationAvatar room={room} linkProfile />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="truncate text-sm font-semibold sm:text-base">{room.name}</h2>
@@ -296,25 +295,29 @@ export function RoomPane({
             className="h-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-4 sm:py-5"
           >
             {isMessageListReady ? (
-              <MessageList
-                room={room}
-                reactionTypes={reactionTypes}
-                onReply={onReply}
-                onReact={onReact}
-                onDelete={onDelete}
-                onTogglePin={onTogglePin}
-                onRetry={onRetry}
-                onOpenActions={openActionPanel}
-                activeMobileActionMessageId={
-                  isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
-                }
-                onCloseActions={() => handleActionPanelChange(false)}
-                focusedMessageId={focusedMessageId}
-                onFocusedMessageHandled={onFocusedMessageHandled}
-                isSelectionMode={isSelectingMessages}
-                selectedMessageIds={selectedMessageIds}
-                onToggleMessageSelection={toggleMessageSelection}
-              />
+              room.messages.length === 0 ? (
+                <EmptyRoomState room={room} />
+              ) : (
+                <MessageList
+                  room={room}
+                  reactionTypes={reactionTypes}
+                  onReply={onReply}
+                  onReact={onReact}
+                  onDelete={onDelete}
+                  onTogglePin={onTogglePin}
+                  onRetry={onRetry}
+                  onOpenActions={openActionPanel}
+                  activeMobileActionMessageId={
+                    isActionPanelOpen ? (activeActionMessage?.id ?? null) : null
+                  }
+                  onCloseActions={() => handleActionPanelChange(false)}
+                  focusedMessageId={focusedMessageId}
+                  onFocusedMessageHandled={onFocusedMessageHandled}
+                  isSelectionMode={isSelectingMessages}
+                  selectedMessageIds={selectedMessageIds}
+                  onToggleMessageSelection={toggleMessageSelection}
+                />
+              )
             ) : null}
           </div>
 

@@ -30,7 +30,7 @@ export const mockGroup: GroupSpace = {
   postPolicy: "all",
   // postPolicy와 내 viewerRole에서 파생한다(로더가 can_post_in_space와 같은 규칙으로 계산).
   canPost: true,
-  allowAnonymous: true,
+  anonymityPolicy: "optional",
   // 로더가 space_anonymity_suspensions에서 내 행만 읽어 파생한다. 정지 중이면 false가 되고
   // 작성 화면의 익명 토글이 사라진다.
   canPostAnonymously: true,
@@ -78,7 +78,7 @@ const MOCK_AUTHOR_IDS: Readonly<Record<string, number>> = {
 function mockAuthor(author: MockAuthor) {
   const id = MOCK_AUTHOR_IDS[author.name]
   if (id === undefined) throw new Error(`Missing mock profile id for ${author.name}`)
-  return { ...author, id }
+  return { ...author, id, avatarUrl: null }
 }
 
 // 댓글은 각 글에 트리로 들고 있다(parentId 스레드). 4번 글은 빈 상태 확인용으로 댓글이 없다.
@@ -440,12 +440,14 @@ export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => {
     comments,
     commentCount: comments?.filter((comment) => !comment.isDeleted).length ?? 0,
     // 반응자 목록은 reactionCount·topReactions에서 합성한다(총원·아이콘이 요약과 일치).
-    reactors: makeMockReactors(post.reactionCount, post.topReactions),
+    // 정책 변경 전후의 실명·익명 반응이 섞인 상태를 미리 본다. 실제 RPC는 익명 반응을 사람별
+    // 행이 아니라 타입별 count로 집계해 내려줘야 한다.
+    reactors: makeMockReactors(post.reactionCount, post.topReactions, 3),
   }
 })
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
-// 채운다. avatarUrl은 아직 자산이 없어 전부 null(이니셜 폴백). owner는 스키마상 정확히 1명.
+// 채운다. avatarUrl은 아직 자산이 없어 전부 null(공통 사용자 SVG 폴백). owner는 스키마상 정확히 1명.
 //
 // 동명이인(김도윤 30기/32기, 이민서 31기/33기)을 일부러 심어 뒀다 -- 기수를 안 보여주면 목록에서
 // 누가 누군지 가를 수가 없다. profiles.name엔 유니크 제약이 없고, 실제로 흔하다.
