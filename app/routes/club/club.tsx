@@ -5,10 +5,20 @@ import {
   MessageSquareTextIcon,
   PencilIcon,
 } from "lucide-react"
+import { useState } from "react"
 import { Link } from "react-router"
+import { toast } from "sonner"
 
 import { RichText } from "~/components/rich-text/rich-text"
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Twemoji } from "~/components/ui/twemoji"
 import { getClubPreviewRole, getMyClubAccess, withClubPreview } from "~/lib/club/access"
 import { clubTypeLabel, formatRecruitmentPeriod } from "~/lib/club/format"
@@ -35,12 +45,17 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
 
 export default function ClubPage({ loaderData }: Route.ComponentProps) {
   const { club, canManageClub, previewRole } = loaderData
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false)
+  const [applicants, setApplicants] = useState(() =>
+    club ? (mockClubApplicantsByClubSlug[club.slug] ?? []) : []
+  )
+  const [applicationToCancel, setApplicationToCancel] = useState<
+    (typeof applicants)[number] | null
+  >(null)
 
   if (!club) {
     return <p className="py-16 text-center text-sm">동아리를 찾을 수 없습니다.</p>
   }
-
-  const applicants = mockClubApplicantsByClubSlug[club.slug] ?? []
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -129,13 +144,9 @@ export default function ClubPage({ loaderData }: Route.ComponentProps) {
                   </Link>
                 </Button>
               ) : club.recruitment.isOpen ? (
-                <Button className="mt-5" asChild>
-                  <Link
-                    to={`/messenger?intent=club-apply&club=${club.id}&to=${club.managers[0]?.id ?? ""}`}
-                  >
-                    <MessageSquareTextIcon aria-hidden />
-                    지원하기
-                  </Link>
+                <Button className="mt-5" onClick={() => setApplyDialogOpen(true)}>
+                  <MessageSquareTextIcon aria-hidden />
+                  지원하기
                 </Button>
               ) : (
                 <Button className="mt-5" disabled>
@@ -176,9 +187,18 @@ export default function ClubPage({ loaderData }: Route.ComponentProps) {
                         </span>
                       )}
                     </p>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/messenger/${applicant.conversationId}`}>대화 열기</Link>
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/messenger/${applicant.conversationId}`}>대화 열기</Link>
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setApplicationToCancel(applicant)}
+                      >
+                        지원 취소
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -190,6 +210,65 @@ export default function ClubPage({ loaderData }: Route.ComponentProps) {
           </section>
         ) : null}
       </main>
+
+      <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{club.name}에 지원할까요?</DialogTitle>
+            <DialogDescription>
+              지원서를 제출한 뒤에는 직접 취소할 수 없습니다. 취소가 필요하면 동아리 관리자에게
+              요청해야 합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyDialogOpen(false)}>
+              돌아가기
+            </Button>
+            <Button asChild>
+              <Link
+                to={`/messenger?intent=club-apply&club=${club.id}&to=${club.managers[0]?.id ?? ""}`}
+              >
+                확인하고 지원하기
+              </Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={applicationToCancel !== null}
+        onOpenChange={(open) => {
+          if (!open) setApplicationToCancel(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>지원서를 취소할까요?</DialogTitle>
+            <DialogDescription>
+              {applicationToCancel?.profile.name ?? "선택한 지원자"}님의 지원서를 목록에서
+              제거합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplicationToCancel(null)}>
+              돌아가기
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!applicationToCancel) return
+                setApplicants((current) =>
+                  current.filter((applicant) => applicant.id !== applicationToCancel.id)
+                )
+                setApplicationToCancel(null)
+                toast.success("지원서를 취소했습니다.")
+              }}
+            >
+              지원 취소
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

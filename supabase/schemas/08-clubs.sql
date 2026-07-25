@@ -523,11 +523,8 @@ on public.clubs_apply
 for delete
 to authenticated
 using (
-  user_id =
-    private.current_profile_id()
-  and private.is_club_round_open(
-    round_id
-  )
+  private.is_app_admin()
+  or private.manages_club(club_id)
 );
 
 

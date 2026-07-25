@@ -146,6 +146,15 @@ begin
       'club manager can see another club applicants';
   end if;
 
+  delete from public.clubs_apply
+  where club_id = managed_club_id
+    and user_id = applicant_id;
+  get diagnostics affected = row_count;
+  if affected <> 1 then
+    raise exception
+      'club manager could not cancel managed-club application';
+  end if;
+
   select *
   into access_row
   from public.get_my_club_access();
@@ -177,6 +186,18 @@ begin
 
   reset role;
 
+  -- 이후 본인 취소 거절과 앱 관리자 조회를 검증하기 위해 신청을 되돌린다.
+  insert into public.clubs_apply (
+    round_id,
+    user_id,
+    club_id
+  )
+  values (
+    round_id,
+    applicant_id,
+    managed_club_id
+  );
+
   -- 일반 사용자는 동아리를 수정하거나 남의 지원서를 읽을 수 없다.
   perform set_config(
     'request.jwt.claim.sub',
@@ -201,6 +222,25 @@ begin
   ) then
     raise exception
       'ordinary user can see another user application';
+  end if;
+
+  reset role;
+
+  -- 지원자는 본인 신청도 직접 취소할 수 없다.
+  perform set_config(
+    'request.jwt.claim.sub',
+    applicant_auth::text,
+    true
+  );
+  set local role authenticated;
+
+  delete from public.clubs_apply
+  where club_id = managed_club_id
+    and user_id = applicant_id;
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception
+      'applicant cancelled own application';
   end if;
 
   reset role;
