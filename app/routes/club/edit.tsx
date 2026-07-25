@@ -19,7 +19,7 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
-import { getMyClubAccess } from "~/lib/club/access"
+import { getClubPreviewRole, getMyClubAccess, withClubPreview } from "~/lib/club/access"
 import { mockClubs } from "~/lib/club/mock-data"
 import type { ClubManager } from "~/lib/club/types"
 import { cn } from "~/lib/utils"
@@ -31,7 +31,7 @@ const CLUB_IMAGE_CROP = {
   maxOutputEdge: 1024,
 }
 
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   const club = mockClubs.find((item) => item.slug === params.clubId)
 
   if (!club) {
@@ -39,15 +39,16 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   }
 
   const access = await getMyClubAccess()
-  if (!access.isAppAdmin && !access.managedClubIds.includes(club.id)) {
+  const previewRole = getClubPreviewRole(request)
+  if (!access.isAppAdmin && !access.managedClubIds.includes(club.id) && previewRole === null) {
     throw redirect(`/clubs/${club.slug}`)
   }
 
-  return { club }
+  return { club, previewRole }
 }
 
 export default function ClubEditPage({ loaderData }: Route.ComponentProps) {
-  const { club } = loaderData
+  const { club, previewRole } = loaderData
   const imageInputRef = useRef<HTMLInputElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const announcementRef = useRef<HTMLTextAreaElement>(null)
@@ -103,7 +104,7 @@ export default function ClubEditPage({ loaderData }: Route.ComponentProps) {
   return (
     <div className="mx-auto w-full max-w-2xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link to={`/clubs/${club.slug}`}>
+        <Link to={withClubPreview(`/clubs/${club.slug}`, previewRole)}>
           <ArrowLeftIcon aria-hidden />
           {club.name}
         </Link>

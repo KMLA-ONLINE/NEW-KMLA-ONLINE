@@ -10,25 +10,31 @@ import { Link } from "react-router"
 import { RichText } from "~/components/rich-text/rich-text"
 import { Button } from "~/components/ui/button"
 import { Twemoji } from "~/components/ui/twemoji"
-import { getMyClubAccess } from "~/lib/club/access"
+import { getClubPreviewRole, getMyClubAccess, withClubPreview } from "~/lib/club/access"
 import { clubTypeLabel, formatRecruitmentPeriod } from "~/lib/club/format"
 import { mockClubApplicantsByClubSlug, mockClubs } from "~/lib/club/mock-data"
 
 import type { Route } from "./+types/club"
 
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   const club = mockClubs.find((item) => item.slug === params.clubId)
   const access = await getMyClubAccess()
+  const previewRole = getClubPreviewRole(request)
 
   return {
     club,
+    previewRole,
     canManageClub:
-      club !== undefined && (access.isAppAdmin || access.managedClubIds.includes(club.id)),
+      club !== undefined &&
+      (access.isAppAdmin ||
+        access.managedClubIds.includes(club.id) ||
+        previewRole === "app-admin" ||
+        previewRole === "club-admin"),
   }
 }
 
 export default function ClubPage({ loaderData }: Route.ComponentProps) {
-  const { club, canManageClub } = loaderData
+  const { club, canManageClub, previewRole } = loaderData
 
   if (!club) {
     return <p className="py-16 text-center text-sm">동아리를 찾을 수 없습니다.</p>
@@ -39,7 +45,7 @@ export default function ClubPage({ loaderData }: Route.ComponentProps) {
   return (
     <div className="mx-auto w-full max-w-3xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link to="/clubs">
+        <Link to={withClubPreview("/clubs", previewRole)}>
           <ArrowLeftIcon aria-hidden />
           동아리
         </Link>
@@ -78,7 +84,7 @@ export default function ClubPage({ loaderData }: Route.ComponentProps) {
 
         {canManageClub ? (
           <Button variant="outline" size="sm" asChild>
-            <Link to={`/clubs/${club.slug}/edit`}>
+            <Link to={withClubPreview(`/clubs/${club.slug}/edit`, previewRole)}>
               <PencilIcon aria-hidden />
               편집
             </Link>

@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
-import { getMyClubAccess } from "~/lib/club/access"
+import { getClubPreviewRole, getMyClubAccess, withClubPreview } from "~/lib/club/access"
 import { mockClubs } from "~/lib/club/mock-data"
 import type { ClubType } from "~/lib/club/types"
 import { createClient } from "~/lib/supabase/client"
@@ -29,11 +29,12 @@ const tabs: { id: ClubTab; label: string }[] = [
   { id: "general", label: "목동" },
 ]
 
-export async function clientLoader() {
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const access = await getMyClubAccess()
+  const previewRole = getClubPreviewRole(request)
 
   if (access.profileId === null) {
-    return { ...access, pageOpen: true }
+    return { ...access, pageOpen: true, previewRole }
   }
 
   const { data, error } = await createClient()
@@ -48,7 +49,7 @@ export async function clientLoader() {
     })
   }
 
-  return { ...access, pageOpen: data.page_open }
+  return { ...access, pageOpen: data.page_open, previewRole }
 }
 
 export async function clientAction({ request }: Route.ClientActionArgs) {
@@ -80,7 +81,8 @@ export async function clientAction({ request }: Route.ClientActionArgs) {
 }
 
 export default function ClubsPage({ loaderData }: Route.ComponentProps) {
-  const adminMode = loaderData.isAppAdmin
+  const adminMode = loaderData.isAppAdmin || loaderData.previewRole === "app-admin"
+  const isAdminPreview = !loaderData.isAppAdmin && loaderData.previewRole === "app-admin"
   const pageSettingFetcher = useFetcher<typeof clientAction>()
   const [tab, setTab] = useState<ClubTab>("all")
   const [query, setQuery] = useState("")
@@ -129,7 +131,12 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
         <h1 className="text-2xl font-semibold">동아리</h1>
         {adminMode ? (
           <span className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
-            <SettingsIcon aria-hidden />앱 관리자
+            <SettingsIcon aria-hidden />앱 관리자{isAdminPreview ? " 미리보기" : ""}
+          </span>
+        ) : loaderData.previewRole === "club-admin" ? (
+          <span className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
+            <SettingsIcon aria-hidden />
+            동아리 관리자 미리보기
           </span>
         ) : null}
       </header>
@@ -161,7 +168,7 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
             <Button
               variant="outline"
               size="sm"
-              disabled={pageSettingPending}
+              disabled={pageSettingPending || isAdminPreview}
               onClick={() => setCloseDialogOpen(true)}
             >
               <PowerIcon aria-hidden />
@@ -170,7 +177,7 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
           ) : (
             <pageSettingFetcher.Form method="post">
               <input type="hidden" name="pageOpen" value="true" />
-              <Button type="submit" size="sm" disabled={pageSettingPending}>
+              <Button type="submit" size="sm" disabled={pageSettingPending || isAdminPreview}>
                 <PowerIcon aria-hidden />
                 페이지 열기
               </Button>
@@ -186,7 +193,7 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
             {myApplications.map((club) => (
               <Link
                 key={club.id}
-                to={`/clubs/${club.slug}`}
+                to={withClubPreview(`/clubs/${club.slug}`, loaderData.previewRole)}
                 className="bg-muted hover:bg-muted/80 shrink-0 rounded-full px-3 py-1.5 text-sm font-medium"
               >
                 {club.name}
@@ -232,7 +239,7 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
       {clubs.length > 0 ? (
         <section className="mt-5 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
           {clubs.map((club) => (
-            <ClubCard key={club.id} club={club} />
+            <ClubCard key={club.id} club={club} previewRole={loaderData.previewRole} />
           ))}
         </section>
       ) : (

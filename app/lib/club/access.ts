@@ -9,10 +9,25 @@ export type ClubAccess = {
   managedClubIds: number[]
 }
 
+export type ClubPreviewRole = "app-admin" | "club-admin" | null
+
 const NO_CLUB_ACCESS: ClubAccess = {
   profileId: null,
   isAppAdmin: false,
   managedClubIds: [],
+}
+
+export function getClubPreviewRole(request: Request): ClubPreviewRole {
+  if (!import.meta.env.DEV) {
+    return null
+  }
+
+  const role = new URL(request.url).searchParams.get("as")
+  return role === "app-admin" || role === "club-admin" ? role : null
+}
+
+export function withClubPreview(path: string, previewRole: ClubPreviewRole) {
+  return previewRole === null ? path : `${path}?as=${previewRole}`
 }
 
 export async function getMyClubAccess(): Promise<ClubAccess> {

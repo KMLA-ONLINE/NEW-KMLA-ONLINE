@@ -1,12 +1,22 @@
 import { Link } from "react-router"
 
 import { Twemoji } from "~/components/ui/twemoji"
+import { withClubPreview, type ClubPreviewRole } from "~/lib/club/access"
 import { clubTypeLabel } from "~/lib/club/format"
 import type { Club } from "~/lib/club/types"
 
-export function ClubCard({ club }: { club: Club }) {
+export function ClubCard({
+  club,
+  previewRole = null,
+}: {
+  club: Club
+  previewRole?: ClubPreviewRole
+}) {
   return (
-    <Link to={`/clubs/${club.slug}`} className="group block min-w-0 outline-none">
+    <Link
+      to={withClubPreview(`/clubs/${club.slug}`, previewRole)}
+      className="group block min-w-0 outline-none"
+    >
       <div className="bg-muted group-focus-visible:ring-ring aspect-square overflow-hidden rounded-xl group-focus-visible:ring-2">
         {club.imageUrl ? (
           <img
