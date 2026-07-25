@@ -240,25 +240,6 @@ create trigger trg_enforce_comment_mention_limit
 before insert on public.comment_mentions
 for each row execute function private.enforce_mention_limit('comment_id');
 
--- set_post_attachments가 이미 개수를 검사하지만, 테이블에서도 다시 막는다(service_role 직접 삽입 등).
--- 메시지와 달리 글은 이미지와 파일을 섞을 수 있어서(카드가 이미지 그리드와 파일 목록을 함께 렌더한다)
--- "여럿이면 전부 이미지" 규칙은 없고 개수 상한만 있다.
-create function private.enforce_post_attachment_shape()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  if exists (
-    select 1
-    from (select distinct post_id from new_rows) touched
-    where (select count(*) from public.post_attachments a where a.post_id = touched.post_id)
-          > private.max_post_attachments()
-  ) then
-    raise exception 'a post carries at most % attachments', private.max_post_attachments();
-  end if;
-  return null;
-end;
-$$;
-revoke execute on function private.enforce_post_attachment_shape() from public, anon, authenticated, service_role;
-
 create function private.validate_comment_parent()
 returns trigger
 language plpgsql
@@ -384,11 +365,6 @@ for each row execute function private.mark_comment_edited();
 
 revoke execute on function private.mark_post_edited(), private.mark_comment_edited() from public, anon, authenticated, service_role;
 
-create trigger trg_enforce_post_attachment_shape
-after insert on public.post_attachments
-referencing new table as new_rows
-for each statement execute function private.enforce_post_attachment_shape();
-
 alter table public.posts enable row level security;
 alter table public.post_attachment_mime_types enable row level security;
 alter table public.post_attachments enable row level security;
@@ -397,9 +373,6 @@ alter table public.post_mentions enable row level security;
 alter table public.comment_mentions enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
--- can_participate_space가 아니라 can_post_in_space다: post_policy='managers'인 공지형 그룹에서는
--- 멤버여도 메인 글을 못 쓴다(댓글은 comments_insert가 can_access_post로 여전히 열어 둔다).
-create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_post_in_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
@@ -458,7 +431,6 @@ create policy comment_mentions_delete on public.comment_mentions for delete to a
 grant select (id,pub_id,space_id,title,content,is_anonymous,author_attribution,category_id,pinned_at,created_at,updated_at) on public.posts to authenticated;
 grant select (id,post_id,parent_id,content,is_anonymous,author_attribution,created_at,updated_at,deleted_at) on public.comments to authenticated;
 grant select on public.post_attachments, public.post_attachment_mime_types to authenticated;
-grant insert (space_id,author_id,title,content,is_anonymous,author_attribution,category_id) on public.posts to authenticated;
 -- is_anonymous는 update에서 뺀다. 작성 시점에만 정해지고 그 뒤로는 불변이다 -- 익명으로 쓴 글을
 -- 나중에 실명으로 까거나(작성자가 후회해도 이미 익명을 믿고 반응한 사람들이 있다) 실명 글을
 -- 익명으로 숨기는(이미 본 사람은 아는데 새로 보는 사람만 못 보는, 반쪽짜리 익명) 전환을 둘 다 막는다.
@@ -471,7 +443,7 @@ grant update (content) on public.comments to authenticated;
 grant select, delete on public.post_mentions, public.comment_mentions to authenticated;
 grant insert (post_id,user_id) on public.post_mentions to authenticated;
 grant insert (comment_id,user_id) on public.comment_mentions to authenticated;
-grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
+grant usage, select on sequence public.comments_id_seq to authenticated;
 grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
 
@@ -684,6 +656,30 @@ begin
   end if;
 
   return query
+  with member_spaces as materialized (
+    select s.id, s.name, s.type, s.pub_id
+    from public.space_members sm
+    join public.spaces s on s.id=sm.space_id and s.deleted_at is null
+    where sm.user_id=caller_id and sm.banned_at is null
+  ),
+  page as materialized (
+    -- space마다 p_limit개면 전체 상위 p_limit개를 빠뜨릴 수 없다. 이 안쪽 limit은
+    -- idx_posts_active_space_created_at을 타서 각 space의 오래된 글을 전부 읽지 않게 하고,
+    -- 바깥 limit은 그 후보들을 홈 피드의 단일 시간순으로 합친다.
+    select candidate.*, ms.name as space_name, ms.type as space_type, ms.pub_id as space_pub_id
+    from member_spaces ms
+    cross join lateral (
+      select p.id, p.pub_id, p.space_id, p.author_id, p.title, p.content, p.is_anonymous,
+             p.author_attribution, p.category_id, p.pinned_at, p.created_at, p.updated_at
+      from public.posts p
+      where p.space_id=ms.id and p.deleted_at is null
+        and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
+      order by p.created_at desc, p.id desc
+      limit p_limit
+    ) candidate
+    order by candidate.created_at desc, candidate.id desc
+    limit p_limit
+  )
   select
     p.id,
     p.pub_id,
@@ -700,7 +696,7 @@ begin
     p.author_id=caller_id,
     case when cat.id is null then null else
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
-    jsonb_build_object('name',s.name,'type',s.type,'pub_id',s.pub_id),
+    jsonb_build_object('name',p.space_name,'type',p.space_type,'pub_id',p.space_pub_id),
     p.pinned_at,
     p.created_at,
     p.updated_at,
@@ -709,10 +705,7 @@ begin
     coalesce(summary.top_reactions,'[]'::jsonb),
     summary.my_reaction_id,
     coalesce(files.items,'[]'::jsonb)
-  from public.posts p
-  join public.spaces s on s.id=p.space_id and s.deleted_at is null
-  join public.space_members sm
-    on sm.space_id=p.space_id and sm.user_id=caller_id and sm.banned_at is null
+  from page p
   left join public.space_categories cat on cat.id=p.category_id
   left join lateral (
     select
@@ -730,10 +723,7 @@ begin
     join public.mime_types mime on mime.content_type=a.content_type
     where a.post_id=p.id
   ) files on true
-  where p.deleted_at is null
-    and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
-  order by p.created_at desc, p.id desc
-  limit p_limit;
+  order by p.created_at desc, p.id desc;
 end;
 $$;
 
@@ -1072,8 +1062,7 @@ begin
   select s.pub_id into space_pub_id
   from public.spaces s where s.id=p_space_id and s.deleted_at is null;
   if not found then raise exception 'space not found'; end if;
-  -- security definer라 posts_insert 정책이 적용되지 않는다 -- 같은 검사를 여기서 다시 해야
-  -- 이 RPC가 post_policy를 우회하는 뒷문이 되지 않는다.
+  -- security definer는 RLS를 우회하므로 이 함수가 post_policy를 직접 강제한다.
   if not private.can_post_in_space(p_space_id) then raise exception 'not allowed to post in this space'; end if;
 
   -- 길이 제약과 카테고리 동일 space 검사는 테이블 check와 trg_validate_post_category가 한다.
@@ -1275,8 +1264,7 @@ revoke execute on function private.suspend_anonymity(bigint,bigint) from public,
 --
 -- 권한 검사는 private.suspend_anonymity / private.undo_anonymity_suspension 안에도 그대로
 -- 남겨둔다. 저 둘은 (space_id, author_id)를 직접 받으므로 이 helper를 거치지 않는 호출자가
--- 생기면 곧바로 무방비가 된다 -- set_post_attachments가 개수를 검사해도 테이블 트리거를 남겨둔
--- 것과 같은 이유다.
+-- 생기면 곧바로 무방비가 된다.
 create function private.require_anonymous_post_author(p_post_id bigint)
 returns table(space_id bigint, author_id bigint)
 language plpgsql stable security definer set search_path = '' as $$
@@ -1405,8 +1393,8 @@ declare
   removed bigint;
 begin
   perform private.require_service_role();
-  if p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
-  if p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
+  if p_limit is null or p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
+  if p_older_than is null or p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
   cutoff := now() - p_older_than;
 
   select array_agg(t.id) into target_posts

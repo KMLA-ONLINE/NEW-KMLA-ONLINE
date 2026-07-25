@@ -14,7 +14,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 ## RPC
 
-글·댓글 본문 작성과 수정은 direct insert/update + RLS + 컬럼 grant를 사용한다. 글과 첨부의 원자적 생성·교체, 고정·삭제·익명 정지는 RPC가 맡는다.
+글 생성은 첨부 유무와 관계없이 `create_post_with_attachments` 하나로 간다. 글 수정과 댓글 작성·수정은 direct insert/update + RLS + 컬럼 grant를 사용하고, 첨부 교체·고정·삭제·익명 정지는 RPC가 맡는다.
 
 **읽기가 RPC인 이유**: `author_id`의 select grant를 회수했으므로(아래 "익명") 작성자를 붙여줄 수 있는 건 security definer 함수뿐이고, 그 함수가 익명이면 `author`를 null로 지운다. 덤으로 댓글/반응 수와 첨부를 한 번에 묶어 N+1을 없앤다.
 
@@ -27,6 +27,8 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | `get_post(pub_id)`                                            | post 접근 권한    | X    | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                                                              |
 | `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한    | X    | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래)                       |
 | `search_posts(query, space_id)`                               | space 멤버        | X    | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다                                                           |
+
+`list_feed_posts`는 각 멤버 space에서 인덱스로 최신 `limit`개씩만 후보로 가져와 전체 페이지를 먼저 확정한다. 댓글·반응 수, 상위 반응, 첨부 집계는 그 페이지의 글에만 수행하므로 과거 글 전체를 집계하지 않는다.
 
 `list_space_posts`/`list_feed_posts`/`get_post`는 글 작성자의, `get_post_comments`는 각 댓글 작성자의 현재 익명 정지 여부를 `is_author_anonymity_suspended`로 내린다. 클라이언트는 이 값이 `true`일 때만 "익명 제한 취소"를 표시한다.
 
@@ -55,7 +57,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | 함수                                      | 인증         | 쓰기 | 목적                                                   |
 | ----------------------------------------- | ------------ | ---- | ------------------------------------------------------ |
 | `purge_deleted_content(older_than?, limit?)` | service_role | O    | soft delete된 글·댓글 하드 정리 (기본 7일, 배치 100) |
-**메인 글 작성은 `can_post_in_space`가 연다** — `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 검사가 `posts_insert` 정책 **과** `create_post_with_attachments` **양쪽**에 있는 이유: 후자는 security definer라 RLS를 지나치므로 정책만 고치면 그대로 뒷문이 된다. `comments_insert`는 건드리지 않는다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
+**메인 글 작성은 `create_post_with_attachments`만 연다.** 함수가 `can_post_in_space`를 호출하므로 `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 첨부가 없는 글도 빈 배열을 넘긴다. `comments_insert`는 그대로 열려 있다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
 
 ## 익명
 
@@ -106,7 +108,7 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 
 **경로를 post가 아니라 space에 매단 이유**: 경로에 `post.pub_id`를 박으면 글이 먼저 존재해야 업로드가 되고, 작성 → 업로드 → 확정 **3단계**가 된다. 중간에 실패하면 첨부 없는 글이 게시된 채 남아 보상 트랜잭션이 필요해지는데, **그 보상도 실패할 수 있어 유령 글이 영구히 남는다.** space에 매달면 실패 시 아무것도 안 생기고 올려둔 blob은 고아 청소가 걷어간다.
 
-메시지와 달리 글은 **이미지와 파일을 섞을 수 있다**(카드가 둘 다 렌더한다). 그래서 "여럿이면 전부 이미지" 규칙은 없고 개수 상한(10)만 있다.
+메시지와 달리 글은 **이미지와 파일을 섞을 수 있다**(카드가 둘 다 렌더한다). 그래서 "여럿이면 전부 이미지" 규칙은 없고 개수 상한(10)만 있다. 상한은 글 생성·첨부 교체 RPC가 공유하는 `validate_post_attachments`에서 강제한다.
 
 ## Soft delete와 purge
 
@@ -146,7 +148,6 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 | ---------------------------------------- | ------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `trg_validate_post_category`             | `posts`            | BEFORE I/U of `space_id`,`category_id`      | 다른 space의 카테고리면 예외                                                                                                     |
 | `trg_enforce_anonymous_allowed_posts`    | `posts`            | BEFORE INSERT                               | 3단계 정책·운영진 귀속·익명 정지를 강제. 트리거 **함수**는 `private.enforce_content_anonymity`([02-spaces](02-spaces.md))        |
-| `trg_enforce_post_attachment_shape`      | `post_attachments` | AFTER INSERT (statement)                    | 첨부 10개 초과 시 예외                                                                                                           |
 | `trg_enforce_post_mention_limit`         | `post_mentions`    | BEFORE INSERT                               | 멘션 20개 초과 시 예외                                                                                                           |
 | `trg_validate_comment_parent`            | `comments`         | BEFORE I/U of `post_id`,`parent_id`         | 부모가 같은 post의 활성 comment가 아니거나 깊이가 30단계를 넘으면 예외                                                           |
 | `trg_enforce_anonymous_allowed_comments` | `comments`         | BEFORE INSERT                               | 위와 같음                                                                                                                        |

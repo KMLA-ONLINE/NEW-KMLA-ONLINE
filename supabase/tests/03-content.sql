@@ -27,6 +27,7 @@ declare
   result_suspended boolean;
   suspended_until_before timestamptz; suspended_until_after timestamptz;
   suspension_notification_count bigint;
+  too_many_attachments jsonb;
 begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
@@ -251,6 +252,34 @@ begin
   exception when others then
     if sqlerrm not like '%category must belong to the same space%' then raise; end if;
   end;
+
+  -- -------------------------------------------------------------------------
+  -- 첨부 상한은 테이블 트리거가 아니라 create/set RPC의 공용 validator가 강제한다
+  -- -------------------------------------------------------------------------
+  select jsonb_agg('{}'::jsonb) into too_many_attachments
+  from generate_series(1,11);
+
+  begin
+    perform public.create_post_with_attachments(
+      space1,'첨부 초과','본문',too_many_attachments,null,false
+    );
+    raise exception 'create must reject more than 10 attachments';
+  exception when others then
+    if sqlerrm not like '%at most 10 attachments%' then raise; end if;
+  end;
+  if exists(select 1 from public.posts where space_id=space1 and title='첨부 초과') then
+    raise exception 'a rejected attachment list must roll back the new post';
+  end if;
+
+  begin
+    perform public.set_post_attachments(real_id,too_many_attachments);
+    raise exception 'set must reject more than 10 attachments';
+  exception when others then
+    if sqlerrm not like '%at most 10 attachments%' then raise; end if;
+  end;
+  if exists(select 1 from public.post_attachments where post_id=real_id) then
+    raise exception 'a rejected attachment replacement must leave the existing list unchanged';
+  end if;
 
   -- -------------------------------------------------------------------------
   -- 존재 오라클: 비멤버의 삭제 시도는 "없는 글"과 똑같이 조용히 끝난다
@@ -617,6 +646,19 @@ begin
   update public.comments set content=null,deleted_at=now()-interval '8 days' where id=any(chain);
 
   perform set_config('request.jwt.claim.role','service_role',true);
+
+  begin
+    perform public.purge_deleted_content(interval '7 days',null);
+    raise exception 'purge must reject a null limit';
+  exception when others then
+    if sqlerrm <> 'limit must be between 1 and 1000' then raise; end if;
+  end;
+  begin
+    perform public.purge_deleted_content(null,100);
+    raise exception 'purge must reject a null cutoff';
+  exception when others then
+    if sqlerrm <> 'purge cutoff must be at least 1 day' then raise; end if;
+  end;
 
   -- 배치 2 = 잎 하나 벗기고, 새로 생긴 잎 하나 더. 배열 고정 방식이면 여기서 0이 나온다.
   select purged_comments into purged from public.purge_deleted_content(interval '7 days',2);

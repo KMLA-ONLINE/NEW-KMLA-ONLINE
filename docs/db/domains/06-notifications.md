@@ -11,14 +11,14 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 - **`type`이 없으면 안 되는 이유**: FK 모양으로는 종류를 유추할 수 없다. "내 글에 댓글", "내 댓글에 답글", "댓글에서 멘션"은 `(space_id, post_id, comment_id)`가 전부 채워진 **완전히 같은 모양**인데 아이콘도 문구도 목적지도 다르다.
 - `actor_is_anonymous` — 익명으로 한 행동인가. `list_notifications()`가 이걸 보고 actor를 지운다. 원본에서 매번 읽지 않는 이유: `is_anonymous`는 불변이라 drift가 없고, 원본이 하드 삭제돼도 "가려야 한다"는 판단은 남아야 한다.
 - `payload jsonb` — FK로 표현 못 하는 소량의 사실만(바뀐 역할, 정지 만료 시각).
-- **`title`/`body`는 없다**(과거엔 있었다). 렌더된 문구를 DB에 박으면 작성자 개명에 stale해지고, 문구 수정이 데이터 마이그레이션이 되며, 무엇보다 댓글 미리보기를 캐시하는 순간 **삭제된 댓글의 원문이 되살아난다**.
 
 ### `notification_type`
 
-| 그룹   | 값                                                                                                                                                                        | 게이트                                                          |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 콘텐츠 | `post_comment`, `comment_reply`, `post_mention`, `comment_mention`                                                                                                        | `space_members.notification_setting` (`off`/`mentions`/`all`)   |
-| 운영   | `space_join_request`, `space_join_approved`, `space_join_rejected`, `space_invited`, `space_role_changed`, `space_anonymity_suspended`, `post_removed`, `comment_removed` | 없음 — **끌 수 없다** (가입 승인·정지 통보를 안 받을 수는 없다) |
+
+| 그룹   | 값                                                                                                                                                                        | 게이트                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 콘텐츠 | `post_comment`, `comment_reply`, `post_mention`, `comment_mention`                                                                                                        | `space_members.notification_setting` (`off`/`mentions`/`all`)    |
+| 운영   | `space_join_request`, `space_join_approved`, `space_join_rejected`, `space_invited`, `space_role_changed`, `space_anonymity_suspended`, `post_removed`, `comment_removed` | 없음 —**끌 수 없다** (가입 승인·정지 통보를 안 받을 수는 없다) |
 
 **채팅은 없다.** 알림함과 채팅은 별개 체계이고, 그건 빠뜨린 게 아니라 결정이다 — 아래 "주의" 참고.
 
@@ -26,62 +26,63 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 
 ### 알림함 읽기
 
+
 | 함수                                    | 인증     | 목적                                                                |
-| --------------------------------------- | -------- | ------------------------------------------------------------------- |
+| ----------------------------------------- | ---------- | --------------------------------------------------------------------- |
 | `list_notifications(before_id?, limit)` | accepted | 알림함 keyset. 익명이면 actor를 지우고, 대상을 pub_id로 풀어 내린다 |
-| `get_unread_notification_count()`       | accepted | 최근 24시간의 안 읽은 알림만 세는 내비 뱃지용. 100에서 멈춘다      |
+| `get_unread_notification_count()`       | accepted | 최근 24시간의 안 읽은 알림만 세는 내비 뱃지용. 100에서 멈춘다       |
 
 ### 운영 정리
 
-| 함수                                            | 인증         | 목적                                                        |
-| ----------------------------------------------- | ------------ | ----------------------------------------------------------- |
+
+| 함수                                       | 인증         | 목적                                                                                            |
+| -------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
 | `purge_notifications(older_than?, limit?)` | service_role | 생성된 지 기본 30일 지난 알림을 읽음 여부와 무관하게 오래된 순으로 제한된 배치 단위 hard delete |
 
 **"모두 읽음"에 RPC는 없다** — `update notifications set read_at=now() where read_at is null` 한 줄이면 된다(RLS가 내 행으로 가두고 컬럼 grant가 `read_at`만 연다).
 
 보존 기간은 [삭제·보존 정책](../deletion-policy.md)에 있다.
+
 ## Trigger
 
 ### 콘텐츠 활동
 
-| 트리거                          | 테이블             | 이벤트                       | 만드는 알림                                                                                         |
-| ------------------------------- | ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| `trg_notify_on_comment`         | `comments`         | AFTER INSERT                 | 글쓴이 `post_comment` + 부모 댓글 작성자 `comment_reply`. 같은 사람이면 **답글이 이겨** 알림은 하나 |
-| `trg_notify_on_post_mention`    | `post_mentions`    | AFTER INSERT                 | `post_mention`                                                                                      |
-| `trg_notify_on_comment_mention` | `comment_mentions` | AFTER INSERT                 | `comment_mention`. 이미 그 댓글로 나간 알림이 있으면 **종류만 올린다**                              |
-| `trg_notify_on_post_removed`    | `posts`            | AFTER UPDATE of `deleted_at` | 모더레이터가 지웠을 때만(`deleted_by <> author_id`)                                                 |
-| `trg_notify_on_comment_removed` | `comments`         | AFTER UPDATE of `deleted_at` | 위와 같음                                                                                           |
+
+| 트리거                          | 테이블             | 이벤트                      | 만드는 알림                                                                                        |
+| --------------------------------- | -------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `trg_notify_on_comment`         | `comments`         | AFTER INSERT                | 글쓴이`post_comment` + 부모 댓글 작성자 `comment_reply`. 같은 사람이면 **답글이 이겨** 알림은 하나 |
+| `trg_notify_on_post_mention`    | `post_mentions`    | AFTER INSERT                | `post_mention`                                                                                     |
+| `trg_notify_on_comment_mention` | `comment_mentions` | AFTER INSERT                | `comment_mention`. 이미 그 댓글로 나간 알림이 있으면 **종류만 올린다**                             |
+| `trg_notify_on_post_removed`    | `posts`            | AFTER UPDATE of`deleted_at` | 모더레이터가 지웠을 때만(`deleted_by <> author_id`)                                                |
+| `trg_notify_on_comment_removed` | `comments`         | AFTER UPDATE of`deleted_at` | 위와 같음                                                                                          |
 
 ### 가입과 역할
 
-| 트리거                                | 테이블                | 이벤트                                    | 만드는 알림                                                                                      |
-| ------------------------------------- | --------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `trg_notify_on_join_request`          | `space_join_requests` | AFTER INSERT                              | owner/admin에게 `space_join_request`                                                             |
-| `trg_notify_on_join_request_resolved` | `space_join_requests` | **CONSTRAINT** AFTER DELETE, **DEFERRED** | `space_join_approved` 또는 `..._rejected`. 본인 취소면 아무것도 안 만든다 (아래)                 |
-| `trg_notify_on_space_invite`          | `space_invites`       | AFTER INSERT                              | 대상 지정 초대만 (공유 링크는 받는 사람이 없다)                                                  |
-| `trg_notify_on_role_changed`          | `space_members`       | AFTER UPDATE of `role`                    | `space_role_changed`. **내가 바꾼 내 역할은 건너뛴다** (아래)                                    |
+
+| 트리거                                | 테이블                | 이벤트                                    | 만드는 알림                                                                      |
+| --------------------------------------- | ----------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `trg_notify_on_join_request`          | `space_join_requests` | AFTER INSERT                              | owner/admin에게`space_join_request`                                              |
+| `trg_notify_on_join_request_resolved` | `space_join_requests` | **CONSTRAINT** AFTER DELETE, **DEFERRED** | `space_join_approved` 또는 `..._rejected`. 본인 취소면 아무것도 안 만든다 (아래) |
+| `trg_notify_on_space_invite`          | `space_invites`       | AFTER INSERT                              | 대상 지정 초대만 (공유 링크는 받는 사람이 없다)                                  |
+| `trg_notify_on_role_changed`          | `space_members`       | AFTER UPDATE of`role`                     | `space_role_changed`. **내가 바꾼 내 역할은 건너뛴다** (아래)                    |
 
 ### 익명 정지
 
-| 트리거                              | 테이블                        | 이벤트                         | 만드는 알림                 |
-| ----------------------------------- | ----------------------------- | ------------------------------ | --------------------------- |
-| `trg_notify_on_anonymity_suspended` | `space_anonymity_suspensions` | AFTER I/U of `suspended_until` | `space_anonymity_suspended` |
+
+| 트리거                              | 테이블                        | 이벤트                        | 만드는 알림                 |
+| ------------------------------------- | ------------------------------- | ------------------------------- | ----------------------------- |
+| `trg_notify_on_anonymity_suspended` | `space_anonymity_suspensions` | AFTER I/U of`suspended_until` | `space_anonymity_suspended` |
 
 익명 정지는 항상 7일이다. 활성 정지에 대한 재요청은 행을 갱신하지 않아 알림도 중복 생성되지 않고, 해제는 행 삭제라 별도 알림이 없다.
+
 ## 주의
 
 - **왜 트리거인가(RPC가 아니라).** `comments`/`*_mentions`에는 insert 컬럼 grant가 있어 클라이언트가 테이블에 직접 쓴다. 생성을 RPC에만 걸면 테이블로 바로 질러 **알림 없이 댓글을 다는 우회**가 가능하다. 트리거는 security definer라 insert grant 없이도 쓴다.
-
 - **익명 유출.** `actor_id`의 select를 회수했다. 없으면 익명 댓글의 알림 행에 실린 `actor_id`를 글쓴이가 그냥 select해서 익명을 깬다 — `posts`/`comments`의 `author_id`를 가린 것이 **알림함을 우회로로 통째로 무효가 된다.** 열려 있는 컬럼은 `id`/`type`/`read_at`/`created_at`뿐이다(읽음 표시 UPDATE의 WHERE가 참조하는 컬럼 + 나중의 realtime 뱃지용 최소치). 읽기는 `list_notifications()`로만 가고, 어차피 딥링크에 필요한 pub_id는 내부 bigint만으로는 못 만든다.
-
 - **모더레이션 알림은 actor를 안 싣는다**(`notifications_actor_shape_check`가 강제). 스키마가 이미 `suspended_by`와 `deleted_by`의 select를 회수해 뒀는데("누가 걸었는지까지 알면 보복 대상이 된다") 알림에 실으면 그 결정이 무효가 된다. 가입 승인·거절·역할 변경은 애초에 누가 했는지를 저장하는 컬럼이 없다.
-
 - **승인/거절/본인취소가 전부 같은 DELETE다.** 그래서 `trg_notify_on_join_request_resolved`는 **constraint trigger + DEFERRED**여야 한다: `approve_join_request`는 요청을 DELETE한 **뒤** 멤버로 INSERT하므로, 보통의 AFTER ROW 트리거는 문이 끝나면 바로 돌아 **승인을 거절로 오인한다.** 커밋까지 미루면 최종 상태를 본다. (검증할 땐 롤백 트랜잭션 안에서 `set constraints all immediate`로 커밋 시점을 강제해야 한다 — 안 그러면 트리거가 아예 안 돌아 "알림이 안 온다"로 보인다.)
-
 - **내가 바꾼 내 역할은 알리지 않는다.** `transfer_space_ownership`이 기존 owner를 admin으로 내리는 게 정확히 그 경우다. `notifications_no_self_notify` 제약은 이걸 못 잡는다 — 그 제약은 `actor_id`를 보는데 역할 변경 알림은 actor를 아예 안 싣기 때문이다.
-
 - **채팅 알림은 행이 아니라 푸시다.** 이 도메인은 `messages`도 `conversations`도 참조하지 않으며, 그건 빠뜨린 게 아니라 결정이다. 메시지당 수신자당 행을 쌓으면 (1) 같은 사실이 두 곳에 저장되어 서로 다른 말을 하고 — 메시지를 읽어도 알림함의 그 줄은 안 읽음으로 남는다 — (2) 팬아웃이 터진다. 채팅에서 지속되는 상태는 `chat_read_states`의 커서 하나뿐이고, 안 읽은 수는 거기서 파생되며(`get_unread_message_count`), 음소거는 `chat_notification_settings`가 맡는다.
 
   한때 멘션만은 예외로 두려고 `message_mention` enum 값과 `notifications.message_id`를 예약해 뒀으나 생산자를 끝내 만들지 않았고, 이제 만들 수도 없다: 1:1 대화는 종단간 암호화되어 서버가 본문을 못 읽으므로 멘션을 탐지할 방법이 없고([docs/e2ee.md](../../e2ee.md)), 애초에 1:1에는 멘션할 제3자가 없다. 그룹 대화의 멘션이 필요해지면 그때도 알림함이 아니라 **채팅 자신의 푸시**로 간다 — `chat_notification_settings.level='mention'`이 이미 그 자리다. (제거: `20260712154754_decouple_notifications_from_chat.sql`)
-
 - **아직 없는 알림**: 공지/고정글 팬아웃, 반응(팬아웃이 크고 개별 가치가 낮아 `actor_count` 집계가 필요하다), 익명 정지 **해제** 통보.

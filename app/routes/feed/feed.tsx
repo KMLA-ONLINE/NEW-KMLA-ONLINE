@@ -10,8 +10,12 @@ import { mockFeedPosts } from "~/lib/feed/mock-data"
 import { getTodayMealPlan } from "~/lib/meal/neis"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
-// TODO(backend): 이 슬라이스가 list_feed_posts의 keyset 페이지네이션(before_id)으로 바뀐다.
-const FEED_PAGE_SIZE = 6
+// TODO(backend): 첫 페이지는 clientLoader가 list_feed_posts(null, 10)를 await하고 mapPostRows로
+// 변환한다. 이후 페이지는 useFetcher로 같은 clientLoader에 `before=<마지막 post_id>`를 보내며,
+// fetcher.data를 **응답마다 한 번만** 기존 배열 뒤에 붙인다. hasMore는 원본 RPC 행이 10개인지로,
+// cursor는 매핑 전 마지막 행의 post_id로 정한다. 컴포넌트/useEffect에서 Supabase를 직접 호출하지
+// 않는다. 아래 6은 mock 8개로 스크롤을 확인하기 위한 값일 뿐 실제 RPC limit으로 재사용하지 않는다.
+const MOCK_FEED_PAGE_SIZE = 6
 
 // 여러 그룹의 글을 한 흐름으로 모아 순수 최신순으로 보여준다(created_at 내림차순). 고정은 그룹
 // 안에서만 의미가 있어(무슨 기준으로 맨 위?) 피드엔 없다. ISO 문자열이라 사전식이 곧 시간순.
@@ -25,13 +29,15 @@ export const handle = {
 
 export default function AppHomePage() {
   const [viewMode, setViewMode] = usePostViewMode()
-  const [visible, setVisible] = useState(FEED_PAGE_SIZE)
+  const [visible, setVisible] = useState(MOCK_FEED_PAGE_SIZE)
 
   const hasMore = visible < feedPosts.length
-  const sentinelRef = useInfiniteScroll(
-    () => setVisible((count) => count + FEED_PAGE_SIZE),
-    hasMore
-  )
+  const sentinelRef = useInfiniteScroll(() => setVisible((count) => count + MOCK_FEED_PAGE_SIZE), {
+    enabled: hasMore,
+    // TODO(backend): useFetcher로 다음 list_feed_posts 페이지를 붙이면 반드시
+    // `pending: fetcher.state !== "idle"`을 넘긴다. hook이 요청 중 observer를 끊어 중복 호출을 막고,
+    // 완료 뒤 sentinel이 여전히 보이면 다시 연결해 짧은 페이지를 이어서 채운다.
+  })
   const visiblePosts = feedPosts.slice(0, visible)
 
   return (
