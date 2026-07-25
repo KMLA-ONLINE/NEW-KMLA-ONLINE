@@ -86,12 +86,6 @@ insert into public.club_settings (
 )
 values (true, true);
 
-create index idx_club_apply_rounds_period
-on public.club_apply_rounds (
-  starts_at,
-  ends_at
-);
-
 create index idx_club_managers_user_id
 on public.club_managers (
   user_id,
@@ -104,28 +98,16 @@ on public.club_recruitments (
   round_id
 );
 
-create index idx_clubs_apply_round_club_created_at
+create index idx_clubs_apply_club_round_created_at
 on public.clubs_apply (
-  round_id,
   club_id,
-  created_at
-);
-
-create index idx_clubs_apply_round_user_created_at
-on public.clubs_apply (
   round_id,
-  user_id,
   created_at
 );
 
 create index idx_clubs_apply_user_id
 on public.clubs_apply (
   user_id
-);
-
-create index idx_clubs_apply_club_id
-on public.clubs_apply (
-  club_id
 );
 
 alter table public.clubs
