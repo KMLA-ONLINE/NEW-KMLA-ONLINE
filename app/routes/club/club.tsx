@@ -5,19 +5,30 @@ import {
   MessageSquareTextIcon,
   PencilIcon,
 } from "lucide-react"
-import { Link, useParams, useSearchParams } from "react-router"
+import { Link } from "react-router"
 
 import { RichText } from "~/components/rich-text/rich-text"
 import { Button } from "~/components/ui/button"
 import { Twemoji } from "~/components/ui/twemoji"
+import { getMyClubAccess } from "~/lib/club/access"
 import { clubTypeLabel, formatRecruitmentPeriod } from "~/lib/club/format"
 import { mockClubApplicantsByClubSlug, mockClubs } from "~/lib/club/mock-data"
 
-export default function ClubPage() {
-  const { clubId } = useParams()
-  const [searchParams] = useSearchParams()
-  const adminMode = searchParams.get("as") === "admin"
-  const club = mockClubs.find((item) => item.slug === clubId)
+import type { Route } from "./+types/club"
+
+export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+  const club = mockClubs.find((item) => item.slug === params.clubId)
+  const access = await getMyClubAccess()
+
+  return {
+    club,
+    canManageClub:
+      club !== undefined && (access.isAppAdmin || access.managedClubIds.includes(club.id)),
+  }
+}
+
+export default function ClubPage({ loaderData }: Route.ComponentProps) {
+  const { club, canManageClub } = loaderData
 
   if (!club) {
     return <p className="py-16 text-center text-sm">동아리를 찾을 수 없습니다.</p>
@@ -28,7 +39,7 @@ export default function ClubPage() {
   return (
     <div className="mx-auto w-full max-w-3xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link to={adminMode ? "/clubs?as=admin" : "/clubs"}>
+        <Link to="/clubs">
           <ArrowLeftIcon aria-hidden />
           동아리
         </Link>
@@ -65,7 +76,7 @@ export default function ClubPage() {
           </div>
         </div>
 
-        {adminMode ? (
+        {canManageClub ? (
           <Button variant="outline" size="sm" asChild>
             <Link to={`/clubs/${club.slug}/edit`}>
               <PencilIcon aria-hidden />
@@ -103,7 +114,7 @@ export default function ClubPage() {
               className="mt-4 text-sm"
             />
 
-            {!adminMode ? (
+            {!canManageClub ? (
               club.myApplication ? (
                 <Button variant="outline" className="mt-5" asChild>
                   <Link to={`/messenger/${club.myApplication.conversationId}`}>
@@ -140,7 +151,7 @@ export default function ClubPage() {
           </p>
         </section>
 
-        {adminMode ? (
+        {canManageClub ? (
           <section className="border-t pt-6">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-lg font-semibold">지원자</h2>

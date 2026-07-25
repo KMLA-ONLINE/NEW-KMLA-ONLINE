@@ -1,6 +1,6 @@
 import { ArrowLeftIcon, EyeIcon, ImageIcon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react"
 import { useRef, useState } from "react"
-import { Link, useParams } from "react-router"
+import { Link, redirect } from "react-router"
 import { toast } from "sonner"
 
 import { GroupContentEditor } from "~/components/group/group-content-editor"
@@ -19,18 +19,35 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
+import { getMyClubAccess } from "~/lib/club/access"
 import { mockClubs } from "~/lib/club/mock-data"
 import type { ClubManager } from "~/lib/club/types"
 import { cn } from "~/lib/utils"
+
+import type { Route } from "./+types/edit"
 
 const CLUB_IMAGE_CROP = {
   aspect: 1,
   maxOutputEdge: 1024,
 }
 
-export default function ClubEditPage() {
-  const { clubId } = useParams()
-  const club = mockClubs.find((item) => item.slug === clubId)
+export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+  const club = mockClubs.find((item) => item.slug === params.clubId)
+
+  if (!club) {
+    return { club: null }
+  }
+
+  const access = await getMyClubAccess()
+  if (!access.isAppAdmin && !access.managedClubIds.includes(club.id)) {
+    throw redirect(`/clubs/${club.slug}`)
+  }
+
+  return { club }
+}
+
+export default function ClubEditPage({ loaderData }: Route.ComponentProps) {
+  const { club } = loaderData
   const imageInputRef = useRef<HTMLInputElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const announcementRef = useRef<HTMLTextAreaElement>(null)
@@ -86,7 +103,7 @@ export default function ClubEditPage() {
   return (
     <div className="mx-auto w-full max-w-2xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link to={`/clubs/${club.slug}?as=admin`}>
+        <Link to={`/clubs/${club.slug}`}>
           <ArrowLeftIcon aria-hidden />
           {club.name}
         </Link>

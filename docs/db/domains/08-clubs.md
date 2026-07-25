@@ -2,13 +2,28 @@
 
 Source: [`supabase/schemas/08-clubs.sql`](../../../supabase/schemas/08-clubs.sql)
 
-동아리 catalog, 전역 모집 라운드, 사용자 지원 row를 관리한다.
+동아리 catalog, 앱 관리자와 동아리별 관리자 권한, 전역 모집 라운드, 동아리별 모집 설정, 사용자 지원 row를 관리한다.
 
 ## 테이블
 
-- `clubs` — 동아리 이름, 소개, 구분(`major`/`general`). 이름은 unique
+- `clubs` — 동아리 이름, 소개, 카드 소개, 이모지, 이미지 URL, 활동 시간·장소, 구분(`major`/`general`). 이름은 unique
 - `club_apply_rounds` — 전체 동아리에 적용되는 모집 기간. `starts_at`/`ends_at`으로 열림 여부를 판단
+- `club_managers` — `(club_id, user_id)`별 동아리 관리자. 임명은 앱 관리자만 가능
+- `club_recruitments` — 라운드별·동아리별 모집 활성화와 공고
 - `clubs_apply` — 사용자의 동아리 지원. `(round_id, user_id, club_id)` unique
+- `club_settings` — 동아리 페이지 전체 공개 여부를 보관하는 singleton
+
+## 관리자 구분
+
+앱 관리자와 동아리별 관리자는 서로 다른 권한이다.
+
+| 역할 | source of truth | 권한 |
+| --- | --- | --- |
+| 앱 관리자 | `profiles.role = 'admin'` | 동아리 관리자 임명·해제, 모집 라운드와 전체 페이지 설정, 모든 동아리 편집·지원자 조회 |
+| 동아리 관리자 | `club_managers (club_id, user_id)` | 자신이 맡은 동아리 정보·모집 공고 편집, 해당 동아리 지원자 조회 |
+| 일반 사용자 | accepted profile | 동아리 조회, 열린 모집에 본인 지원·취소 |
+
+동아리 관리자가 앱 관리자 권한을 얻는 것은 아니며, 다른 동아리나 전역 설정을 관리할 수 없다. 앱 관리자는 `private.is_app_admin()`, 동아리 권한은 `private.manages_club(club_id)`로 각각 판별한다.
 
 ## 모집 라운드
 
@@ -28,22 +43,27 @@ starts_at <= now() < ends_at
 
 | 작업 | 조건 |
 | --- | --- |
-| 지원 목록 조회 | accepted 사용자 |
-| 지원 생성 | 본인 `user_id`, 모집 기간 안 |
+| 지원 목록 조회 | 본인 지원, 앱 관리자 전체, 동아리 관리자는 담당 동아리 |
+| 지원 생성 | 본인 `user_id`, 페이지 공개 + 모집 기간 + 해당 동아리 모집 활성화 |
 | 지원 취소 | 본인 row, 모집 기간 안 |
-| 동아리·라운드 관리 | service role |
+| 동아리 정보·모집 공고 관리 | 앱 관리자 또는 해당 동아리 관리자 |
+| 라운드·관리자 임명·페이지 공개 관리 | 앱 관리자 |
 
 ## RPC
 
-없음. 동아리 catalog와 모집 라운드는 service role에서 관리하고, 사용자의 지원 생성·취소는 `clubs_apply` direct insert/delete와 RLS로 처리한다.
+| 함수 | 호출자 | 용도 |
+| --- | --- | --- |
+| `get_my_club_access()` | authenticated | 현재 profile id, 앱 관리자 여부, 담당 동아리 id 목록 반환 |
 
-향후 모집 지원자를 모아 단체 대화를 만드는 기능이 필요하면 별도의 RPC로 추가한다. 현재 schema에는 지원 row와 대화방의 연결 컬럼이 없다.
+나머지 관리는 direct insert/update/delete와 RLS로 제한한다. 향후 모집 지원자를 모아 단체 대화를 만드는 기능이 필요하면 별도의 RPC로 추가한다. 현재 schema에는 지원 row와 대화방의 연결 컬럼이 없다.
 
 ## Private helper
 
 | 함수 | 용도 |
 | --- | --- |
+| `private.manages_club(club_id)` | 현재 사용자가 해당 동아리 관리자인지 확인 |
 | `private.is_club_round_open(round_id)` | 현재 시각이 해당 모집 라운드 안인지 확인 |
+| `private.is_club_recruiting(round_id, club_id)` | 페이지·기간·동아리별 모집 설정을 함께 확인 |
 
 ## UI mock 연결
 
@@ -53,7 +73,7 @@ starts_at <= now() < ends_at
 - `Database["public"]["Tables"]["club_apply_rounds"]["Row"]`
 - `Database["public"]["Tables"]["clubs_apply"]["Row"]`
 
-목록용 짧은 소개, slug, 이미지 미리보기, 활동 시간·장소, 관리자 목록, 모집 공고 Markdown, 대화방 ID는 현재 UI 확인용 필드다. 실제 DB 컬럼이 아니므로 저장 기능을 붙일 때는 먼저 schema migration을 추가하고 `database.types.ts`를 다시 생성해야 한다.
+`slug`, 대화방 ID는 아직 UI 확인용 필드다. 카드 소개, 이미지 URL, 활동 시간·장소, 관리자 관계와 모집 공고는 DB에 반영되어 있다.
 
 `club_type`은 화면에서 다음처럼 표시한다.
 
@@ -64,6 +84,6 @@ starts_at <= now() < ends_at
 
 ## 주의
 
-- 지원 가능 여부의 source of truth는 UI 스위치가 아니라 모집 라운드 시간과 RLS다.
-- `clubs`에는 현재 이미지 URL이나 관리자 관계가 없다.
+- 지원 가능 여부의 source of truth는 `club_settings.page_open`, 모집 라운드 시간, `club_recruitments.enabled`와 RLS다.
+- 앱 관리자와 동아리 관리자는 별도 관계이며 동아리 관리자에게 앱 전역 권한을 부여하지 않는다.
 - 지원 insert/delete는 라운드가 열린 동안 본인 row만 가능하다.

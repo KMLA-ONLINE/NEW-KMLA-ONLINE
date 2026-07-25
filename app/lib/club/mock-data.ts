@@ -20,6 +20,12 @@ const clubRows = {
 
 연주 실력보다 꾸준히 연습하고 팀 활동에 책임감 있게 참여할 수 있는지를 중요하게 봅니다.`,
     type: "major",
+    card_description: "합주와 공연을 준비하는 밴드 동아리",
+    emoji: "🎸",
+    image_url: null,
+    meeting: "수요일 7교시",
+    location: "음악실",
+    updated_at: null,
     created_at: createdAt,
   },
   defcon: {
@@ -34,6 +40,12 @@ const clubRows = {
 
 프론트엔드, 백엔드, 인공지능, 임베디드 분야의 팀 프로젝트를 진행합니다.`,
     type: "general",
+    card_description: "웹, 앱, AI 프로젝트를 만드는 IT 동아리",
+    emoji: "💻",
+    image_url: null,
+    meeting: "목요일 7교시",
+    location: "컴퓨터실",
+    updated_at: null,
     created_at: createdAt,
   },
   ttl: {
@@ -43,6 +55,12 @@ const clubRows = {
 
 학교 행사와 일상을 촬영하고 사진을 선별해 전시하거나 기록물로 남깁니다.`,
     type: "major",
+    card_description: "학교의 일상과 행사를 사진으로 기록하는 동아리",
+    emoji: "📷",
+    image_url: null,
+    meeting: "격주 목요일 7교시",
+    location: "미술실",
+    updated_at: null,
     created_at: createdAt,
   },
   cgv: {
@@ -52,6 +70,12 @@ const clubRows = {
 
 기초 체력과 팀 전술을 함께 훈련하고 교내외 경기에 참가합니다.`,
     type: "general",
+    card_description: "정기 훈련과 경기를 준비하는 축구 동아리",
+    emoji: "⚽",
+    image_url: null,
+    meeting: "화요일 방과 후",
+    location: "운동장",
+    updated_at: null,
     created_at: createdAt,
   },
   art: {
@@ -61,6 +85,12 @@ const clubRows = {
 
 각자의 작업을 이어가면서 서로 피드백하고 학기말 공동 전시를 준비합니다.`,
     type: "major",
+    card_description: "개인 작업과 공동 전시를 준비하는 미술 동아리",
+    emoji: "🎨",
+    image_url: null,
+    meeting: "월요일 7교시",
+    location: "미술실",
+    updated_at: null,
     created_at: createdAt,
   },
   debate: {
@@ -70,6 +100,12 @@ const clubRows = {
 
 여러 관점에서 자료를 조사하고 논리를 구성해 토론하는 활동을 진행합니다.`,
     type: "general",
+    card_description: "시사 주제를 조사하고 토론하는 동아리",
+    emoji: "🗣️",
+    image_url: null,
+    meeting: "격주 금요일 7교시",
+    location: "세미나실",
+    updated_at: null,
     created_at: createdAt,
   },
 } satisfies Record<string, ClubRow>

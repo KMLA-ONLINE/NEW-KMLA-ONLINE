@@ -4,11 +4,9 @@ import { Twemoji } from "~/components/ui/twemoji"
 import { clubTypeLabel } from "~/lib/club/format"
 import type { Club } from "~/lib/club/types"
 
-export function ClubCard({ club, adminMode }: { club: Club; adminMode: boolean }) {
-  const to = adminMode ? `/clubs/${club.slug}?as=admin` : `/clubs/${club.slug}`
-
+export function ClubCard({ club }: { club: Club }) {
   return (
-    <Link to={to} className="group block min-w-0 outline-none">
+    <Link to={`/clubs/${club.slug}`} className="group block min-w-0 outline-none">
       <div className="bg-muted group-focus-visible:ring-ring aspect-square overflow-hidden rounded-xl group-focus-visible:ring-2">
         {club.imageUrl ? (
           <img

@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -157,27 +157,156 @@ export type Database = {
           },
         ]
       }
-      clubs: {
+      club_managers: {
         Row: {
+          assigned_by: number | null
+          club_id: number
           created_at: string
-          description: string | null
-          id: number
-          name: string
-          type: Database["public"]["Enums"]["club_type"]
+          user_id: number
         }
         Insert: {
+          assigned_by?: number | null
+          club_id: number
           created_at?: string
-          description?: string | null
-          id?: number
-          name: string
-          type?: Database["public"]["Enums"]["club_type"]
+          user_id: number
         }
         Update: {
+          assigned_by?: number | null
+          club_id?: number
+          created_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_managers_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_managers_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_managers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      club_recruitments: {
+        Row: {
+          announcement: string | null
+          club_id: number
+          enabled: boolean
+          round_id: number
+          updated_at: string | null
+        }
+        Insert: {
+          announcement?: string | null
+          club_id: number
+          enabled?: boolean
+          round_id: number
+          updated_at?: string | null
+        }
+        Update: {
+          announcement?: string | null
+          club_id?: number
+          enabled?: boolean
+          round_id?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_recruitments_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_recruitments_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "club_apply_rounds"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      club_settings: {
+        Row: {
+          page_open: boolean
+          singleton: boolean
+          updated_at: string
+          updated_by: number | null
+        }
+        Insert: {
+          page_open?: boolean
+          singleton?: boolean
+          updated_at?: string
+          updated_by?: number | null
+        }
+        Update: {
+          page_open?: boolean
+          singleton?: boolean
+          updated_at?: string
+          updated_by?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clubs: {
+        Row: {
+          card_description: string | null
+          created_at: string
+          description: string | null
+          emoji: string
+          id: number
+          image_url: string | null
+          location: string | null
+          meeting: string | null
+          name: string
+          type: Database["public"]["Enums"]["club_type"]
+          updated_at: string | null
+        }
+        Insert: {
+          card_description?: string | null
           created_at?: string
           description?: string | null
+          emoji?: string
           id?: number
+          image_url?: string | null
+          location?: string | null
+          meeting?: string | null
+          name: string
+          type?: Database["public"]["Enums"]["club_type"]
+          updated_at?: string | null
+        }
+        Update: {
+          card_description?: string | null
+          created_at?: string
+          description?: string | null
+          emoji?: string
+          id?: number
+          image_url?: string | null
+          location?: string | null
+          meeting?: string | null
           name?: string
           type?: Database["public"]["Enums"]["club_type"]
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -1843,6 +1972,14 @@ export type Database = {
         Returns: {
           identity_public_key: string
           user_id: number
+        }[]
+      }
+      get_my_club_access: {
+        Args: never
+        Returns: {
+          is_app_admin: boolean
+          managed_club_ids: number[]
+          profile_id: number
         }[]
       }
       get_my_key_vault: {

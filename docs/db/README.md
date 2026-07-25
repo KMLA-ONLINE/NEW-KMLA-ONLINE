@@ -53,7 +53,7 @@ Supabase DB의 source of truth는 **`supabase/schemas/`** (declarative schema)�
 | `05-chat.sql`          | [05-chat](domains/05-chat.md)                   | chat 전체 테이블, 검증 trigger, 메시지/채팅 RPC                |
 | `06-notifications.sql` | [06-notifications](domains/06-notifications.md) | notifications                                                  |
 | `07-utilities.sql`     | [07-utilities](domains/07-utilities.md)         | gongangs, song_requests                                        |
-| `08-clubs.sql`         | [08-clubs](domains/08-clubs.md)                 | clubs, apply rounds, 신청                                      |
+| `08-clubs.sql`         | [08-clubs](domains/08-clubs.md)                 | clubs, 앱/동아리 관리자 분리, 모집 라운드·신청                 |
 | `09-storage.sql`       | [09-storage](domains/09-storage.md)             | storage policy, attachment cleanup queue와 정리 RPC            |
 
 seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마가 아니라 migration에 있다 — `supabase/migrations/20260707000000_baseline_schema.sql` 끝부분.
@@ -79,7 +79,7 @@ seed 데이터(`permissions`, `reaction_types`, `storage.buckets`)는 스키마�
 | `09-storage.sql`       | 없음   | 정리 큐, 버킷 allowlist가 MIME 레지스트리와 어긋나지 않는지 |
 | `10-rls.sql`           | 있음   | **RLS를 실제로 태운다** (아래)                              |
 
-`04-reactions`·`07-utilities`·`08-clubs`에는 테스트가 없다. `00-privileges`의 전수 검사만 이 도메인들을 함께 훑는다.
+`04-reactions`·`07-utilities`에는 도메인 테스트가 없다. `08-clubs`는 앱 관리자와 동아리별 관리자 권한 분리를 별도 테스트한다. `00-privileges`의 전수 검사도 모든 도메인을 함께 훑는다.
 
 **`00-privileges.sql`은 목록을 손으로 들지 않는다.** RLS 정책이 쓰는 `private` 헬퍼를 `pg_policy` 본문에서 캐내고, search_path를 고정하지 않은 security definer 함수와 RLS가 꺼진 테이블도 카탈로그를 훑어서 찾는다. 손 목록을 쓰면 거기서 빠지는 것이 정확히 이 파일이 잡으려는 실수와 같은 종류가 된다 — 실제로 `has_permission`과 `is_club_round_open`이 빠져 있었고, 둘 다 grant를 잃어도 녹색이었다.
 

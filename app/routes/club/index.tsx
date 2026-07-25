@@ -1,6 +1,6 @@
 import { PowerIcon, SearchIcon, SettingsIcon } from "lucide-react"
 import { useMemo, useState } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link, useFetcher } from "react-router"
 
 import { ClubCard } from "~/components/club/club-card"
 import { Button } from "~/components/ui/button"
@@ -13,13 +13,15 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
+import { getMyClubAccess } from "~/lib/club/access"
 import { mockClubs } from "~/lib/club/mock-data"
 import type { ClubType } from "~/lib/club/types"
+import { createClient } from "~/lib/supabase/client"
 import { cn } from "~/lib/utils"
 
-type ClubTab = "all" | ClubType
+import type { Route } from "./+types/index"
 
-const CLUB_PAGE_OPEN_KEY = "club-page-open"
+type ClubTab = "all" | ClubType
 
 const tabs: { id: ClubTab; label: string }[] = [
   { id: "all", label: "전체" },
@@ -27,17 +29,66 @@ const tabs: { id: ClubTab; label: string }[] = [
   { id: "general", label: "목동" },
 ]
 
-export default function ClubsPage() {
-  const [searchParams] = useSearchParams()
-  const adminMode = searchParams.get("as") === "admin"
+export async function clientLoader() {
+  const access = await getMyClubAccess()
+
+  if (access.profileId === null) {
+    return { ...access, pageOpen: true }
+  }
+
+  const { data, error } = await createClient()
+    .from("club_settings")
+    .select("page_open")
+    .eq("singleton", true)
+    .single()
+
+  if (error) {
+    throw new Error(`동아리 페이지 설정을 확인하지 못했습니다. (${error.code})`, {
+      cause: error,
+    })
+  }
+
+  return { ...access, pageOpen: data.page_open }
+}
+
+export async function clientAction({ request }: Route.ClientActionArgs) {
+  const access = await getMyClubAccess()
+  if (!access.isAppAdmin || access.profileId === null) {
+    throw new Response("앱 관리자만 동아리 페이지 설정을 변경할 수 있습니다.", {
+      status: 403,
+    })
+  }
+
+  const formData = await request.formData()
+  const pageOpen = formData.get("pageOpen") === "true"
+  const { error } = await createClient()
+    .from("club_settings")
+    .update({
+      page_open: pageOpen,
+      updated_by: access.profileId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("singleton", true)
+
+  if (error) {
+    throw new Error(`동아리 페이지 설정을 변경하지 못했습니다. (${error.code})`, {
+      cause: error,
+    })
+  }
+
+  return { ok: true }
+}
+
+export default function ClubsPage({ loaderData }: Route.ComponentProps) {
+  const adminMode = loaderData.isAppAdmin
+  const pageSettingFetcher = useFetcher<typeof clientAction>()
   const [tab, setTab] = useState<ClubTab>("all")
   const [query, setQuery] = useState("")
-  const [pageOpen, setPageOpen] = useState(() =>
-    typeof window === "undefined"
-      ? true
-      : window.localStorage.getItem(CLUB_PAGE_OPEN_KEY) !== "false"
-  )
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  const pageOpen = pageSettingFetcher.formData
+    ? pageSettingFetcher.formData.get("pageOpen") === "true"
+    : loaderData.pageOpen
+  const pageSettingPending = pageSettingFetcher.state !== "idle"
 
   const clubs = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR")
@@ -55,28 +106,11 @@ export default function ClubsPage() {
 
   const myApplications = mockClubs.filter((club) => club.myApplication !== null)
 
-  const openClubPage = () => {
-    window.localStorage.setItem(CLUB_PAGE_OPEN_KEY, "true")
-    setPageOpen(true)
-  }
-
-  const closeClubPage = () => {
-    window.localStorage.setItem(CLUB_PAGE_OPEN_KEY, "false")
-    setPageOpen(false)
-    setCloseDialogOpen(false)
-  }
-
   if (!adminMode && !pageOpen) {
     return (
       <div className="mx-auto w-full max-w-5xl">
-        <header className="flex items-center justify-between gap-3">
+        <header>
           <h1 className="text-2xl font-semibold">동아리</h1>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/clubs?as=admin">
-              <SettingsIcon aria-hidden />
-              관리
-            </Link>
-          </Button>
         </header>
 
         <section className="py-20 text-center">
@@ -93,12 +127,11 @@ export default function ClubsPage() {
     <div className="mx-auto w-full max-w-5xl">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">동아리</h1>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={adminMode ? "/clubs" : "/clubs?as=admin"}>
-            <SettingsIcon aria-hidden />
-            {adminMode ? "학생 화면" : "관리"}
-          </Link>
-        </Button>
+        {adminMode ? (
+          <span className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
+            <SettingsIcon aria-hidden />앱 관리자
+          </span>
+        ) : null}
       </header>
 
       {adminMode ? (
@@ -125,15 +158,23 @@ export default function ClubsPage() {
           </div>
 
           {pageOpen ? (
-            <Button variant="outline" size="sm" onClick={() => setCloseDialogOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pageSettingPending}
+              onClick={() => setCloseDialogOpen(true)}
+            >
               <PowerIcon aria-hidden />
               페이지 닫기
             </Button>
           ) : (
-            <Button size="sm" onClick={openClubPage}>
-              <PowerIcon aria-hidden />
-              페이지 열기
-            </Button>
+            <pageSettingFetcher.Form method="post">
+              <input type="hidden" name="pageOpen" value="true" />
+              <Button type="submit" size="sm" disabled={pageSettingPending}>
+                <PowerIcon aria-hidden />
+                페이지 열기
+              </Button>
+            </pageSettingFetcher.Form>
           )}
         </section>
       ) : null}
@@ -191,7 +232,7 @@ export default function ClubsPage() {
       {clubs.length > 0 ? (
         <section className="mt-5 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
           {clubs.map((club) => (
-            <ClubCard key={club.id} club={club} adminMode={adminMode} />
+            <ClubCard key={club.id} club={club} />
           ))}
         </section>
       ) : (
@@ -212,9 +253,12 @@ export default function ClubsPage() {
             <Button variant="outline" onClick={() => setCloseDialogOpen(false)}>
               취소
             </Button>
-            <Button variant="destructive" onClick={closeClubPage}>
-              페이지 닫기
-            </Button>
+            <pageSettingFetcher.Form method="post" onSubmit={() => setCloseDialogOpen(false)}>
+              <input type="hidden" name="pageOpen" value="false" />
+              <Button type="submit" variant="destructive" disabled={pageSettingPending}>
+                페이지 닫기
+              </Button>
+            </pageSettingFetcher.Form>
           </DialogFooter>
         </DialogContent>
       </Dialog>
