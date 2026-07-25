@@ -460,7 +460,7 @@ $$;
 
 -- 익명 정지 통보. actor는 싣지 않는다 -- space_anonymity_suspensions.suspended_by의 select를 이미
 -- 회수해 뒀고("누가 걸었는지까지 알면 보복 대상이 된다"), 알림에 실으면 그 결정이 무효가 된다.
--- 해제(undo_anonymity_suspension)는 suspended_until을 과거로 되돌리므로 WHEN 절이 걸러낸다.
+-- 해제(undo_anonymity_suspension)는 정지 행을 삭제하므로 이 트리거가 돌지 않는다.
 -- 이미 정지 중인 사람에게 또 걸면 suspend_anonymity가 아무것도 UPDATE하지 않아 여기도 안 돈다.
 create function private.notify_on_anonymity_suspended()
 returns trigger

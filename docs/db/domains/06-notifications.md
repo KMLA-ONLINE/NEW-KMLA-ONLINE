@@ -66,6 +66,8 @@ recipient 중심 알림 inbox. **알림은 전부 트리거가 만든다** — a
 | 트리거                              | 테이블                        | 이벤트                         | 만드는 알림                 |
 | ----------------------------------- | ----------------------------- | ------------------------------ | --------------------------- |
 | `trg_notify_on_anonymity_suspended` | `space_anonymity_suspensions` | AFTER I/U of `suspended_until` | `space_anonymity_suspended` |
+
+익명 정지는 항상 7일이다. 활성 정지에 대한 재요청은 행을 갱신하지 않아 알림도 중복 생성되지 않고, 해제는 행 삭제라 별도 알림이 없다.
 ## 주의
 
 - **왜 트리거인가(RPC가 아니라).** `comments`/`*_mentions`에는 insert 컬럼 grant가 있어 클라이언트가 테이블에 직접 쓴다. 생성을 RPC에만 걸면 테이블로 바로 질러 **알림 없이 댓글을 다는 우회**가 가능하다. 트리거는 security definer라 insert grant 없이도 쓴다.

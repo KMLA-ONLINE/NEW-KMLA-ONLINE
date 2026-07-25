@@ -41,14 +41,12 @@ create table public.spaces (
   deleted_by bigint null references public.profiles (id) on delete set null
 );
 
--- 익명 작성 권한의 한시적 정지. 관리자는 작성자 신원이나 정지 행을 열람할 수 없고 콘텐츠 id를
--- 통해서만 조치한다. 조치 결과의 제한된 연결 정보는 03-content.sql의 suspend_anonymity 계약에 있다.
+-- 익명 작성 권한의 7일 정지. 관리자는 작성자 신원이나 정지 행을 열람할 수 없고 콘텐츠 id를
+-- 통해서만 정지·해제한다.
 create table public.space_anonymity_suspensions (
   space_id bigint not null references public.spaces (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,
   suspended_until timestamptz not null,
-  -- 관리자가 사전에 열람할 수 없는 누범 횟수. 서버가 형량을 계산하고 조치 응답에 결과만 공개한다.
-  strike_count int4 not null default 1,
   suspended_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   primary key (space_id, user_id)
