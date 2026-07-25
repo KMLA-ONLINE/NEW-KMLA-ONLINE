@@ -88,7 +88,7 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "market", name: "민사고 먹9 사9 팔9", type: "community" },
     post: null,
     comment: null,
-    payload: { suspended_until: new Date(BASE + 2 * 24 * 60 * 60_000).toISOString() },
+    payload: { suspended_until: new Date(BASE + 7 * 24 * 60 * 60_000).toISOString() },
     readAt: null,
     createdAt: minutesAgo(300),
   },

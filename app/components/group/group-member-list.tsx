@@ -194,7 +194,7 @@ export function GroupMemberList({
   const hasMore = visibleCount < regular.length
   const sentinelRef = useInfiniteScroll(
     () => setVisibleCount((count) => count + MEMBER_PAGE_SIZE),
-    hasMore
+    { enabled: hasMore }
   )
 
   const isEmpty = staff.length === 0 && regular.length === 0

@@ -14,7 +14,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 ## RPC
 
-글·댓글 본문 작성과 수정은 direct insert/update + RLS + 컬럼 grant를 사용한다. 글과 첨부의 원자적 생성·교체, 고정·삭제·익명 정지는 RPC가 맡는다.
+글 생성은 첨부 유무와 관계없이 `create_post_with_attachments` 하나로 간다. 글 수정과 댓글 작성·수정은 direct insert/update + RLS + 컬럼 grant를 사용하고, 첨부 교체·고정·삭제·익명 정지는 RPC가 맡는다.
 
 **읽기가 RPC인 이유**: `author_id`의 select grant를 회수했으므로(아래 "익명") 작성자를 붙여줄 수 있는 건 security definer 함수뿐이고, 그 함수가 익명이면 `author`를 null로 지운다. 덤으로 댓글/반응 수와 첨부를 한 번에 묶어 N+1을 없앤다.
 
@@ -27,6 +27,8 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | `get_post(pub_id)`                                            | post 접근 권한    | X    | 상세 1건. 위와 같은 shape (`updated_at` 포함)                                                                                              |
 | `get_post_comments(post_id, after_id?, limit?)`               | post 접근 권한    | X    | `created_at`·`updated_at`을 포함한 댓글 평면 목록. **페이지네이션은 루트 댓글 단위**이고 자손은 전부 딸려 온다(아래)                       |
 | `search_posts(query, space_id)`                               | space 멤버        | X    | 공백 무시 제목·본문 검색. SECURITY DEFINER — invoker로는 `author_id`를 못 읽는다                                                           |
+
+`list_feed_posts`는 각 멤버 space에서 인덱스로 최신 `limit`개씩만 후보로 가져와 전체 페이지를 먼저 확정한다. 댓글·반응 수, 상위 반응, 첨부 집계는 그 페이지의 글에만 수행하므로 과거 글 전체를 집계하지 않는다.
 
 `list_space_posts`/`list_feed_posts`/`get_post`는 글 작성자의, `get_post_comments`는 각 댓글 작성자의 현재 익명 정지 여부를 `is_author_anonymity_suspended`로 내린다. 클라이언트는 이 값이 `true`일 때만 "익명 제한 취소"를 표시한다.
 
@@ -45,8 +47,8 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | ---------------------------------------------------- | ------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
 | `set_post_pinned(id, pinned)`                        | `can_curate_space` (**manager 포함**) | O    | 고정/해제. 게시판 권한이라 **작성자여도 자기 글은 못 고정한다**                                   |
 | `soft_delete_post(id)` / `soft_delete_comment(id)`   | 작성자 **또는** 관리자                | O    | soft delete + 반응/첨부 정리 + blob 삭제 큐. 최상위 댓글은 하위 트리까지 함께 숨기고, 답글은 본문만 비운다 |
-| `suspend_post_author_anonymity(post_id)`             | 관리자                                | O    | 작성자를 **모른 채로** 익명 권한만 정지. `(suspended_days, strike_count, already_suspended)`      |
-| `undo_post_anonymity_suspension(post_id)`            | 관리자                                | O    | 오판 취소. 누범 단계를 **하나** 되돌린다. **void**                                                 |
+| `suspend_post_author_anonymity(post_id)`             | 관리자                                | O    | 작성자를 **모른 채로** 익명 권한을 7일 정지. 활성 정지는 연장하지 않으며 **void**                  |
+| `undo_post_anonymity_suspension(post_id)`            | 관리자                                | O    | 오판 취소. 현재 정지 행을 삭제하며 **void**                                                        |
 | `suspend_comment_author_anonymity(comment_id)`       | 관리자                                | O    | 위와 같음 (댓글)                                                                                   |
 | `undo_comment_anonymity_suspension(comment_id)`      | 관리자                                | O    | 위와 같음 (댓글)                                                                                   |
 
@@ -55,7 +57,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | 함수                                      | 인증         | 쓰기 | 목적                                                   |
 | ----------------------------------------- | ------------ | ---- | ------------------------------------------------------ |
 | `purge_deleted_content(older_than?, limit?)` | service_role | O    | soft delete된 글·댓글 하드 정리 (기본 7일, 배치 100) |
-**메인 글 작성은 `can_post_in_space`가 연다** — `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 검사가 `posts_insert` 정책 **과** `create_post_with_attachments` **양쪽**에 있는 이유: 후자는 security definer라 RLS를 지나치므로 정책만 고치면 그대로 뒷문이 된다. `comments_insert`는 건드리지 않는다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
+**메인 글 작성은 `create_post_with_attachments`만 연다.** 함수가 `can_post_in_space`를 호출하므로 `post_policy='managers'`면 owner/admin/manager만 쓴다([02-spaces](02-spaces.md)). 첨부가 없는 글도 빈 배열을 넘긴다. `comments_insert`는 그대로 열려 있다 — 공지에 달리는 반응까지 잠그면 게시판이 아니라 공고문이다.
 
 ## 익명
 
@@ -77,13 +79,28 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 
 밴을 만들면 익명이 깨진다. 밴은 해제·이의신청 때문에 **관리자가 목록을 봐야만** 하는데, 익명 글 작성자를 밴하면 그 목록에 새로 뜬 한 명이 곧 작성자다(집합 차집합 한 번). 밴은 그냥 느린 unmask다.
 
-익명 정지 행은 RLS로 본인만 직접 읽는다. 관리자는 목록이나 신원을 열람하지 못하고, 콘텐츠별 현재 상태와 조치 응답만 제한적으로 본다.
+익명 정지 행은 RLS로 본인만 직접 읽는다. 관리자는 목록이나 신원을 열람하지 못하고, 콘텐츠별 현재 정지 여부만 본다.
 
-**형량은 서버가 정한다.** 관리자는 조치 전에 누범 이력을 조회할 수 없다. 서버가 1일 → 2일 → 4일 → 8일로 가중해 90일에서 상한을 두고, 이미 정지 중이면 쌓지 않고 남은 기간과 현재 누범만 돌려준다. 만료만으로 누범을 지우지는 않는다.
+**정지는 항상 7일이다.** 누범 이력이나 가중 형량은 없다. 이미 정지 중인 작성자에게 다시 실행하면 기한을 연장하거나 알림을 다시 만들지 않고 조용히 끝난다.
 
-`undo_*`는 **"전과 말소"가 아니라 "이번 건 없던 일로"** 다: 현재 정지를 풀고 누범을 하나만 되돌린다(2회차를 취소하면 다음도 2회차). **반드시 void여야 한다** — "2회차를 취소했습니다" 같은 응답은 **공짜 probe**가 된다. 정지는 틀리면 애먼 사람이 처벌받는 비용이 들지만, 취소는 아무도 안 다치므로 관리자가 익명 글을 마음껏 찔러 작성자별로 묶을 수 있다.
+`undo_*`는 현재 정지 행을 삭제한다. 정지와 해제는 모두 `void`이고, 관리자는 익명 콘텐츠를 통해서만 실행할 수 있다.
 
-**의도적으로 감수하는 유출**: `suspend_*`가 돌려주는 기간·`already_suspended`로, 관리자는 익명 글 A와 B가 **같은 사람인지** 알아낼 수 있다(이름은 몰라도 묶을 수는 있다). 감수하는 이유: (1) 신원은 안 샌다, 새는 건 연결뿐이다. (2) **probe가 공짜가 아니다** — 확인하려면 실제로 정지시켜야 하고 틀리면 항의가 들어온다. (3) 초범과 상습범을 구분 못 하면 모더레이션이 성립하지 않는다. 단 이 정보는 **행동했을 때만** 준다 — `strike_count`는 select grant에서 빠져 있어 목록에 상시로 뿌릴 수 없다.
+**의도적으로 감수하는 유출**: 관리자용 읽기 RPC는 콘텐츠 작성자의 현재 정지 여부를 내려주므로, 정지 후 여러 익명 콘텐츠가 동시에 "해제" 상태로 바뀌면 같은 작성자임을 연결할 수 있다. 실제 신원과 정지 사용자 목록은 계속 숨긴다.
+
+### 실패 이유는 구분해서 던진다 (감수하는 오라클)
+
+네 진입점(`suspend_*` / `undo_*` × 글 / 댓글)은 실패를 **뭉개지 않는다**.
+
+| 상황                              | 예외                                            |
+| --------------------------------- | ----------------------------------------------- |
+| 로그인 안 됨 / 미승인 프로필      | `active profile required`                       |
+| 콘텐츠가 없거나 이미 삭제됨       | `post not found` / `comment not found`          |
+| 콘텐츠는 있는데 **실명**          | `anonymous post required` / `anonymous comment required` |
+| 익명인데 그 space 관리자가 아님   | `space manager required`                        |
+
+**`soft_delete_post`와 반대 선택이다.** 그쪽은 권한 조건을 SELECT에 합쳐 "없는 글"과 "권한 없는 글"을 똑같이 0행으로 만든다 — 비공개 space에 살아있는 글 수를 세는 오라클을 막기 위해서다. 여기서는 그 오라클을 감수한다: 임의의 id를 찔러 "이건 살아있는 익명 글이다"를 **한 비트** 알아낼 수 있지만, 신원도 내용도 어느 space인지도 안 샌다. 대신 관리자 화면이 "이미 지워진 글입니다"와 "권한이 없습니다"를 다르게 말할 수 있다.
+
+해석과 권한 확인은 `private.require_anonymous_post_author` / `require_anonymous_comment_author`가 공통으로 처리한다. 그럼에도 `private.suspend_anonymity` / `undo_anonymity_suspension` 안의 `can_manage_space` 검사는 **그대로 남겨둔다** — 저 둘은 `(space_id, author_id)`를 직접 받으므로 helper를 안 거치는 호출자가 생기면 곧바로 무방비가 된다.
 
 ## 첨부
 
@@ -91,7 +108,7 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 
 **경로를 post가 아니라 space에 매단 이유**: 경로에 `post.pub_id`를 박으면 글이 먼저 존재해야 업로드가 되고, 작성 → 업로드 → 확정 **3단계**가 된다. 중간에 실패하면 첨부 없는 글이 게시된 채 남아 보상 트랜잭션이 필요해지는데, **그 보상도 실패할 수 있어 유령 글이 영구히 남는다.** space에 매달면 실패 시 아무것도 안 생기고 올려둔 blob은 고아 청소가 걷어간다.
 
-메시지와 달리 글은 **이미지와 파일을 섞을 수 있다**(카드가 둘 다 렌더한다). 그래서 "여럿이면 전부 이미지" 규칙은 없고 개수 상한(10)만 있다.
+메시지와 달리 글은 **이미지와 파일을 섞을 수 있다**(카드가 둘 다 렌더한다). 그래서 "여럿이면 전부 이미지" 규칙은 없고 개수 상한(10)만 있다. 상한은 글 생성·첨부 교체 RPC가 공유하는 `validate_post_attachments`에서 강제한다.
 
 ## Soft delete와 purge
 
@@ -118,7 +135,8 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 | `has_active_descendant(comment_id)`         | 활성 자손이 있는지 재귀 검사. 생성 시 트리 깊이는 30단계로 제한             |
 | `post_author(author_id, is_anonymous)`      | 작성자 jsonb. 익명이면 null                                                  |
 | `validate_post_attachments(...)`            | 첨부 검증(MIME·크기·경로·object 존재). create/set이 같은 규칙을 쓰도록       |
-| `suspend_anonymity(space_id, author_id)`    | 익명 정지 구현 (형량 가중·no-op 판단)                                        |
+| `suspend_anonymity(space_id, author_id)`    | 고정 7일 익명 정지. 이미 활성 상태면 no-op                                   |
+| `require_anonymous_post_author(post_id)` / `require_anonymous_comment_author(comment_id)` | 콘텐츠 id → `(space_id, author_id)` + 권한 확인. 익명 정지·취소 진입점 4개의 공용 관문 |
 | `max_post_attachments()` / `max_mentions()` | 10 / 20. 멘션 하나가 알림 하나라 상한이 없으면 글 하나로 전교생에게 쏜다     |
 | `enforce_mention_limit()`                   | 멘션 상한 트리거. 두 테이블이 소유자 컬럼명만 다르므로 `tg_argv`로 받아 공용 |
 
@@ -130,7 +148,6 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 | ---------------------------------------- | ------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `trg_validate_post_category`             | `posts`            | BEFORE I/U of `space_id`,`category_id`      | 다른 space의 카테고리면 예외                                                                                                     |
 | `trg_enforce_anonymous_allowed_posts`    | `posts`            | BEFORE INSERT                               | 3단계 정책·운영진 귀속·익명 정지를 강제. 트리거 **함수**는 `private.enforce_content_anonymity`([02-spaces](02-spaces.md))        |
-| `trg_enforce_post_attachment_shape`      | `post_attachments` | AFTER INSERT (statement)                    | 첨부 10개 초과 시 예외                                                                                                           |
 | `trg_enforce_post_mention_limit`         | `post_mentions`    | BEFORE INSERT                               | 멘션 20개 초과 시 예외                                                                                                           |
 | `trg_validate_comment_parent`            | `comments`         | BEFORE I/U of `post_id`,`parent_id`         | 부모가 같은 post의 활성 comment가 아니거나 깊이가 30단계를 넘으면 예외                                                           |
 | `trg_enforce_anonymous_allowed_comments` | `comments`         | BEFORE INSERT                               | 위와 같음                                                                                                                        |

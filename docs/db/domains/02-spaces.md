@@ -62,7 +62,7 @@ owner만, **현재 admin에게만** 넘긴다(일반 멤버에게 바로 넘기�
 ## 테이블
 
 - `spaces` — `type`(group=공식/community=비공식), `join_policy`, `post_policy`(`all`|`managers`), `anonymity_policy`, `member_count` 캐시, soft delete. `pub_id`는 **text 슬러그**(공유 링크·storage 경로용, 소문자·숫자·하이픈 3~50자, unique)
-- `space_anonymity_suspensions` — `(space_id, user_id)` PK. 직접 SELECT는 본인에게만 허용한다. 관리자는 행이나 신원을 열람하지 못하고 콘텐츠별 상태와 조치 결과의 제한된 신호만 받는다. 설계 근거는 [03-content](03-content.md)
+- `space_anonymity_suspensions` — `(space_id, user_id)` PK. 직접 SELECT는 본인에게만 허용한다. 관리자는 행이나 신원을 열람하지 못하고 익명 콘텐츠를 통해서만 7일 정지·해제한다. 설계 근거는 [03-content](03-content.md)
 - `space_members` — `(space_id, user_id)` PK. 역할(위 표), 알림 설정, 개인용 `pinned_at`(그룹 상단 고정), ban 상태. 새 멤버의 알림은 공식 그룹(`group`)이면 `all`, 비공식 그룹(`community`)이면 `mentions`로 시작하며 이후 본인이 변경할 수 있다
   `required` 공간에서는 owner/admin만 전체 명부를 보고 manager/member는 자기 행만 본다.
 - `space_invites` — `token`(unique 비밀값)으로 식별. **`target_user_id`가 null이면 공유 링크, 값이 있으면 그 사람만 수락 가능.** `on delete cascade`인 이유: set null이면 대상 지정 초대가 조용히 공유 링크로 격하된다
@@ -142,7 +142,7 @@ owner에게 삭제 버튼이 없는 것은 의도다. 그룹 하나에는 남의
 | `trg_validate_space_owner` | `space_members` | AFTER I/U/D (**deferred constraint**) | 커밋 시점에 owner가 정확히 1명이 아니면 트랜잭션 거부 |
 익명 강제 트리거(`trg_enforce_anonymous_allowed_*`)는 `posts`/`comments`에 걸리므로 [03-content](03-content.md)에 있다. 트리거 **함수**(`private.enforce_content_anonymity`)만 여기 산다 — 판단 기준(`anonymity_policy`, 공간 종류, 멤버 역할, 익명 정지)이 전부 space의 것이라서다.
 
-익명 강제가 RPC가 아니라 **트리거**인 이유: posts/comments는 컬럼 grant로 직접 insert할 수 있어, RPC에서만 막으면 테이블에 바로 꽂아 우회된다.
+익명 강제가 RPC 내부 검사만이 아니라 **트리거**인 이유: comments는 컬럼 grant로 직접 insert하고, posts도 service_role 같은 신뢰 경로가 직접 쓸 수 있다. 모든 삽입 경로에서 공간 정책과 익명 정지를 동일하게 적용해야 한다.
 
 ## 주의
 

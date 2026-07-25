@@ -395,7 +395,7 @@ function GroupCommentItem({
             <DialogDescription>
               {confirmAction === "delete"
                 ? "삭제된 댓글은 복구할 수 없습니다."
-                : "작성자는 익명으로 남습니다. 이 그룹에서 일정 기간 익명으로 글을 쓸 수 없게 됩니다."}
+                : "작성자는 익명으로 남습니다. 이 그룹에서 7일 동안 익명으로 글과 댓글을 쓸 수 없게 됩니다."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -177,8 +177,8 @@ export default function GroupPage() {
       }
     )
   }
-  // private.can_post_in_space와 같은 규칙. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
-  // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
+  // private.can_post_in_space와 같은 규칙. 여기서 막는 건 UI 정리이고, 실제 강제는 게시글 생성의
+  // 유일한 authenticated 진입점인 create_post_with_attachments가 한다.
   const roleCanPost = postPolicy === "all" ? viewerRole !== null : canCurate
   const canPostAnonymously =
     anonymityPolicy !== "disabled" && mockGroup.anonymitySuspendedUntil === null
@@ -209,7 +209,7 @@ export default function GroupPage() {
   const feedHasMore = feedVisible < feedPosts.length
   const feedSentinelRef = useInfiniteScroll(
     () => setFeedVisible((count) => count + FEED_PAGE_SIZE),
-    feedHasMore
+    { enabled: feedHasMore }
   )
 
   const showJoinRequests = canManage && joinPolicy === "request"

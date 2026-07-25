@@ -14,7 +14,7 @@ declare
   user4 uuid := '44444444-4444-4222-8222-dddddddddddd';
   profile1 bigint; profile2 bigint; profile3 bigint; profile4 bigint;
   feed_space_a bigint; feed_space_b bigint; feed_nonmember_space bigint; feed_banned_space bigint;
-  feed_post_a bigint; feed_post_b bigint; feed_post_c bigint; feed_cursor bigint;
+  feed_post_a bigint; feed_post_b bigint; feed_post_c bigint; feed_cursor bigint; feed_comment bigint;
   feed_ids bigint[]; feed_next_ids bigint[]; feed_space jsonb;
   space1 bigint; other_space bigint;
   cat1 bigint; other_cat bigint;
@@ -25,6 +25,9 @@ declare
   like_id bigint; my_react bigint;
   suspend_target_pub uuid; suspend_target_id bigint;
   result_suspended boolean;
+  suspended_until_before timestamptz; suspended_until_after timestamptz;
+  suspension_notification_count bigint;
+  too_many_attachments jsonb;
 begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
@@ -118,6 +121,28 @@ begin
 
   perform public.suspend_post_author_anonymity(suspend_target_id);
 
+  select suspended_until into suspended_until_before
+  from public.space_anonymity_suspensions
+  where space_id=space1 and user_id=profile2;
+  if suspended_until_before is distinct from now() + interval '7 days' then
+    raise exception 'anonymous suspension must last exactly 7 days';
+  end if;
+
+  -- 활성 정지를 다시 걸어도 기한을 연장하거나 알림을 중복 생성하지 않는다.
+  perform public.suspend_post_author_anonymity(suspend_target_id);
+  select suspended_until into suspended_until_after
+  from public.space_anonymity_suspensions
+  where space_id=space1 and user_id=profile2;
+  if suspended_until_after is distinct from suspended_until_before then
+    raise exception 're-suspending an active author must not extend the deadline';
+  end if;
+  select count(*) into suspension_notification_count
+  from public.notifications
+  where recipient_id=profile2 and type='space_anonymity_suspended';
+  if suspension_notification_count <> 1 then
+    raise exception 're-suspending an active author must not duplicate notifications';
+  end if;
+
   select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
   if result_suspended is not true then
     raise exception 'get_post must report is_author_anonymity_suspended=true after a suspension';
@@ -145,10 +170,70 @@ begin
 
   perform public.undo_post_anonymity_suspension(suspend_target_id);
 
+  if exists(
+    select 1 from public.space_anonymity_suspensions
+    where space_id=space1 and user_id=profile2
+  ) then
+    raise exception 'undo must remove the active anonymous suspension';
+  end if;
+
   select is_author_anonymity_suspended into result_suspended from public.get_post(suspend_target_pub);
   if result_suspended is not false then
     raise exception 'is_author_anonymity_suspended must be false again after the suspension is undone';
   end if;
+
+  -- -------------------------------------------------------------------------
+  -- 익명 정지 진입점의 실패 이유는 셋으로 갈린다
+  -- -------------------------------------------------------------------------
+  -- soft_delete_post(아래 "존재 오라클")와 **반대 선택**이다. 여기서는 오라클을 감수하고 실패를
+  -- 구분한다 -- 관리자 화면이 "이미 지워진 글입니다"와 "권한이 없습니다"를 다르게 말해야 하기
+  -- 때문이다. 네 진입점이 helper 하나(require_anonymous_*_author)를 공유하므로, 한 곳이 옛날처럼
+  -- 조회부터 하도록 되돌아가면 나머지 셋도 조용히 따라간다. 그래서 넷을 다 찌른다.
+  select post_id into real_id from public.get_post(real_pub);
+
+  -- (1) 없는 콘텐츠
+  begin
+    perform public.suspend_post_author_anonymity(9223372036854775807);
+    raise exception 'suspend must reject a missing post';
+  exception when others then
+    if sqlerrm <> 'post not found' then raise; end if;
+  end;
+  begin
+    perform public.undo_comment_anonymity_suspension(9223372036854775807);
+    raise exception 'undo must reject a missing comment';
+  exception when others then
+    if sqlerrm <> 'comment not found' then raise; end if;
+  end;
+
+  -- (2) 실명 콘텐츠 -- 익명 정지는 익명 콘텐츠에만 적용한다(실명에 열면 작성자 특정 도구가 된다)
+  begin
+    perform public.suspend_post_author_anonymity(real_id);
+    raise exception 'suspend must reject a named post';
+  exception when others then
+    if sqlerrm <> 'anonymous post required' then raise; end if;
+  end;
+  begin
+    perform public.undo_post_anonymity_suspension(real_id);
+    raise exception 'undo must reject a named post';
+  exception when others then
+    if sqlerrm <> 'anonymous post required' then raise; end if;
+  end;
+
+  -- (3) 익명이지만 관리자가 아님. user3은 space1 비멤버다.
+  perform set_config('request.jwt.claim.sub', user3::text, true);
+  begin
+    perform public.suspend_post_author_anonymity(suspend_target_id);
+    raise exception 'suspend must reject a non-manager';
+  exception when others then
+    if sqlerrm <> 'space manager required' then raise; end if;
+  end;
+  begin
+    perform public.undo_post_anonymity_suspension(suspend_target_id);
+    raise exception 'undo must reject a non-manager';
+  exception when others then
+    if sqlerrm <> 'space manager required' then raise; end if;
+  end;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
 
   -- -------------------------------------------------------------------------
   -- 트리밍: 작성 시 앞뒤 공백 제거 (수정 때만 트리밍되던 비대칭 봉쇄)
@@ -167,6 +252,34 @@ begin
   exception when others then
     if sqlerrm not like '%category must belong to the same space%' then raise; end if;
   end;
+
+  -- -------------------------------------------------------------------------
+  -- 첨부 상한은 테이블 트리거가 아니라 create/set RPC의 공용 validator가 강제한다
+  -- -------------------------------------------------------------------------
+  select jsonb_agg('{}'::jsonb) into too_many_attachments
+  from generate_series(1,11);
+
+  begin
+    perform public.create_post_with_attachments(
+      space1,'첨부 초과','본문',too_many_attachments,null,false
+    );
+    raise exception 'create must reject more than 10 attachments';
+  exception when others then
+    if sqlerrm not like '%at most 10 attachments%' then raise; end if;
+  end;
+  if exists(select 1 from public.posts where space_id=space1 and title='첨부 초과') then
+    raise exception 'a rejected attachment list must roll back the new post';
+  end if;
+
+  begin
+    perform public.set_post_attachments(real_id,too_many_attachments);
+    raise exception 'set must reject more than 10 attachments';
+  exception when others then
+    if sqlerrm not like '%at most 10 attachments%' then raise; end if;
+  end;
+  if exists(select 1 from public.post_attachments where post_id=real_id) then
+    raise exception 'a rejected attachment replacement must leave the existing list unchanged';
+  end if;
 
   -- -------------------------------------------------------------------------
   -- 존재 오라클: 비멤버의 삭제 시도는 "없는 글"과 똑같이 조용히 끝난다
@@ -266,6 +379,48 @@ begin
   exception when others then
     if sqlerrm not like '%limit must be 1 to 50%' then raise; end if;
   end;
+
+  -- -------------------------------------------------------------------------
+  -- 못 푸는 커서는 예외다: 조용한 빈 페이지는 "끝"과 구별되지 않는다
+  -- -------------------------------------------------------------------------
+  -- 커서 id로 created_at을 못 찾으면 null이 남고, `(created_at, id) < (null, id)`는 false가 아니라
+  -- **null**이라 모든 행이 걸러진다. 위 null limit 가드와 같은 3값 논리 함정인데 증상이 정반대다 --
+  -- 그쪽은 전부 새고 이쪽은 전부 막힌다. 예외 없이 0행이 나가면 클라이언트가 "끝에 도달"로 읽어,
+  -- 커서를 잘못 만드는 버그가 에러도 로그도 없이 "가끔 스크롤이 안 돼요"로만 나타난다.
+
+  -- 없는 id
+  begin
+    perform public.list_feed_posts(9223372036854775807, 20);
+    raise exception 'list_feed_posts must reject an unresolvable cursor';
+  exception when others then
+    if sqlerrm <> 'cursor post not found' then raise; end if;
+  end;
+
+  -- 다른 space의 글을 커서로 주면 남의 타임스탬프로 이 space를 페이징하게 된다
+  begin
+    perform public.list_space_posts(feed_space_a, null, feed_post_b, 20);
+    raise exception 'list_space_posts must reject a cursor from another space';
+  exception when others then
+    if sqlerrm <> 'cursor post not found in this space' then raise; end if;
+  end;
+
+  -- 다른 글의 댓글을 커서로 주는 경우도 같다
+  insert into public.comments (post_id,author_id,content)
+  values (feed_post_a,profile4,'커서용 댓글') returning id into feed_comment;
+  begin
+    perform public.get_post_comments(feed_post_c, feed_comment, 20);
+    raise exception 'get_post_comments must reject a cursor from another post';
+  exception when others then
+    if sqlerrm <> 'cursor comment not found in this post' then raise; end if;
+  end;
+
+  -- 그리고 멀쩡한 커서는 계속 멀쩡해야 한다(가드가 정상 경로를 막으면 안 된다).
+  -- feed_post_a(01-03)와 feed_post_c(01-01)는 둘 다 feed_space_a에 있다.
+  select array_agg(post_id order by created_at desc, post_id desc)
+  into feed_next_ids from public.list_space_posts(feed_space_a, null, feed_post_a, 20);
+  if feed_next_ids is distinct from array[feed_post_c] then
+    raise exception 'a valid same-space cursor must still page normally';
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -491,6 +646,19 @@ begin
   update public.comments set content=null,deleted_at=now()-interval '8 days' where id=any(chain);
 
   perform set_config('request.jwt.claim.role','service_role',true);
+
+  begin
+    perform public.purge_deleted_content(interval '7 days',null);
+    raise exception 'purge must reject a null limit';
+  exception when others then
+    if sqlerrm <> 'limit must be between 1 and 1000' then raise; end if;
+  end;
+  begin
+    perform public.purge_deleted_content(null,100);
+    raise exception 'purge must reject a null cutoff';
+  exception when others then
+    if sqlerrm <> 'purge cutoff must be at least 1 day' then raise; end if;
+  end;
 
   -- 배치 2 = 잎 하나 벗기고, 새로 생긴 잎 하나 더. 배열 고정 방식이면 여기서 0이 나온다.
   select purged_comments into purged from public.purge_deleted_content(interval '7 days',2);

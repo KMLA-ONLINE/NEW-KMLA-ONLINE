@@ -27,6 +27,7 @@ declare
   home_id bigint;
   outside_id bigint;
   home_post_id bigint;
+  rpc_post_pub uuid;
   like_id bigint;
   leaked bigint;
   invite_token text;
@@ -72,6 +73,37 @@ begin
   -- 이 파일의 존재 이유다. set local이라 트랜잭션이 끝나면 원래대로 돌아온다.
   perform set_config('request.jwt.claim.sub', bob::text, true);
   set local role authenticated;
+
+  -- -------------------------------------------------------------------------
+  -- 게시글 생성은 RPC 하나로만 간다
+  -- -------------------------------------------------------------------------
+  if has_any_column_privilege(current_user,'public.posts','INSERT') then
+    raise exception 'authenticated must not have direct INSERT privileges on posts';
+  end if;
+  if has_sequence_privilege(current_user,'public.posts_id_seq','USAGE') then
+    raise exception 'authenticated must not have USAGE on posts_id_seq';
+  end if;
+  if has_function_privilege(current_user,'private.can_post_in_space(bigint)','EXECUTE') then
+    raise exception 'authenticated must not execute the RPC-internal posting helper directly';
+  end if;
+  if has_any_column_privilege(current_user,'public.post_attachments','INSERT') then
+    raise exception 'authenticated must not insert post attachment metadata directly';
+  end if;
+
+  begin
+    insert into public.posts(space_id,author_id,title,content)
+    values(home_id,bob_id,'직접 생성 시도','본문');
+    raise exception 'authenticated direct post INSERT must fail';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  rpc_post_pub := public.create_post_with_attachments(
+    home_id,'RPC 생성','본문','[]'::jsonb,null,false,null
+  );
+  if not exists(select 1 from public.posts where pub_id=rpc_post_pub) then
+    raise exception 'authenticated must be able to create a text-only post through the RPC';
+  end if;
 
   -- -------------------------------------------------------------------------
   -- 익명: author_id는 컬럼 grant에서 회수돼 있다

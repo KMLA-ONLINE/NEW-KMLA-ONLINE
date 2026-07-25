@@ -41,14 +41,12 @@ create table public.spaces (
   deleted_by bigint null references public.profiles (id) on delete set null
 );
 
--- 익명 작성 권한의 한시적 정지. 관리자는 작성자 신원이나 정지 행을 열람할 수 없고 콘텐츠 id를
--- 통해서만 조치한다. 조치 결과의 제한된 연결 정보는 03-content.sql의 suspend_anonymity 계약에 있다.
+-- 익명 작성 권한의 7일 정지. 관리자는 작성자 신원이나 정지 행을 열람할 수 없고 콘텐츠 id를
+-- 통해서만 정지·해제한다.
 create table public.space_anonymity_suspensions (
   space_id bigint not null references public.spaces (id) on delete restrict,
   user_id bigint not null references public.profiles (id) on delete restrict,
   suspended_until timestamptz not null,
-  -- 관리자가 사전에 열람할 수 없는 누범 횟수. 서버가 형량을 계산하고 조치 응답에 결과만 공개한다.
-  strike_count int4 not null default 1,
   suspended_by bigint null references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   primary key (space_id, user_id)
@@ -175,8 +173,7 @@ returns boolean language sql stable security definer set search_path = '' as $$
   select private.is_space_member(p_space_id, array['owner','admin','manager']::public.member_role[])
 $$;
 -- 이 공간에 **메인 글**을 쓸 수 있는지. 참여(댓글·반응)와 갈라지는 유일한 지점이다.
--- posts_insert 정책과 create_post_with_attachments가 **둘 다** 이걸 불러야 한다: 후자는
--- security definer라 RLS를 지나치므로, 정책만 고치면 RPC로 그대로 우회된다.
+-- 메인 글 생성의 유일한 authenticated 진입점인 create_post_with_attachments가 호출한다.
 create function private.can_post_in_space(p_space_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select case
@@ -186,7 +183,7 @@ returns boolean language sql stable security definer set search_path = '' as $$
   end
 $$;
 revoke execute on function private.is_space_member(bigint,public.member_role[]), private.can_manage_space(bigint,public.member_role[]), private.can_participate_space(bigint), private.can_curate_space(bigint), private.can_post_in_space(bigint) from public, anon, service_role;
-grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint),private.can_curate_space(bigint),private.can_post_in_space(bigint) to authenticated;
+grant execute on function private.is_space_member(bigint,public.member_role[]),private.can_manage_space(bigint,public.member_role[]),private.can_participate_space(bigint),private.can_curate_space(bigint) to authenticated;
 
 create function private.validate_space_owner()
 returns trigger
@@ -235,8 +232,8 @@ for each row execute function private.validate_space_owner();
 revoke execute on function private.validate_space_owner() from public, anon, authenticated, service_role;
 
 -- 지금 이 공간에서 익명으로 쓸 수 있는지. disabled가 아니고, 내가 정지 중이 아니어야 한다.
--- posts/comments의 insert 트리거가 이걸 강제한다 -- RPC에서만 막으면 컬럼 grant로 테이블에 직접
--- insert해서 우회할 수 있다.
+-- posts/comments의 insert 트리거가 이걸 강제한다. 댓글은 컬럼 grant로 직접 쓰고, 글도
+-- service_role 같은 신뢰 경로가 테이블에 직접 쓸 수 있으므로 RPC 검사만으로는 부족하다.
 create function private.can_post_anonymously(p_space_id bigint, p_user_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.spaces s where s.id=p_space_id and s.anonymity_policy<>'disabled')

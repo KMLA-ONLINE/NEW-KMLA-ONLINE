@@ -1354,7 +1354,6 @@ export type Database = {
         Row: {
           created_at: string
           space_id: number
-          strike_count: number
           suspended_by: number | null
           suspended_until: string
           user_id: number
@@ -1362,7 +1361,6 @@ export type Database = {
         Insert: {
           created_at?: string
           space_id: number
-          strike_count?: number
           suspended_by?: number | null
           suspended_until: string
           user_id: number
@@ -1370,7 +1368,6 @@ export type Database = {
         Update: {
           created_at?: string
           space_id?: number
-          strike_count?: number
           suspended_by?: number | null
           suspended_until?: string
           user_id?: number
@@ -2110,6 +2107,10 @@ export type Database = {
         Args: { p_conversation_id: number; p_user_id: number }
         Returns: undefined
       }
+      rename_group_conversation: {
+        Args: { p_conversation_id: number; p_name: string }
+        Returns: undefined
+      }
       request_attachment_removal: {
         Args: { p_attachment_id: number; p_owner_type: string }
         Returns: undefined
@@ -2229,19 +2230,11 @@ export type Database = {
       }
       suspend_comment_author_anonymity: {
         Args: { p_comment_id: number }
-        Returns: {
-          already_suspended: boolean
-          strike_count: number
-          suspended_days: number
-        }[]
+        Returns: undefined
       }
       suspend_post_author_anonymity: {
         Args: { p_post_id: number }
-        Returns: {
-          already_suspended: boolean
-          strike_count: number
-          suspended_days: number
-        }[]
+        Returns: undefined
       }
       transfer_space_ownership: {
         Args: { p_new_owner_id: number; p_space_id: number }
@@ -2453,4 +2446,3 @@ export const Constants = {
     },
   },
 } as const
-

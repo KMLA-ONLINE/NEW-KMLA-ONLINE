@@ -31,10 +31,9 @@ export function ChatListPane({
   const [visibleCount, setVisibleCount] = useState(ROOM_PAGE_SIZE)
   const shownRooms = rooms.slice(0, visibleCount)
   const hasMore = visibleCount < rooms.length
-  const sentinelRef = useInfiniteScroll(
-    () => setVisibleCount((count) => count + ROOM_PAGE_SIZE),
-    hasMore
-  )
+  const sentinelRef = useInfiniteScroll(() => setVisibleCount((count) => count + ROOM_PAGE_SIZE), {
+    enabled: hasMore,
+  })
 
   return (
     <section className="bg-card flex h-full min-h-0 flex-col overflow-hidden md:border-r">
