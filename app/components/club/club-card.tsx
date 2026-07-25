@@ -17,7 +17,7 @@ export function ClubCard({ club, adminMode }: { club: Club; adminMode: boolean }
             className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
           />
         ) : (
-          <div className="grid size-full place-items-center text-4xl sm:text-5xl">
+          <div className="grid size-full place-items-center text-2xl sm:text-3xl">
             <Twemoji text={club.emoji} />
           </div>
         )}

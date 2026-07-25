@@ -35,11 +35,11 @@ export default function ClubPage() {
       </Button>
 
       <header className="mt-4 flex items-start gap-4">
-        <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl">
+        <div className="bg-muted flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg">
           {club.imageUrl ? (
             <img src={club.imageUrl} alt="" className="size-full object-cover" />
           ) : (
-            <span className="text-3xl">
+            <span className="text-xl">
               <Twemoji text={club.emoji} />
             </span>
           )}

@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 import { Link, useParams } from "react-router"
 import { toast } from "sonner"
 
+import { GroupContentEditor } from "~/components/group/group-content-editor"
 import { ImageCropper } from "~/components/image/image-cropper"
 import { RichText } from "~/components/rich-text/rich-text"
 import { Button } from "~/components/ui/button"
@@ -10,6 +11,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog"
@@ -30,6 +32,8 @@ export default function ClubEditPage() {
   const { clubId } = useParams()
   const club = mockClubs.find((item) => item.slug === clubId)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const announcementRef = useRef<HTMLTextAreaElement>(null)
 
   const [imageUrl, replaceImage] = useImageDraft(club?.imageUrl ?? null, club?.id)
   const imageCrop = useImageCrop({
@@ -37,16 +41,15 @@ export default function ClubEditPage() {
   })
 
   const [cardDescription, setCardDescription] = useState(club?.cardDescription ?? "")
-  const [descriptionMarkdown, setDescriptionMarkdown] = useState(club?.description ?? "")
-  const [announcementMarkdown, setAnnouncementMarkdown] = useState(
-    club?.recruitment?.announcementMarkdown ?? ""
-  )
+  const [previewDescription, setPreviewDescription] = useState("")
+  const [previewAnnouncement, setPreviewAnnouncement] = useState("")
   const [isOpen, setIsOpen] = useState(club?.recruitment?.isOpen ?? false)
   const [startsAt, setStartsAt] = useState(club?.recruitment?.starts_at.slice(0, 16) ?? "")
   const [endsAt, setEndsAt] = useState(club?.recruitment?.ends_at.slice(0, 16) ?? "")
   const [managers, setManagers] = useState<ClubManager[]>(club?.managers ?? [])
   const [newManagerName, setNewManagerName] = useState("")
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [managerToRemove, setManagerToRemove] = useState<ClubManager | null>(null)
 
   if (!club) {
     return <p className="py-16 text-center text-sm">동아리를 찾을 수 없습니다.</p>
@@ -67,6 +70,19 @@ export default function ClubEditPage() {
     setNewManagerName("")
   }
 
+  const openPreview = () => {
+    setPreviewDescription(descriptionRef.current?.value ?? "")
+    setPreviewAnnouncement(announcementRef.current?.value ?? "")
+    setPreviewOpen(true)
+  }
+
+  const removeManager = () => {
+    if (!managerToRemove) return
+
+    setManagers((current) => current.filter((manager) => manager.id !== managerToRemove.id))
+    setManagerToRemove(null)
+  }
+
   return (
     <div className="mx-auto w-full max-w-2xl">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
@@ -78,7 +94,7 @@ export default function ClubEditPage() {
 
       <header className="mt-4 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">동아리 편집</h1>
-        <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+        <Button variant="outline" size="sm" onClick={openPreview}>
           <EyeIcon aria-hidden />
           미리보기
         </Button>
@@ -94,7 +110,7 @@ export default function ClubEditPage() {
         <section>
           <Label>동아리 이미지</Label>
           <div className="mt-3 flex items-center gap-4">
-            <div className="bg-muted grid size-20 shrink-0 place-items-center overflow-hidden rounded-xl">
+            <div className="bg-muted grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg">
               {imageUrl ? (
                 <img src={imageUrl} alt="" className="size-full object-cover" />
               ) : (
@@ -141,15 +157,12 @@ export default function ClubEditPage() {
           />
         </label>
 
-        <label className="grid gap-2">
-          <span className="text-sm font-semibold">동아리 소개</span>
-          <textarea
-            value={descriptionMarkdown}
-            onChange={(event) => setDescriptionMarkdown(event.target.value)}
-            rows={12}
-            className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 min-h-56 w-full resize-y rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-[3px]"
-          />
-        </label>
+        <section className="grid gap-2">
+          <Label>동아리 소개</Label>
+          <div className="border-input bg-background min-h-56 rounded-md border px-3">
+            <GroupContentEditor contentRef={descriptionRef} defaultValue={club.description ?? ""} />
+          </div>
+        </section>
 
         <section className="border-t pt-6">
           <div className="flex items-center justify-between gap-3">
@@ -197,15 +210,15 @@ export default function ClubEditPage() {
             </label>
           </div>
 
-          <label className="mt-5 grid gap-2">
-            <span className="text-sm font-semibold">모집 공고</span>
-            <textarea
-              value={announcementMarkdown}
-              onChange={(event) => setAnnouncementMarkdown(event.target.value)}
-              rows={8}
-              className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 min-h-40 w-full resize-y rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-[3px]"
-            />
-          </label>
+          <section className="mt-5 grid gap-2">
+            <Label>모집 공고</Label>
+            <div className="border-input bg-background min-h-48 rounded-md border px-3">
+              <GroupContentEditor
+                contentRef={announcementRef}
+                defaultValue={club.recruitment?.announcementMarkdown ?? ""}
+              />
+            </div>
+          </section>
         </section>
 
         <section className="border-t pt-6">
@@ -224,9 +237,7 @@ export default function ClubEditPage() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    setManagers((current) => current.filter((item) => item.id !== manager.id))
-                  }
+                  onClick={() => setManagerToRemove(manager)}
                 >
                   <Trash2Icon aria-hidden />
                   해제
@@ -283,7 +294,7 @@ export default function ClubEditPage() {
                 {imageUrl ? (
                   <img src={imageUrl} alt="" className="size-full object-cover" />
                 ) : (
-                  <span className="text-3xl">{club.emoji}</span>
+                  <span className="text-xl">{club.emoji}</span>
                 )}
               </div>
               <div>
@@ -292,7 +303,7 @@ export default function ClubEditPage() {
               </div>
             </div>
 
-            <RichText text={descriptionMarkdown} mode="block" className="text-sm" />
+            <RichText text={previewDescription} mode="block" className="text-sm" />
 
             <section className="border-t pt-5">
               <div className="flex items-center justify-between gap-3">
@@ -305,9 +316,35 @@ export default function ClubEditPage() {
                   {isOpen ? "지원 가능" : "지원 마감"}
                 </span>
               </div>
-              <RichText text={announcementMarkdown} mode="block" className="mt-4 text-sm" />
+              <RichText text={previewAnnouncement} mode="block" className="mt-4 text-sm" />
             </section>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={managerToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setManagerToRemove(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>관리자 권한을 해제할까요?</DialogTitle>
+            <DialogDescription>
+              {managerToRemove?.name ?? "선택한 관리자"}님은 더 이상 동아리 정보를 수정하거나
+              지원자를 확인할 수 없습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setManagerToRemove(null)}>
+              취소
+            </Button>
+            <Button type="button" variant="destructive" onClick={removeManager}>
+              관리자 해제
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
