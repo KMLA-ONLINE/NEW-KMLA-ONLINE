@@ -237,11 +237,13 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
       </nav>
 
       {clubs.length > 0 ? (
-        <section className="mt-5 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4">
-          {clubs.map((club) => (
-            <ClubCard key={club.id} club={club} previewRole={loaderData.previewRole} />
-          ))}
-        </section>
+        <>
+          <section className="mt-2 divide-y border-y">
+            {clubs.map((club) => (
+              <ClubCard key={club.id} club={club} previewRole={loaderData.previewRole} />
+            ))}
+          </section>
+        </>
       ) : (
         <p className="text-muted-foreground py-16 text-center text-sm">검색 결과가 없습니다.</p>
       )}
