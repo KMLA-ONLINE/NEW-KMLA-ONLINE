@@ -18,11 +18,15 @@ const NO_CLUB_ACCESS: ClubAccess = {
 }
 
 export function getClubPreviewRole(request: Request): ClubPreviewRole {
-  if (!import.meta.env.DEV) {
+  const url = new URL(request.url)
+  const isVercelPreview =
+    url.hostname.startsWith("new-kmla-online-") && url.hostname.endsWith(".vercel.app")
+
+  if (!import.meta.env.DEV && !isVercelPreview) {
     return null
   }
 
-  const role = new URL(request.url).searchParams.get("as")
+  const role = url.searchParams.get("as")
   return role === "app-admin" || role === "club-admin" ? role : null
 }
 
@@ -43,8 +47,6 @@ export async function getMyClubAccess(): Promise<ClubAccess> {
   const { data, error } = await supabase.rpc("get_my_club_access").single()
 
   if (error) {
-    // 로컬 DB reset 뒤 브라우저에 예전 세션이 남은 경우처럼, Auth가 더 이상 인정하지
-    // 않는 토큰은 일반 사용자 권한으로 낮춘다. 관리자 UI를 여는 방향으로 실패하면 안 된다.
     if (error.code === "42501") {
       return NO_CLUB_ACCESS
     }
