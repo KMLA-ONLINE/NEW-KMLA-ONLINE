@@ -7,7 +7,7 @@ Source: [`supabase/schemas/08-clubs.sql`](../../../supabase/schemas/08-clubs.sql
 ## 테이블
 
 - `clubs` — 동아리 이름, 소개, 카드 소개, 이모지, 이미지 URL, 활동 시간·장소, 구분(`major`/`general`). 이름은 unique
-- `club_apply_rounds` — 전체 동아리에 적용되는 모집 기간. `starts_at`/`ends_at`으로 열림 여부를 판단
+- `club_apply_rounds` — 수동·목동별 모집 기간. `starts_at`/`ends_at`으로 열림 여부를 판단
 - `club_managers` — `(club_id, user_id)`별 동아리 관리자. 임명은 앱 관리자만 가능
 - `club_recruitments` — 라운드별·동아리별 모집 활성화와 공고
 - `clubs_apply` — 사용자의 동아리 지원. `(round_id, user_id, club_id)` unique
@@ -33,7 +33,7 @@ Source: [`supabase/schemas/08-clubs.sql`](../../../supabase/schemas/08-clubs.sql
 starts_at <= now() < ends_at
 ```
 
-`apply_range`는 `[starts_at, ends_at)` 범위로 생성되며 gist exclusion constraint가 서로 겹치는 라운드를 막는다. 따라서 동시에 열린 모집 라운드는 하나뿐이다.
+`apply_range`는 `[starts_at, ends_at)` 범위로 생성된다. 같은 구분의 라운드는 겹칠 수 없지만 수동과 목동 모집은 같은 기간에 진행할 수 있다.
 
 ## 지원
 
@@ -89,3 +89,4 @@ starts_at <= now() < ends_at
 - 지원자는 열린 모집에 본인 지원만 생성할 수 있고, 생성한 지원을 직접 취소할 수 없다.
 - 지원 취소는 앱 관리자 또는 해당 동아리 관리자만 할 수 있다.
 - 지원 인덱스는 unique `(round_id, user_id, club_id)`, 동아리별 목록 `(club_id, round_id, created_at)`, 사용자 FK 역조회 `(user_id)`로 역할을 나눠 중복 선두 컬럼을 두지 않는다.
+- 지원서가 있는 모집 설정과 모집 설정이 남아 있는 라운드는 삭제할 수 없다.

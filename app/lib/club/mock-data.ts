@@ -113,6 +113,7 @@ const clubRows = {
 export const mockClubApplyRound: ClubApplyRoundRow = {
   id: 1,
   name: "2026 동아리 모집",
+  type: "major",
   starts_at: "2026-07-20T09:00:00+09:00",
   ends_at: "2026-07-29T17:00:00+09:00",
   apply_range: null,

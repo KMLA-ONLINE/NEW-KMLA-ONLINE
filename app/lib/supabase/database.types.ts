@@ -128,6 +128,7 @@ export type Database = {
           id: number
           name: string
           starts_at: string
+          type: Database["public"]["Enums"]["club_type"]
         }
         Insert: {
           apply_range?: unknown
@@ -137,6 +138,7 @@ export type Database = {
           id?: number
           name: string
           starts_at: string
+          type?: Database["public"]["Enums"]["club_type"]
         }
         Update: {
           apply_range?: unknown
@@ -146,6 +148,7 @@ export type Database = {
           id?: number
           name?: string
           starts_at?: string
+          type?: Database["public"]["Enums"]["club_type"]
         }
         Relationships: [
           {
@@ -339,6 +342,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "clubs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clubs_apply_recruitment_fkey"
+            columns: ["round_id", "club_id"]
+            isOneToOne: false
+            referencedRelation: "club_recruitments"
+            referencedColumns: ["round_id", "club_id"]
           },
           {
             foreignKeyName: "clubs_apply_round_id_fkey"

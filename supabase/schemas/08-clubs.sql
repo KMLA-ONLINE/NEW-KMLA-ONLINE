@@ -17,6 +17,7 @@ create table public.clubs (
 create table public.club_apply_rounds (
   id bigserial primary key,
   name text not null,
+  type public.club_type not null default 'major',
   starts_at timestamptz not null,
   ends_at timestamptz not null,
   apply_range tstzrange generated always as (
@@ -31,7 +32,7 @@ create table public.club_apply_rounds (
 create table public.club_managers (
   club_id bigint not null
     references public.clubs (id)
-    on delete cascade,
+    on delete restrict,
   user_id bigint not null
     references public.profiles (id)
     on delete cascade,
@@ -45,10 +46,10 @@ create table public.club_managers (
 create table public.club_recruitments (
   round_id bigint not null
     references public.club_apply_rounds (id)
-    on delete cascade,
+    on delete restrict,
   club_id bigint not null
     references public.clubs (id)
-    on delete cascade,
+    on delete restrict,
   announcement text null,
   enabled boolean not null default false,
   updated_at timestamptz null,
@@ -161,6 +162,7 @@ alter table public.club_apply_rounds
     ),
   add constraint club_apply_rounds_no_overlap
     exclude using gist (
+      type with =,
       apply_range with &&
     );
 
@@ -177,7 +179,17 @@ alter table public.clubs_apply
       round_id,
       user_id,
       club_id
-    );
+    ),
+  add constraint clubs_apply_recruitment_fkey
+    foreign key (
+      round_id,
+      club_id
+    )
+    references public.club_recruitments (
+      round_id,
+      club_id
+    )
+    on delete restrict;
 
 
 -- 앱 관리자 판별은 공통 helper인 private.is_app_admin()을 사용한다.
@@ -192,13 +204,15 @@ stable
 security definer
 set search_path = ''
 as $$
-  select exists (
-    select 1
-    from public.club_managers as manager
-    where manager.club_id = p_club_id
-      and manager.user_id =
-        private.current_profile_id()
-  )
+  select
+    private.is_accepted_user()
+    and exists (
+      select 1
+      from public.club_managers as manager
+      where manager.club_id = p_club_id
+        and manager.user_id =
+          private.current_profile_id()
+    )
 $$;
 
 revoke execute
@@ -208,6 +222,131 @@ from public, anon, service_role;
 grant execute
 on function private.manages_club(bigint)
 to authenticated;
+
+
+create function private.set_club_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+revoke execute
+on function private.set_club_updated_at()
+from public, anon, authenticated, service_role;
+
+
+create function private.set_club_settings_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.updated_by := private.current_profile_id();
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+revoke execute
+on function private.set_club_settings_audit()
+from public, anon, authenticated, service_role;
+
+
+create function private.guard_club_identity()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (
+    new.name is distinct from old.name
+    or new.type is distinct from old.type
+  )
+  and not coalesce(
+    private.is_app_admin(),
+    false
+  )
+  then
+    raise exception using
+      errcode = '42501',
+      message = 'only app admins can rename or reclassify clubs';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute
+on function private.guard_club_identity()
+from public, anon, authenticated, service_role;
+
+
+create function private.validate_club_recruitment_type()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not exists (
+    select 1
+    from public.club_apply_rounds as round
+    join public.clubs as club
+      on club.id = new.club_id
+    where round.id = new.round_id
+      and round.type = club.type
+  ) then
+    raise exception using
+      errcode = '23514',
+      message = 'club type does not match recruitment round';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke execute
+on function private.validate_club_recruitment_type()
+from public, anon, authenticated, service_role;
+
+
+create trigger trg_guard_club_identity
+before update of name, type
+on public.clubs
+for each row
+execute function private.guard_club_identity();
+
+create trigger trg_set_clubs_updated_at
+before update
+on public.clubs
+for each row
+execute function private.set_club_updated_at();
+
+create trigger trg_validate_club_recruitment_type
+before insert or update of round_id, club_id
+on public.club_recruitments
+for each row
+execute function private.validate_club_recruitment_type();
+
+create trigger trg_set_club_recruitments_updated_at
+before update
+on public.club_recruitments
+for each row
+execute function private.set_club_updated_at();
+
+create trigger trg_set_club_settings_audit
+before update of page_open
+on public.club_settings
+for each row
+execute function private.set_club_settings_audit();
 
 
 create function private.is_club_round_open(
@@ -305,8 +444,9 @@ as $$
         )
         from public.club_managers
           as manager
-        where manager.user_id =
-          private.current_profile_id()
+        where private.is_accepted_user()
+          and manager.user_id =
+            private.current_profile_id()
       ),
       array[]::bigint[]
     )
@@ -347,6 +487,16 @@ to authenticated
 using (
   private.is_accepted_user()
 );
+
+create policy clubs_insert
+on public.clubs
+for insert
+to authenticated
+with check (
+  private.is_accepted_user()
+  and private.is_app_admin()
+);
+
 
 create policy clubs_update
 on public.clubs
@@ -403,6 +553,18 @@ for delete
 to authenticated
 using (
   private.is_app_admin()
+  and not exists (
+    select 1
+    from public.club_recruitments as recruitment
+    where recruitment.round_id =
+      club_apply_rounds.id
+  )
+  and not exists (
+    select 1
+    from public.clubs_apply as application
+    where application.round_id =
+      club_apply_rounds.id
+  )
 );
 
 
@@ -468,8 +630,18 @@ on public.club_recruitments
 for delete
 to authenticated
 using (
-  private.is_app_admin()
-  or private.manages_club(club_id)
+  (
+    private.is_app_admin()
+    or private.manages_club(club_id)
+  )
+  and not exists (
+    select 1
+    from public.clubs_apply as application
+    where application.round_id =
+      club_recruitments.round_id
+      and application.club_id =
+        club_recruitments.club_id
+  )
 );
 
 
@@ -492,7 +664,8 @@ on public.clubs_apply
 for insert
 to authenticated
 with check (
-  user_id =
+  private.is_accepted_user()
+  and user_id =
     private.current_profile_id()
   and private.is_club_recruiting(
     round_id,
@@ -528,6 +701,8 @@ using (
 with check (
   private.is_app_admin()
   and singleton
+  and updated_by =
+    private.current_profile_id()
 );
 
 
@@ -540,20 +715,35 @@ on public.clubs,
    public.club_settings
 to authenticated;
 
-grant update (
+grant insert (
+  name,
   description,
   card_description,
   emoji,
   image_url,
   meeting,
   location,
-  updated_at
+  type
+)
+on public.clubs
+to authenticated;
+
+grant update (
+  name,
+  description,
+  card_description,
+  emoji,
+  image_url,
+  meeting,
+  location,
+  type
 )
 on public.clubs
 to authenticated;
 
 grant insert (
   name,
+  type,
   starts_at,
   ends_at,
   created_by
@@ -563,6 +753,7 @@ to authenticated;
 
 grant update (
   name,
+  type,
   starts_at,
   ends_at
 )
@@ -589,16 +780,14 @@ grant insert (
   round_id,
   club_id,
   announcement,
-  enabled,
-  updated_at
+  enabled
 )
 on public.club_recruitments
 to authenticated;
 
 grant update (
   announcement,
-  enabled,
-  updated_at
+  enabled
 )
 on public.club_recruitments
 to authenticated;
@@ -620,15 +809,14 @@ on public.clubs_apply
 to authenticated;
 
 grant update (
-  page_open,
-  updated_by,
-  updated_at
+  page_open
 )
 on public.club_settings
 to authenticated;
 
 grant usage, select
 on sequence
+  public.clubs_id_seq,
   public.club_apply_rounds_id_seq,
   public.clubs_apply_id_seq
 to authenticated;
