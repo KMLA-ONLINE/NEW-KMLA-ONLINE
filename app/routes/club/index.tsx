@@ -238,7 +238,7 @@ export default function ClubsPage({ loaderData }: Route.ComponentProps) {
 
       {clubs.length > 0 ? (
         <>
-          <section className="mt-2 divide-y border-y">
+          <section className="mt-2 divide-y border-b">
             {clubs.map((club) => (
               <ClubCard key={club.id} club={club} previewRole={loaderData.previewRole} />
             ))}
