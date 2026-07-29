@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip"
+import { formatReportCount } from "~/lib/group/reports"
 import type { GroupSpace } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
@@ -36,6 +37,9 @@ export function GroupHeader({
   canViewMembers,
   canCurate,
   onViewSettings,
+  canManage,
+  reportCount,
+  onViewReports,
 }: {
   group: GroupSpace
   className?: string
@@ -47,6 +51,10 @@ export function GroupHeader({
   canViewMembers: boolean
   canCurate: boolean
   onViewSettings: () => void
+  /** owner/admin만 신고함을 본다. manager는 canCurate여도 여기에 포함되지 않는다. */
+  canManage: boolean
+  reportCount: number
+  onViewReports: () => void
 }) {
   // invite_only만 비공개(검색 노출 X). public·request(승인가입)는 검색에 노출되니 공개로 묶는다.
   const isPrivate = group.joinPolicy === "invite_only"
@@ -112,7 +120,7 @@ export function GroupHeader({
           ) : null}
         </div>
         <div className="flex items-center gap-1 pt-1">
-          {/* 알림 설정 Dialog와 나가기 AlertDialog를 여는 메뉴라 non-modal이다. 메뉴와 뒤이어
+          {/* 알림 설정 Dialog와 나가기 Dialog를 여는 메뉴라 non-modal이다. 메뉴와 뒤이어
               열리는 모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이
               풀리지 않아 페이지 전체가 클릭 불가가 된다. */}
           <DropdownMenu modal={false}>
@@ -140,6 +148,14 @@ export function GroupHeader({
               {canCurate ? (
                 <DropdownMenuItem className="sm:hidden" onSelect={onViewSettings}>
                   그룹 설정
+                </DropdownMenuItem>
+              ) : null}
+              {canManage ? (
+                <DropdownMenuItem className="sm:hidden" onSelect={onViewReports}>
+                  <span aria-hidden="true">
+                    신고 {reportCount > 0 ? `${formatReportCount(reportCount)}건` : ""}
+                  </span>
+                  <span className="sr-only">신고 {reportCount > 0 ? `${reportCount}건` : ""}</span>
                 </DropdownMenuItem>
               ) : null}
               {/* 공식 그룹(학생회·사감부 등)은 소속이지 취향 가입이 아니라서 나가기가 없다 --

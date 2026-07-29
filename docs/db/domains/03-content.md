@@ -59,14 +59,17 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | ----------------------------------------------------------------------- | ----------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
 | `report_post(post_pub_id, reason, details?)`                             | post 접근 권한     | O    | 남의 활성 글을 신고. 생성했으면 `true`, 내 글·중복·미존재·접근 불가이면 존재 오라클 없이 `false`                |
 | `count_pending_post_report_cases(space_id)`                              | Space owner/admin | X    | 미처리 신고 행 수가 아니라 신고된 게시물 수                                                                     |
-| `list_pending_post_report_cases(space_id, before_reported_at?, before_post_id?, limit?)` | Space owner/admin | X    | 미처리 신고를 게시물별로 집계. 신고자 없이 사유·설명·시각만 `reports` 배열로 반환                               |
+| `list_pending_post_report_cases(space_id, after_reported_at?, after_post_id?, limit?)` | Space owner/admin | X    | 미처리 신고를 첫 신고가 오래된 게시물부터 집계. 총 신고 수와 사유별 `reason_counts`만 반환                    |
+| `list_pending_post_reports(post_id, after_reported_at?, after_report_id?, limit?)` | Space owner/admin | X    | 사건을 펼칠 때 신고 원문을 오래된 순으로 페이지 조회. 신고자 신원은 반환하지 않음                               |
 | `resolve_post_reports(post_id, resolution)`                              | Space owner/admin | O    | 그 게시물의 미처리 신고를 일괄 `dismissed` 또는 `post_removed` 처리. 삭제는 기존 `soft_delete_post`를 함께 실행 |
 
 사유는 `spam`, `harassment`, `privacy`, `harmful`, `other` 다섯 가지이며 상세 설명은 선택이고 최대 1,000자다. `manager`는 카테고리·고정 권한만 가진 큐레이터이므로 신고함을 읽거나 처리할 수 없다.
 
-신고자는 관리자에게도 공개하지 않는다. `post_reports`에는 authenticated 정책·테이블 grant가 없고 네 RPC만 열려 있다. 관리자 목록의 `reports` JSON에도 `reporter_id`가 없다. 처리자 `resolved_by` 역시 RPC 반환에 포함하지 않는다.
+신고자는 관리자에게도 공개하지 않는다. `post_reports`에는 authenticated 정책·테이블 grant가 없고 다섯 RPC만 열려 있다. 사건 목록과 원문 목록 어느 쪽에도 `reporter_id`가 없다. 처리자 `resolved_by` 역시 RPC 반환에 포함하지 않는다.
 
-여러 사람이 같은 글을 신고해도 관리자 화면에서는 한 사건이다. 처리하면 현재 미처리 행을 모두 같은 결과·시각·처리자로 닫으며, 처리 후에도 `(post_id, reporter_id)` 유일 제약이 남아 같은 사용자가 같은 글을 반복 신고할 수 없다. 대기함 페이지 커서는 첫 신고 시각과 `post_id`를 함께 사용한다. 첫 신고 시각은 이후 신고가 추가돼도 변하지 않아 페이지 사이에서 사건이 앞으로 이동하며 누락되지 않는다.
+여러 사람이 같은 글을 신고해도 관리자 화면에서는 한 사건이다. 처리하면 현재 미처리 행을 모두 같은 결과·시각·처리자로 닫으며, 처리 후에도 `(post_id, reporter_id)` 유일 제약이 남아 같은 사용자가 같은 글을 반복 신고할 수 없다.
+
+사건 목록은 한 글의 신고 원문을 전부 `jsonb_agg`하지 않는다. 총 신고 수와 사유별 count만 싣고, 원문은 사건을 펼칠 때 기본 10건씩 별도 조회한다. 따라서 한 글에 신고가 수백 건 붙어도 사건 목록 행 크기와 첫 화면 렌더 비용은 신고 수에 비례해 커지지 않는다. 두 목록 모두 오래된 순이며 cursor는 각각 `(first_reported_at, post_id)`와 `(created_at, report_id)`를 함께 사용한다. 첫 신고 시각과 이미 저장된 신고 시각은 새 신고가 추가돼도 변하지 않아 페이지 경계가 안정적이다.
 
 ### 운영 정리
 

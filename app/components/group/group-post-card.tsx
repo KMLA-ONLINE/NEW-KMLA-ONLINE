@@ -13,7 +13,7 @@ import { RelativeTime } from "~/components/relative-time"
 import { Badge } from "~/components/ui/badge"
 import { RichText } from "~/components/rich-text/rich-text"
 import { Twemoji } from "~/components/ui/twemoji"
-import type { GroupPost } from "~/lib/group/types"
+import type { GroupPost, GroupPostReportReason } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -24,6 +24,8 @@ export function GroupPostCard({
   reactionTypes,
   canManage,
   canCurate,
+  reported,
+  onReport,
 }: {
   post: GroupPost
   reactionTypes: ReactionType[]
@@ -31,6 +33,8 @@ export function GroupPostCard({
   canManage?: boolean
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
   canCurate?: boolean
+  reported?: boolean
+  onReport?: (post: GroupPost, reason: GroupPostReportReason, details: string | null) => void
 }) {
   const isStaffPost = post.authorAttribution === "staff"
   const authorName = post.author?.name ?? (isStaffPost ? "운영진" : "익명")
@@ -126,6 +130,9 @@ export function GroupPostCard({
           canManage={canManage}
           canCurate={canCurate}
           editTo={`${postPath}/edit`}
+          postTitle={post.title}
+          reported={reported}
+          onReport={(reason, details) => onReport?.(post, reason, details)}
         />
       </header>
 

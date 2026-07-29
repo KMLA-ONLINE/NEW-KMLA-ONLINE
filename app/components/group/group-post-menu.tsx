@@ -1,7 +1,9 @@
-import { MoreHorizontalIcon } from "lucide-react"
+import { FlagIcon, MoreHorizontalIcon } from "lucide-react"
 import { useState } from "react"
 import { Link } from "react-router"
+import { toast } from "sonner"
 
+import { GroupPostReportDialog } from "~/components/group/group-post-report-dialog"
 import { Button } from "~/components/ui/button"
 import {
   Dialog,
@@ -18,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu"
+import type { GroupPostReportReason } from "~/lib/group/types"
 
 // 삭제·익명 제한은 되돌리기 어렵거나(삭제) 애먼 사람을 처벌할 수 있어서(익명 제한) 드롭다운에서
 // 바로 실행하지 않고 확인 모달을 한 번 거친다. group-member-list.tsx의 소유권 이양 확인과 같은 패턴.
@@ -29,8 +32,7 @@ type ConfirmAction = "delete" | "suspend-anonymity" | null
 //   게시판을 정리하는 일이라 매니저도 한다.
 // - 삭제: 작성자 본인 또는 canManage = owner/admin (soft_delete_post). 매니저는 남의 글을 못 지운다.
 // - 익명 제한: canManage만. 사람을 다루는 일이다.
-// 아무것도 못 하면(일반 멤버가 남의 글을 볼 때) 아예 렌더하지 않는다 -- 숨기기/신고는 스키마에
-// 대응 테이블이 없어(가짜 메뉴였음) 걷어냈다.
+// - 신고: 작성자가 아닌 모든 멤버. report_post가 접근 가능한 활성 글인지와 중복을 다시 검사한다.
 // editTo는 호출부 라우트 기준 상대 경로다(피드에선 posts/:pubId/edit, 상세에선 edit).
 export function GroupPostMenu({
   isMine,
@@ -40,6 +42,9 @@ export function GroupPostMenu({
   canManage,
   canCurate,
   editTo,
+  postTitle,
+  reported,
+  onReport,
 }: {
   isMine?: boolean
   isPinned?: boolean
@@ -56,14 +61,25 @@ export function GroupPostMenu({
   /** owner/admin/manager (can_curate_space). 남의 글도 고정할 수 있다. */
   canCurate?: boolean
   editTo: string
+  postTitle: string
+  /** 이 화면에서 이미 신고했는지. 실제 연동 후에는 report_post의 boolean 응답으로 갱신한다. */
+  reported?: boolean
+  onReport?: (reason: GroupPostReportReason, details: string | null) => void
 }) {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [locallyReported, setLocallyReported] = useState(false)
+  const isReported = reported || locallyReported
 
-  if (!isMine && !canCurate) return null
+  const submitReport = (reason: GroupPostReportReason, details: string | null) => {
+    setLocallyReported(true)
+    onReport?.(reason, details)
+    toast.success("게시물을 신고했습니다")
+  }
 
   return (
     <>
-      {/* 삭제·익명 제한 AlertDialog와 수정 라우트 Dialog를 여는 메뉴라 non-modal이다. 메뉴와
+      {/* 삭제·익명 제한 Dialog와 수정 라우트 Dialog를 여는 메뉴라 non-modal이다. 메뉴와
           뒤이어 열리는 모달이 body의 pointer-events 잠금을 겹쳐 쥐면, 둘이 함께 닫힐 때 잠금이
           풀리지 않아 페이지 전체가 클릭 불가가 된다. */}
       <DropdownMenu modal={false}>
@@ -118,8 +134,27 @@ export function GroupPostMenu({
               )}
             </>
           ) : null}
+
+          {!isMine ? (
+            <>
+              {canCurate ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuItem disabled={isReported} onSelect={() => setReportOpen(true)}>
+                <FlagIcon aria-hidden="true" />
+                {isReported ? "신고 완료" : "신고"}
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {!isMine ? (
+        <GroupPostReportDialog
+          postTitle={postTitle}
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          onSubmit={submitReport}
+        />
+      ) : null}
 
       {/* 백엔드 미연동: 확인해도 모달만 닫힌다. 실제 RPC는 위 TODO(backend) 참고. */}
       <Dialog

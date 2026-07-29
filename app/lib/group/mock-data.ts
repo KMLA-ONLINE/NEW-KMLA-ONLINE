@@ -5,6 +5,8 @@ import type {
   GroupJoinRequest,
   GroupMember,
   GroupPost,
+  GroupPostReport,
+  GroupPostReportCase,
   GroupSpace,
 } from "~/lib/group/types"
 
@@ -448,6 +450,70 @@ export const mockGroupPosts: GroupPost[] = rawGroupPosts.map((post) => {
     reactionDetails: makeMockReactionDetails(post.reactionCount, post.topReactions, 3),
   }
 })
+
+function mockReportCase(postId: number, reports: GroupPostReport[]): GroupPostReportCase {
+  const post = mockGroupPosts.find((item) => item.id === postId)
+  if (!post) throw new Error(`Missing mock post for report case ${postId}`)
+
+  const ordered = [...reports].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const reasonCounts = ordered.reduce<Partial<Record<GroupPostReport["reason"], number>>>(
+    (counts, report) => ({ ...counts, [report.reason]: (counts[report.reason] ?? 0) + 1 }),
+    {}
+  )
+  return {
+    postId: post.id,
+    pubId: post.pubId,
+    title: post.title,
+    content: post.content,
+    isAnonymous: post.author === null && post.authorAttribution !== "staff",
+    authorAttribution: post.authorAttribution ?? null,
+    postCreatedAt: post.createdAt,
+    reportCount: ordered.length,
+    firstReportedAt: ordered[0].createdAt,
+    lastReportedAt: ordered.at(-1)!.createdAt,
+    reasonCounts,
+  }
+}
+
+const STRESS_REASONS: GroupPostReport["reason"][] = [
+  "spam",
+  "harassment",
+  "privacy",
+  "harmful",
+  "other",
+]
+
+const stressReports: GroupPostReport[] = Array.from({ length: 137 }, (_, index) => ({
+  id: 1000 + index,
+  reason: STRESS_REASONS[index % STRESS_REASONS.length],
+  details:
+    index === 0
+      ? `긴 설명과 공백 없는 문자열도 카드를 밀어내지 않아야 합니다.\n${"https://example.com/" + "very-long-segment".repeat(45)}`.slice(
+          0,
+          1000
+        )
+      : index % 4 === 0
+        ? null
+        : `관리자가 확인해야 할 신고 내용 ${index + 1}입니다. 같은 사건의 원문은 한 번에 전부 렌더링하지 않습니다.`,
+  createdAt: new Date(Date.parse("2026-07-12T02:15:00.000Z") + index * 60_000).toISOString(),
+}))
+
+// 사건 목록 RPC와 원문 목록 RPC의 mock을 분리한다. reporter_id는 어느 쪽에도 없다.
+export const mockPostReportsByPostId: Record<number, GroupPostReport[]> = {
+  3: stressReports,
+  4: [
+    {
+      id: 2000,
+      reason: "privacy",
+      details: "첨부 이미지에 다른 학생의 개인정보가 보이는 것 같습니다.",
+      createdAt: "2026-07-11T23:20:00.000Z",
+    },
+  ],
+}
+
+export const mockPostReportCases: GroupPostReportCase[] = Object.entries(mockPostReportsByPostId)
+  .map(([postId, reports]) => mockReportCase(Number(postId), reports))
+  .sort((a, b) => a.firstReportedAt.localeCompare(b.firstReportedAt) || a.postId - b.postId)
 
 // space_members 목데이터. memberCount(128)의 대표 일부만 -- 로더가 붙으면 페이지네이션으로
 // 채운다. avatarUrl은 아직 자산이 없어 전부 null(공통 사용자 SVG 폴백). owner는 스키마상 정확히 1명.

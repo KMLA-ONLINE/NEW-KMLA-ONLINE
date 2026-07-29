@@ -6,6 +6,7 @@
 import type { Database } from "~/lib/supabase/database.types"
 
 export type GroupAnonymityPolicy = Database["public"]["Enums"]["space_anonymity_policy"]
+export type GroupPostReportReason = Database["public"]["Enums"]["post_report_reason"]
 
 export type GroupSpace = {
   name: string
@@ -239,6 +240,32 @@ export type GroupPost = {
    * 백엔드는 모달을 열 때 별도 RPC로 읽고, 목록/상세 RPC와 map-post는 이 필드를 채우지 않는다.
    */
   reactionDetails?: GroupPostReactionDetails
+}
+
+/** list_pending_post_report_cases.reports JSON의 한 원소. 신고자 식별자는 의도적으로 없다. */
+export type GroupPostReport = {
+  /** post_reports.id. 개별 신고 페이지 cursor의 tie-breaker. */
+  id: number
+  reason: GroupPostReportReason
+  details: string | null
+  /** post_reports.created_at */
+  createdAt: string
+}
+
+/** 관리자 신고함의 한 행. list_pending_post_report_cases 반환 shape를 camelCase로 옮긴다. */
+export type GroupPostReportCase = {
+  postId: number
+  pubId: string
+  title: string
+  content: string
+  isAnonymous: boolean
+  authorAttribution: "staff" | null
+  postCreatedAt: string
+  reportCount: number
+  firstReportedAt: string
+  lastReportedAt: string
+  /** list_pending_post_report_cases.reason_counts */
+  reasonCounts: Partial<Record<GroupPostReportReason, number>>
 }
 
 export type GroupComment = {

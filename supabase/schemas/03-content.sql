@@ -542,13 +542,14 @@ begin
 end;
 $$;
 
--- 신고자는 숨긴 채 게시물별로 묶는다. reports 배열은 판단에 필요한 사유·설명·시각만 담는다.
--- 페이지 커서는 사건의 첫 신고 시각과 post_id 쌍이다. 첫 시각은 신고가 더 붙어도 움직이지 않아
--- 페이지 사이에서 사건이 커서 앞으로 이동해 누락되지 않는다. 둘 중 하나만 주면 경계가 모호하다.
+-- 사건 목록에는 신고 원문을 싣지 않는다. 한 글에 수백 건이 붙어도 행 크기는 사유별 count만큼만
+-- 유지하고, 원문은 아래 list_pending_post_reports에서 별도로 페이지한다.
+-- 오래 기다린 사건부터 처리하도록 첫 신고 시각 오름차순이다. 첫 시각은 신고가 더 붙어도 움직이지
+-- 않아 페이지 사이에서 사건이 커서 뒤로 이동해 누락되지 않는다.
 create function public.list_pending_post_report_cases(
   p_space_id bigint,
-  p_before_reported_at timestamptz default null,
-  p_before_post_id bigint default null,
+  p_after_reported_at timestamptz default null,
+  p_after_post_id bigint default null,
   p_limit int4 default 20
 )
 returns table(
@@ -562,19 +563,30 @@ returns table(
   report_count bigint,
   first_reported_at timestamptz,
   last_reported_at timestamptz,
-  reports jsonb
+  reason_counts jsonb
 )
 language plpgsql stable security definer set search_path = '' as $$
 begin
   perform private.require_current_profile(true);
   if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
   if p_limit is null or p_limit not between 1 and 100 then raise exception 'limit must be between 1 and 100'; end if;
-  if (p_before_reported_at is null) <> (p_before_post_id is null) then
+  if (p_after_reported_at is null) <> (p_after_post_id is null) then
     raise exception 'report cursor must include timestamp and post id';
   end if;
 
   return query
-  with cases as (
+  with reason_totals as (
+    select
+      r.post_id,
+      r.reason,
+      count(*) as report_count,
+      min(r.created_at) as first_reported_at,
+      max(r.created_at) as last_reported_at
+    from public.post_reports r
+    join public.posts p on p.id=r.post_id
+    where p.space_id=p_space_id and p.deleted_at is null and r.resolution is null
+    group by r.post_id,r.reason
+  ), cases as (
     select
       p.id as post_id,
       p.pub_id,
@@ -583,26 +595,61 @@ begin
       p.is_anonymous,
       p.author_attribution,
       p.created_at as post_created_at,
-      count(*) as report_count,
-      min(r.created_at) as first_reported_at,
-      max(r.created_at) as last_reported_at,
-      jsonb_agg(
-        jsonb_build_object(
-          'reason',r.reason,
-          'details',r.details,
-          'created_at',r.created_at
-        ) order by r.created_at,r.id
-      ) as reports
-    from public.post_reports r
-    join public.posts p on p.id=r.post_id
-    where p.space_id=p_space_id and p.deleted_at is null and r.resolution is null
+      sum(rt.report_count)::bigint as report_count,
+      min(rt.first_reported_at) as first_reported_at,
+      max(rt.last_reported_at) as last_reported_at,
+      jsonb_object_agg(rt.reason,rt.report_count) as reason_counts
+    from reason_totals rt
+    join public.posts p on p.id=rt.post_id
     group by p.id
   )
   select c.*
   from cases c
-  where p_before_reported_at is null
-     or (c.first_reported_at,c.post_id) < (p_before_reported_at,p_before_post_id)
-  order by c.first_reported_at desc,c.post_id desc
+  where p_after_reported_at is null
+     or (c.first_reported_at,c.post_id) > (p_after_reported_at,p_after_post_id)
+  order by c.first_reported_at,c.post_id
+  limit p_limit;
+end;
+$$;
+
+-- 사건을 펼쳤을 때만 신고 원문을 읽는다. reporter_id는 반환하지 않고, 오래된 순 cursor라 새 신고가
+-- 뒤에 추가돼도 이미 읽은 페이지가 흔들리지 않는다. 기존 pending 부분 인덱스가 이 조회를 받친다.
+create function public.list_pending_post_reports(
+  p_post_id bigint,
+  p_after_reported_at timestamptz default null,
+  p_after_report_id bigint default null,
+  p_limit int4 default 10
+)
+returns table(
+  report_id bigint,
+  reason public.post_report_reason,
+  details text,
+  created_at timestamptz
+)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_current_profile(true);
+  if not exists(
+    select 1 from public.posts p
+    where p.id=p_post_id and p.deleted_at is null and private.can_manage_space(p.space_id)
+  ) then
+    raise exception 'space manager required';
+  end if;
+  if p_limit is null or p_limit not between 1 and 100 then raise exception 'limit must be between 1 and 100'; end if;
+  if (p_after_reported_at is null) <> (p_after_report_id is null) then
+    raise exception 'report cursor must include timestamp and report id';
+  end if;
+
+  return query
+  select r.id,r.reason,r.details,r.created_at
+  from public.post_reports r
+  where r.post_id=p_post_id
+    and r.resolution is null
+    and (
+      p_after_reported_at is null
+      or (r.created_at,r.id) > (p_after_reported_at,p_after_report_id)
+    )
+  order by r.created_at,r.id
   limit p_limit;
 end;
 $$;
@@ -1633,8 +1680,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
-grant execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
+revoke execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.list_pending_post_reports(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.list_pending_post_reports(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
 
 revoke execute on function public.purge_deleted_content(interval,int4) from public, anon, authenticated, service_role;
 grant execute on function public.purge_deleted_content(interval,int4) to service_role;

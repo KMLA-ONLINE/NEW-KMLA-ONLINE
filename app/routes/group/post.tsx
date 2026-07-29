@@ -26,20 +26,27 @@ import {
 import { RichText } from "~/components/rich-text/rich-text"
 import { Twemoji } from "~/components/ui/twemoji"
 import { useModalClose } from "~/hooks/use-modal-close"
-import { mockGroupPosts } from "~/lib/group/mock-data"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
 // /groups/:pubId/posts/:postId. 데스크톱은 모달, 모바일은 풀스크린(compose와 같은 패턴).
 // 본문 + 좋아요/댓글/공유 + 댓글 목록/입력. 저장은 백엔드 붙일 때.
 export default function GroupPostDetailPage() {
   const { postId } = useParams()
-  const { canManage, canCurate, anonymityPolicy, canPostAnonymously, staffAttributionMode } =
-    useOutletContext<GroupOutletContext>()
+  const {
+    canManage,
+    canCurate,
+    anonymityPolicy,
+    canPostAnonymously,
+    staffAttributionMode,
+    posts,
+    reportedPostIds,
+    onReport,
+  } = useOutletContext<GroupOutletContext>()
   const close = useModalClose()
   // 댓글 아이콘은 이미 그 글 위에 있으니 이동할 데가 없다 -- 대신 입력창으로 포커스를 보낸다.
   const composerRef = useRef<HTMLTextAreaElement>(null)
   // postId 파라미터는 posts.pub_id(uuid)다 -- 내부 serial id가 아니라.
-  const post = mockGroupPosts.find((item) => item.pubId === postId)
+  const post = posts.find((item) => item.pubId === postId)
   const isStaffPost = post?.authorAttribution === "staff"
   const authorName = post?.author?.name ?? (isStaffPost ? "운영진" : "익명")
   // comments는 상세 전용 optional(피드엔 없음). 상세는 트리를 조인해 받는다.
@@ -116,6 +123,9 @@ export default function GroupPostDetailPage() {
                     canManage={canManage}
                     canCurate={canCurate}
                     editTo="edit"
+                    postTitle={post.title}
+                    reported={reportedPostIds.has(post.pubId)}
+                    onReport={(reason, details) => onReport(post, reason, details)}
                   />
                 </header>
 

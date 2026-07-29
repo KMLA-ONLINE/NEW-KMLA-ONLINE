@@ -4,7 +4,7 @@ import type { PostViewMode } from "~/components/group/use-post-view-mode"
 import { useVisitedPosts } from "~/components/group/use-visited-posts"
 import { GroupPostCard } from "~/components/group/group-post-card"
 import { GroupPostRow } from "~/components/group/group-post-row"
-import type { GroupPost } from "~/lib/group/types"
+import type { GroupPost, GroupPostReportReason } from "~/lib/group/types"
 import type { ReactionType } from "~/lib/reactions"
 
 // 피드 하단: 더 불러올 게 있으면 sentinel(스크롤이 닿으면 부모가 다음 페이지를 부른다),
@@ -37,6 +37,8 @@ export function GroupPostFeed({
   empty,
   canManage,
   canCurate,
+  reportedPostIds,
+  onReport,
 }: {
   posts: GroupPost[]
   viewMode: PostViewMode
@@ -49,6 +51,8 @@ export function GroupPostFeed({
   canManage?: boolean
   /** owner/admin/manager. 고정은 매니저도 한다(can_curate_space). */
   canCurate?: boolean
+  reportedPostIds?: ReadonlySet<string>
+  onReport?: (post: GroupPost, reason: GroupPostReportReason, details: string | null) => void
 }) {
   const { visitedPostIds, markVisited } = useVisitedPosts()
 
@@ -73,6 +77,10 @@ export function GroupPostFeed({
                 post={post}
                 isVisited={visitedPostIds.has(post.pubId)}
                 onVisit={() => markVisited(post.pubId)}
+                canManage={canManage}
+                canCurate={canCurate}
+                reported={reportedPostIds?.has(post.pubId)}
+                onReport={onReport}
               />
             </li>
           ))}
@@ -93,6 +101,8 @@ export function GroupPostFeed({
           reactionTypes={reactionTypes}
           canManage={canManage}
           canCurate={canCurate}
+          reported={reportedPostIds?.has(post.pubId)}
+          onReport={onReport}
         />
       ))}
       <FeedFooter hasMore={hasMore} sentinelRef={sentinelRef} />

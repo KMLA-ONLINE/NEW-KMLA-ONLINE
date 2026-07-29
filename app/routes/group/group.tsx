@@ -16,6 +16,7 @@ import { GroupJoinRequests } from "~/components/group/group-join-requests"
 import { GroupMemberList } from "~/components/group/group-member-list"
 import { GroupSearchDialog } from "~/components/group/group-search-dialog"
 import { GroupPostFeed } from "~/components/group/group-post-feed"
+import { GroupPostReports } from "~/components/group/group-post-reports"
 import { GroupSettings } from "~/components/group/group-settings"
 import { usePostViewMode } from "~/components/group/use-post-view-mode"
 import { useInfiniteScroll } from "~/hooks/use-infinite-scroll"
@@ -25,8 +26,18 @@ import {
   mockGroupMembers,
   mockGroupPosts,
   mockJoinRequests,
+  mockPostReportCases,
+  mockPostReportsByPostId,
 } from "~/lib/group/mock-data"
-import type { GroupAnonymityPolicy, GroupMemberRole } from "~/lib/group/types"
+import type {
+  GroupAnonymityPolicy,
+  GroupMemberRole,
+  GroupPost,
+  GroupPostReport,
+  GroupPostReportCase,
+  GroupPostReportReason,
+} from "~/lib/group/types"
+import { formatReportCount } from "~/lib/group/reports"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -55,16 +66,20 @@ export type GroupOutletContext = {
   canPostAnonymously: boolean
   anonymitySuspendedUntil: string | null
   staffAttributionMode: "automatic" | "optional" | "none"
+  posts: GroupPost[]
+  reportedPostIds: ReadonlySet<string>
+  onReport: (post: GroupPost, reason: GroupPostReportReason, details: string | null) => void
 }
 
-type GroupTab = "posts" | "members" | "settings"
+type GroupTab = "posts" | "members" | "reports" | "settings"
 
 // curateOnly: 매니저도 볼 수 있다. 설정 탭에 카테고리 관리가 들어 있고 그건 can_curate_space라
 // 매니저에게도 열려 있기 때문이다 -- 탭 자체를 관리자로 잠그면 매니저가 카테고리를 못 만진다.
 // 탭 안에서 운영 섹션(기본정보·가입정책·글쓰기제한·익명)은 GroupSettings가 canManage로 다시 가린다.
-const TABS: { id: GroupTab; label: string; curateOnly?: boolean }[] = [
+const TABS: { id: GroupTab; label: string; curateOnly?: boolean; manageOnly?: boolean }[] = [
   { id: "posts", label: "게시물" },
   { id: "members", label: "멤버" },
+  { id: "reports", label: "신고", manageOnly: true },
   { id: "settings", label: "그룹 설정", curateOnly: true },
 ]
 
@@ -76,7 +91,7 @@ const GROUP_VIEW_LOCATION_STATE: GroupViewLocationState = { groupViewPushed: tru
 
 // 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
 // 문자열이라 사전식 비교가 곧 시간순이다. 정렬 옵션은 최신순 하나뿐이라 드롭다운은 없다.
-function sortForFeed(posts: typeof mockGroupPosts) {
+function sortForFeed(posts: GroupPost[]) {
   return [...posts].sort((a, b) => {
     if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
     return b.createdAt.localeCompare(a.createdAt)
@@ -124,6 +139,14 @@ export default function GroupPage() {
   const [members, setMembers] = useState(mockGroupMembers)
   const [pendingRequests, setPendingRequests] = useState(mockJoinRequests)
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
+  const [posts, setPosts] = useState(mockGroupPosts)
+  const [reportCases, setReportCases] = useState(mockPostReportCases)
+  const [postReports, setPostReports] = useState<Record<number, GroupPostReport[]>>(() =>
+    Object.fromEntries(
+      Object.entries(mockPostReportsByPostId).map(([postId, reports]) => [postId, [...reports]])
+    )
+  )
+  const [reportedPostIds, setReportedPostIds] = useState<ReadonlySet<string>>(new Set())
 
   // 개발용 미리보기: ?as=admin|manager 로 그 시점을 본다. 백엔드 붙으면 로더가 내려주는
   // mockGroup.viewerRole이 그대로 쓰이고 이 override는 사라진다.
@@ -147,6 +170,7 @@ export default function GroupPage() {
   const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
   const tab: GroupTab =
     (requestedTab === "members" && canViewMemberDirectory) ||
+    (requestedTab === "reports" && canManage) ||
     (requestedTab === "settings" && canCurate)
       ? requestedTab
       : "posts"
@@ -203,7 +227,7 @@ export default function GroupPage() {
   const PrivacyIcon = isPrivate ? LockIcon : Globe2Icon
   // 카테고리 필터(null=전체) 적용 후 정렬. 필터가 정렬보다 먼저라 고정 글도 카테고리에 걸린다.
   const feedPosts = sortForFeed(
-    mockGroupPosts.filter((post) => categoryId === null || post.category?.id === categoryId)
+    posts.filter((post) => categoryId === null || post.category?.id === categoryId)
   )
   const visiblePosts = feedPosts.slice(0, feedVisible)
   const feedHasMore = feedVisible < feedPosts.length
@@ -215,8 +239,67 @@ export default function GroupPage() {
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
   const visibleTabs = TABS.filter(
-    (item) => (item.id !== "members" || canViewMemberDirectory) && (!item.curateOnly || canCurate)
+    (item) =>
+      (item.id !== "members" || canViewMemberDirectory) &&
+      (!item.curateOnly || canCurate) &&
+      (!item.manageOnly || canManage)
   )
+
+  const reportPost = (post: GroupPost, reason: GroupPostReportReason, details: string | null) => {
+    if (reportedPostIds.has(post.pubId) || post.isMine) return
+
+    const createdAt = new Date().toISOString()
+    const report: GroupPostReport = { id: Date.now(), reason, details, createdAt }
+    setReportedPostIds((current) => new Set(current).add(post.pubId))
+    setPostReports((current) => ({
+      ...current,
+      [post.id]: [...(current[post.id] ?? []), report],
+    }))
+    setReportCases((current) => {
+      const existing = current.find((item) => item.postId === post.id)
+      if (existing) {
+        return current.map((item) =>
+          item.postId === post.id
+            ? {
+                ...item,
+                reportCount: item.reportCount + 1,
+                lastReportedAt: createdAt,
+                reasonCounts: {
+                  ...item.reasonCounts,
+                  [reason]: (item.reasonCounts[reason] ?? 0) + 1,
+                },
+              }
+            : item
+        )
+      }
+
+      const reportCase: GroupPostReportCase = {
+        postId: post.id,
+        pubId: post.pubId,
+        title: post.title,
+        content: post.content,
+        isAnonymous: post.author === null && post.authorAttribution !== "staff",
+        authorAttribution: post.authorAttribution ?? null,
+        postCreatedAt: post.createdAt,
+        reportCount: 1,
+        firstReportedAt: createdAt,
+        lastReportedAt: createdAt,
+        reasonCounts: { [reason]: 1 },
+      }
+      return [...current, reportCase]
+    })
+  }
+
+  const resolveReportCase = (reportCase: GroupPostReportCase, removePost: boolean) => {
+    setReportCases((current) => current.filter((item) => item.postId !== reportCase.postId))
+    setPostReports((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([postId]) => Number(postId) !== reportCase.postId)
+      )
+    )
+    if (removePost) setPosts((current) => current.filter((post) => post.id !== reportCase.postId))
+    toast.success(removePost ? "게시물을 삭제하고 신고를 처리했습니다" : "신고를 기각했습니다")
+  }
 
   // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
   // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
@@ -311,6 +394,9 @@ export default function GroupPage() {
         canViewMembers={canViewMemberDirectory}
         canCurate={canCurate}
         onViewSettings={() => setTab("settings")}
+        canManage={canManage}
+        reportCount={reportCases.length}
+        onViewReports={() => setTab("reports")}
       />
 
       <nav
@@ -334,6 +420,11 @@ export default function GroupPage() {
             {/* 관리자는 멤버 탭에 대기 중인 가입 요청 수를 배지로 봐서 알아챈다. */}
             {item.id === "members" && showJoinRequests && pendingRequests.length > 0 ? (
               <Badge variant="secondary">{pendingRequests.length}</Badge>
+            ) : null}
+            {item.id === "reports" && reportCases.length > 0 ? (
+              <Badge variant="secondary" aria-label={`대기 중인 신고 사건 ${reportCases.length}건`}>
+                <span aria-hidden="true">{formatReportCount(reportCases.length)}</span>
+              </Badge>
             ) : null}
           </button>
         ))}
@@ -397,6 +488,8 @@ export default function GroupPage() {
                 sentinelRef={feedSentinelRef}
                 canManage={canManage}
                 canCurate={canCurate}
+                reportedPostIds={reportedPostIds}
+                onReport={reportPost}
               />
             </>
           ) : tab === "members" ? (
@@ -436,6 +529,13 @@ export default function GroupPage() {
                 />
               </div>
             </div>
+          ) : tab === "reports" ? (
+            <GroupPostReports
+              cases={reportCases}
+              reportsByPostId={postReports}
+              onDismiss={(reportCase) => resolveReportCase(reportCase, false)}
+              onRemove={(reportCase) => resolveReportCase(reportCase, true)}
+            />
           ) : (
             <GroupSettings
               group={liveGroup}
@@ -482,11 +582,14 @@ export default function GroupPage() {
             canPostAnonymously,
             anonymitySuspendedUntil: mockGroup.anonymitySuspendedUntil,
             staffAttributionMode,
+            posts,
+            reportedPostIds,
+            onReport: reportPost,
           } satisfies GroupOutletContext
         }
       />
 
-      <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
+      <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={posts} />
     </div>
   )
 }

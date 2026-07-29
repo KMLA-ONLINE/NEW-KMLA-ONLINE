@@ -2106,8 +2106,8 @@ export type Database = {
       }
       list_pending_post_report_cases: {
         Args: {
-          p_before_post_id?: number
-          p_before_reported_at?: string
+          p_after_post_id?: number
+          p_after_reported_at?: string
           p_limit?: number
           p_space_id: number
         }
@@ -2120,9 +2120,23 @@ export type Database = {
           post_created_at: string
           post_id: number
           pub_id: string
+          reason_counts: Json
           report_count: number
-          reports: Json
           title: string
+        }[]
+      }
+      list_pending_post_reports: {
+        Args: {
+          p_after_report_id?: number
+          p_after_reported_at?: string
+          p_limit?: number
+          p_post_id: number
+        }
+        Returns: {
+          created_at: string
+          details: string
+          reason: Database["public"]["Enums"]["post_report_reason"]
+          report_id: number
         }[]
       }
       list_pending_profiles: {

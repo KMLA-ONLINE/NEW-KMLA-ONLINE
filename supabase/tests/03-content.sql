@@ -32,8 +32,10 @@ declare
   report_post_id bigint; pagination_report_post_id bigint; removal_report_post_id bigint;
   report_inserted boolean;
   pending_case_count bigint; grouped_report_count bigint; resolved_report_count bigint;
-  grouped_reports jsonb;
+  report_reason_counts jsonb;
   report_cursor_at timestamptz; report_cursor_post_id bigint; next_report_post_id bigint;
+  detail_cursor_at timestamptz; detail_cursor_id bigint;
+  detail_reason public.post_report_reason; detail_text text;
 begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
@@ -162,6 +164,12 @@ begin
   exception when others then
     if sqlerrm <> 'space manager required' then raise; end if;
   end;
+  begin
+    perform public.list_pending_post_reports(report_post_id,null,null,10);
+    raise exception 'a space manager role must not list report details';
+  exception when others then
+    if sqlerrm <> 'space manager required' then raise; end if;
+  end;
 
   perform set_config('request.jwt.claim.sub', user1::text, true);
   select public.count_pending_post_report_cases(space1) into pending_case_count;
@@ -169,12 +177,12 @@ begin
 
   select post_id,first_reported_at into report_cursor_post_id,report_cursor_at
   from public.list_pending_post_report_cases(space1,null,null,1);
-  if report_cursor_post_id is distinct from report_post_id then
-    raise exception 'the first report page must use first_reported_at descending';
+  if report_cursor_post_id is distinct from pagination_report_post_id then
+    raise exception 'the first report page must show the oldest pending case';
   end if;
 
-  -- 둘째 사건에 새 신고를 붙여 last_reported_at을 커서보다 앞으로 옮긴다. first_reported_at은
-  -- 그대로라 다음 페이지에서 여전히 잡혀야 한다.
+  -- 첫 사건에 새 신고를 붙여 last_reported_at을 앞으로 옮겨도 first_reported_at은 그대로라
+  -- 다음 페이지의 나머지 사건이 누락되지 않아야 한다.
   perform set_config('request.jwt.claim.sub', user4::text, true);
   if not public.report_post(pagination_report_pub,'other',null) then
     raise exception 'a later report must join its existing post case';
@@ -182,8 +190,8 @@ begin
   perform set_config('request.jwt.claim.sub', user1::text, true);
   select post_id into next_report_post_id
   from public.list_pending_post_report_cases(space1,report_cursor_at,report_cursor_post_id,1);
-  if next_report_post_id is distinct from pagination_report_post_id then
-    raise exception 'a later report must not move an existing case across the pagination cursor';
+  if next_report_post_id is distinct from report_post_id then
+    raise exception 'a later report must not move a case or skip the next oldest case';
   end if;
   begin
     perform public.list_pending_post_report_cases(space1,report_cursor_at,null,20);
@@ -192,18 +200,32 @@ begin
     if sqlerrm <> 'report cursor must include timestamp and post id' then raise; end if;
   end;
 
-  select report_count,reports into grouped_report_count,grouped_reports
+  select report_count,reason_counts into grouped_report_count,report_reason_counts
   from public.list_pending_post_report_cases(space1,null,null,20)
   where post_id=report_post_id;
-  if grouped_report_count is distinct from 2 or jsonb_array_length(grouped_reports) is distinct from 2 then
-    raise exception 'the report queue must group all pending reports for a post';
+  if grouped_report_count is distinct from 2
+    or report_reason_counts is distinct from '{"harassment":1,"privacy":1}'::jsonb
+  then
+    raise exception 'the report queue must return counts by post and reason';
   end if;
-  if exists(
-    select 1 from jsonb_array_elements(grouped_reports) item
-    where item ? 'reporter_id' or item ? 'reporter'
-  ) then
-    raise exception 'the report queue must not expose reporter identity';
+
+  select report_id,created_at,reason,details
+  into detail_cursor_id,detail_cursor_at,detail_reason,detail_text
+  from public.list_pending_post_reports(report_post_id,null,null,1);
+  if detail_reason is distinct from 'harassment' or detail_text is distinct from '구체적인 신고 맥락' then
+    raise exception 'report details must start with the oldest pending report';
   end if;
+  select reason into detail_reason
+  from public.list_pending_post_reports(report_post_id,detail_cursor_at,detail_cursor_id,1);
+  if detail_reason is distinct from 'privacy' then
+    raise exception 'report details cursor must return the next report';
+  end if;
+  begin
+    perform public.list_pending_post_reports(report_post_id,detail_cursor_at,null,10);
+    raise exception 'a partial report detail cursor must be rejected';
+  exception when others then
+    if sqlerrm <> 'report cursor must include timestamp and report id' then raise; end if;
+  end;
 
   select public.resolve_post_reports(report_post_id,'dismissed') into resolved_report_count;
   if resolved_report_count <> 2 then raise exception 'dismissing a case must resolve every pending report'; end if;
