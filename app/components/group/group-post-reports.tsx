@@ -28,12 +28,11 @@ import {
   formatReportCount,
   POST_REPORT_REASON_LABEL,
   POST_REPORT_REASONS,
+  REPORT_CASE_PAGE_SIZE,
+  REPORT_DETAIL_PAGE_SIZE,
 } from "~/lib/group/reports"
 import type { GroupPostReport, GroupPostReportCase } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
-
-export const REPORT_CASE_PAGE_SIZE = 20
-export const REPORT_DETAIL_PAGE_SIZE = 10
 
 function ClampedReportDetails({ details }: { details: string }) {
   const [expanded, setExpanded] = useState(false)
@@ -70,18 +69,18 @@ function ClampedReportDetails({ details }: { details: string }) {
 function ReportCaseCard({
   reportCase,
   reports,
+  onLoadMoreReports,
   onDismiss,
   onRequestRemove,
 }: {
   reportCase: GroupPostReportCase
   reports: GroupPostReport[]
+  onLoadMoreReports: () => void
   onDismiss: () => void
   onRequestRemove: () => void
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [detailVisible, setDetailVisible] = useState(REPORT_DETAIL_PAGE_SIZE)
-  const visibleReports = reports.slice(0, detailVisible)
-  const hasMoreReports = detailVisible < reports.length
+  const hasMoreReports = reports.length < reportCase.reportCount
 
   return (
     <Card size="sm" className="rounded-none sm:rounded-xl">
@@ -137,7 +136,10 @@ function ReportCaseCard({
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => setDetailsOpen(true)}
+            onClick={() => {
+              if (reports.length === 0) onLoadMoreReports()
+              setDetailsOpen(true)
+            }}
             aria-expanded="false"
           >
             신고 내용 보기
@@ -145,7 +147,7 @@ function ReportCaseCard({
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
             <ul className="divide-border/70 flex min-w-0 flex-col divide-y">
-              {visibleReports.map((report) => (
+              {reports.map((report) => (
                 <li
                   key={report.id}
                   className="flex min-w-0 flex-col gap-1.5 py-3 first:pt-0 last:pb-0"
@@ -167,13 +169,9 @@ function ReportCaseCard({
             </ul>
             <div className="flex flex-wrap gap-2">
               {hasMoreReports ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDetailVisible((count) => count + REPORT_DETAIL_PAGE_SIZE)}
-                >
-                  {Math.min(REPORT_DETAIL_PAGE_SIZE, reports.length - detailVisible)}건 더 보기
+                <Button type="button" variant="outline" size="sm" onClick={onLoadMoreReports}>
+                  {Math.min(REPORT_DETAIL_PAGE_SIZE, reportCase.reportCount - reports.length)}건 더
+                  보기
                 </Button>
               ) : null}
               <Button
@@ -182,7 +180,6 @@ function ReportCaseCard({
                 size="sm"
                 onClick={() => {
                   setDetailsOpen(false)
-                  setDetailVisible(REPORT_DETAIL_PAGE_SIZE)
                 }}
                 aria-expanded="true"
               >
@@ -207,19 +204,23 @@ function ReportCaseCard({
 
 export function GroupPostReports({
   cases,
+  caseCount,
   reportsByPostId,
+  onLoadMoreCases,
+  onLoadMoreReports,
   onDismiss,
   onRemove,
 }: {
   cases: GroupPostReportCase[]
+  caseCount: number
   reportsByPostId: Readonly<Record<number, GroupPostReport[]>>
+  onLoadMoreCases: () => void
+  onLoadMoreReports: (postId: number) => void
   onDismiss: (reportCase: GroupPostReportCase) => void
   onRemove: (reportCase: GroupPostReportCase) => void
 }) {
-  const [caseVisible, setCaseVisible] = useState(REPORT_CASE_PAGE_SIZE)
   const [removeTarget, setRemoveTarget] = useState<GroupPostReportCase | null>(null)
-  const visibleCases = cases.slice(0, caseVisible)
-  const hasMoreCases = caseVisible < cases.length
+  const hasMoreCases = cases.length < caseCount
 
   if (cases.length === 0) {
     return (
@@ -243,24 +244,20 @@ export function GroupPostReports({
         </h2>
       </div>
 
-      {visibleCases.map((reportCase) => (
+      {cases.map((reportCase) => (
         <ReportCaseCard
           key={reportCase.postId}
           reportCase={reportCase}
           reports={reportsByPostId[reportCase.postId] ?? []}
+          onLoadMoreReports={() => onLoadMoreReports(reportCase.postId)}
           onDismiss={() => onDismiss(reportCase)}
           onRequestRemove={() => setRemoveTarget(reportCase)}
         />
       ))}
 
       {hasMoreCases ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="mx-4 sm:mx-0"
-          onClick={() => setCaseVisible((count) => count + REPORT_CASE_PAGE_SIZE)}
-        >
-          {Math.min(REPORT_CASE_PAGE_SIZE, cases.length - caseVisible)}건 더 보기
+        <Button type="button" variant="outline" className="mx-4 sm:mx-0" onClick={onLoadMoreCases}>
+          {Math.min(REPORT_CASE_PAGE_SIZE, caseCount - cases.length)}건 더 보기
         </Button>
       ) : null}
 

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react"
+import { useState } from "react"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it, vi } from "vitest"
 
 import { GroupPostReports } from "./group-post-reports"
+import { REPORT_CASE_PAGE_SIZE, REPORT_DETAIL_PAGE_SIZE } from "~/lib/group/reports"
 import type { GroupPostReport, GroupPostReportCase } from "~/lib/group/types"
 
 const LONG_DETAILS = `긴 신고 설명입니다. ${"https://example.com/very-long-segment".repeat(20)}`
-const REPORTS: GroupPostReport[] = Array.from({ length: 12 }, (_, index) => ({
+const REPORTS: GroupPostReport[] = Array.from({ length: 137 }, (_, index) => ({
   id: index + 1,
-  reason: index === 0 ? "privacy" : "spam",
+  reason: index < 37 ? "privacy" : "spam",
   details: index === 0 ? LONG_DETAILS : `신고 설명 ${index + 1}`,
   createdAt: new Date(Date.parse("2026-07-11T00:00:00.000Z") + index * 60_000).toISOString(),
 }))
@@ -29,14 +31,34 @@ const REPORT_CASE: GroupPostReportCase = {
 }
 
 function renderReports(onDismiss = vi.fn(), onRemove = vi.fn()) {
-  render(
-    <MemoryRouter>
+  function MockPager() {
+    const [cases, setCases] = useState([REPORT_CASE].slice(0, REPORT_CASE_PAGE_SIZE))
+    const [reportsByPostId, setReportsByPostId] = useState<Record<number, GroupPostReport[]>>({})
+
+    return (
       <GroupPostReports
-        cases={[REPORT_CASE]}
-        reportsByPostId={{ [REPORT_CASE.postId]: REPORTS }}
+        cases={cases}
+        caseCount={1}
+        reportsByPostId={reportsByPostId}
+        onLoadMoreCases={() => setCases([REPORT_CASE])}
+        onLoadMoreReports={(postId) =>
+          setReportsByPostId((current) => {
+            const loaded = current[postId] ?? []
+            return {
+              ...current,
+              [postId]: REPORTS.slice(0, loaded.length + REPORT_DETAIL_PAGE_SIZE),
+            }
+          })
+        }
         onDismiss={onDismiss}
         onRemove={onRemove}
       />
+    )
+  }
+
+  render(
+    <MemoryRouter>
+      <MockPager />
     </MemoryRouter>
   )
   return { onDismiss, onRemove }
@@ -64,9 +86,9 @@ describe("GroupPostReports", () => {
     expect(screen.getByText("신고 설명 10")).toBeInTheDocument()
     expect(screen.queryByText("신고 설명 11")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "2건 더 보기" }))
+    fireEvent.click(screen.getByRole("button", { name: "10건 더 보기" }))
     expect(screen.getByText("신고 설명 11")).toBeInTheDocument()
-    expect(screen.getByText("신고 설명 12")).toBeInTheDocument()
+    expect(screen.getByText("신고 설명 20")).toBeInTheDocument()
   })
 
   it("확인 Dialog를 거쳐 게시물을 삭제 처리한다", () => {
@@ -82,21 +104,31 @@ describe("GroupPostReports", () => {
   })
 
   it("사건 목록도 20건씩 추가한다", () => {
-    const cases = Array.from({ length: 21 }, (_, index) => ({
+    const allCases = Array.from({ length: 21 }, (_, index) => ({
       ...REPORT_CASE,
       postId: index + 1,
       pubId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       title: `신고된 게시물 ${index + 1}`,
     }))
 
-    render(
-      <MemoryRouter>
+    function CasePager() {
+      const [cases, setCases] = useState(allCases.slice(0, REPORT_CASE_PAGE_SIZE))
+      return (
         <GroupPostReports
           cases={cases}
+          caseCount={allCases.length}
           reportsByPostId={{}}
+          onLoadMoreCases={() => setCases(allCases)}
+          onLoadMoreReports={vi.fn()}
           onDismiss={vi.fn()}
           onRemove={vi.fn()}
         />
+      )
+    }
+
+    render(
+      <MemoryRouter>
+        <CasePager />
       </MemoryRouter>
     )
 
@@ -108,7 +140,15 @@ describe("GroupPostReports", () => {
 
   it("대기 사건이 없으면 완료 상태를 표시한다", () => {
     render(
-      <GroupPostReports cases={[]} reportsByPostId={{}} onDismiss={vi.fn()} onRemove={vi.fn()} />
+      <GroupPostReports
+        cases={[]}
+        caseCount={0}
+        reportsByPostId={{}}
+        onLoadMoreCases={vi.fn()}
+        onLoadMoreReports={vi.fn()}
+        onDismiss={vi.fn()}
+        onRemove={vi.fn()}
+      />
     )
 
     expect(screen.getByText("대기 중인 신고가 없습니다")).toBeInTheDocument()

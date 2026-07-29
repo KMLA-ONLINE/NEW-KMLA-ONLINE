@@ -37,7 +37,11 @@ import type {
   GroupPostReportCase,
   GroupPostReportReason,
 } from "~/lib/group/types"
-import { formatReportCount } from "~/lib/group/reports"
+import {
+  formatReportCount,
+  REPORT_CASE_PAGE_SIZE,
+  REPORT_DETAIL_PAGE_SIZE,
+} from "~/lib/group/reports"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -141,11 +145,13 @@ export default function GroupPage() {
   const [memberCount, setMemberCount] = useState(mockGroup.memberCount)
   const [posts, setPosts] = useState(mockGroupPosts)
   const [reportCases, setReportCases] = useState(mockPostReportCases)
+  const [reportCaseVisible, setReportCaseVisible] = useState(REPORT_CASE_PAGE_SIZE)
   const [postReports, setPostReports] = useState<Record<number, GroupPostReport[]>>(() =>
     Object.fromEntries(
       Object.entries(mockPostReportsByPostId).map(([postId, reports]) => [postId, [...reports]])
     )
   )
+  const [loadedPostReports, setLoadedPostReports] = useState<Record<number, GroupPostReport[]>>({})
   const [reportedPostIds, setReportedPostIds] = useState<ReadonlySet<string>>(new Set())
 
   // 개발용 미리보기: ?as=admin|manager 로 그 시점을 본다. 백엔드 붙으면 로더가 내려주는
@@ -244,6 +250,23 @@ export default function GroupPage() {
       (!item.curateOnly || canCurate) &&
       (!item.manageOnly || canManage)
   )
+  const reportCaseCount = reportCases.length
+  const visibleReportCases = reportCases.slice(0, reportCaseVisible)
+
+  const loadMoreReportCases = () => {
+    setReportCaseVisible((count) => count + REPORT_CASE_PAGE_SIZE)
+  }
+
+  const loadMorePostReports = (postId: number) => {
+    setLoadedPostReports((current) => {
+      const loaded = current[postId] ?? []
+      const nextPage = (postReports[postId] ?? []).slice(
+        loaded.length,
+        loaded.length + REPORT_DETAIL_PAGE_SIZE
+      )
+      return { ...current, [postId]: [...loaded, ...nextPage] }
+    })
+  }
 
   const reportPost = (post: GroupPost, reason: GroupPostReportReason, details: string | null) => {
     if (reportedPostIds.has(post.pubId) || post.isMine) return
@@ -293,6 +316,11 @@ export default function GroupPage() {
   const resolveReportCase = (reportCase: GroupPostReportCase, removePost: boolean) => {
     setReportCases((current) => current.filter((item) => item.postId !== reportCase.postId))
     setPostReports((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([postId]) => Number(postId) !== reportCase.postId)
+      )
+    )
+    setLoadedPostReports((current) =>
       Object.fromEntries(
         Object.entries(current).filter(([postId]) => Number(postId) !== reportCase.postId)
       )
@@ -395,7 +423,7 @@ export default function GroupPage() {
         canCurate={canCurate}
         onViewSettings={() => setTab("settings")}
         canManage={canManage}
-        reportCount={reportCases.length}
+        reportCount={reportCaseCount}
         onViewReports={() => setTab("reports")}
       />
 
@@ -421,9 +449,9 @@ export default function GroupPage() {
             {item.id === "members" && showJoinRequests && pendingRequests.length > 0 ? (
               <Badge variant="secondary">{pendingRequests.length}</Badge>
             ) : null}
-            {item.id === "reports" && reportCases.length > 0 ? (
-              <Badge variant="secondary" aria-label={`대기 중인 신고 사건 ${reportCases.length}건`}>
-                <span aria-hidden="true">{formatReportCount(reportCases.length)}</span>
+            {item.id === "reports" && reportCaseCount > 0 ? (
+              <Badge variant="secondary" aria-label={`대기 중인 신고 사건 ${reportCaseCount}건`}>
+                <span aria-hidden="true">{formatReportCount(reportCaseCount)}</span>
               </Badge>
             ) : null}
           </button>
@@ -531,8 +559,11 @@ export default function GroupPage() {
             </div>
           ) : tab === "reports" ? (
             <GroupPostReports
-              cases={reportCases}
-              reportsByPostId={postReports}
+              cases={visibleReportCases}
+              caseCount={reportCaseCount}
+              reportsByPostId={loadedPostReports}
+              onLoadMoreCases={loadMoreReportCases}
+              onLoadMoreReports={loadMorePostReports}
               onDismiss={(reportCase) => resolveReportCase(reportCase, false)}
               onRemove={(reportCase) => resolveReportCase(reportCase, true)}
             />

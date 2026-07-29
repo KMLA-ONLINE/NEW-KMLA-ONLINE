@@ -1,5 +1,8 @@
 import type { GroupPostReportReason } from "~/lib/group/types"
 
+export const REPORT_CASE_PAGE_SIZE = 20
+export const REPORT_DETAIL_PAGE_SIZE = 10
+
 export const POST_REPORT_REASON_LABEL: Record<GroupPostReportReason, string> = {
   spam: "스팸 또는 광고",
   harassment: "괴롭힘 또는 모욕",
