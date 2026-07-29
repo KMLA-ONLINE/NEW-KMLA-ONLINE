@@ -1,4 +1,6 @@
 create type public.author_attribution as enum ('staff');
+create type public.post_report_reason as enum ('spam', 'harassment', 'privacy', 'harmful', 'other');
+create type public.post_report_resolution as enum ('dismissed', 'post_removed');
 
 create table public.posts (
   id bigserial primary key,
@@ -68,6 +70,29 @@ create table public.comments (
   constraint comments_content_present check (content is not null or deleted_at is not null)
 );
 
+-- 한 사용자는 한 글을 한 번만 신고한다. 관리 화면에서는 이 행들을 post_id로 묶어 사건 하나로
+-- 보여주며 reporter_id는 절대 반환하지 않는다 -- 신고 처리를 맡은 space 관리자에게도 신고자
+-- 신원은 필요 없고, 익명 공간에서는 특히 보복·추론의 단서만 된다.
+create table public.post_reports (
+  id bigserial primary key,
+  post_id bigint not null references public.posts (id) on delete cascade,
+  reporter_id bigint not null references public.profiles (id) on delete restrict,
+  reason public.post_report_reason not null,
+  details text null,
+  created_at timestamptz not null default now(),
+  resolution public.post_report_resolution null,
+  resolved_at timestamptz null,
+  resolved_by bigint null references public.profiles (id) on delete set null,
+  constraint post_reports_post_reporter_key unique (post_id, reporter_id),
+  constraint post_reports_details_check check (
+    details is null or char_length(btrim(details)) between 1 and 1000
+  ),
+  constraint post_reports_resolution_state_check check (
+    (resolution is null and resolved_at is null and resolved_by is null)
+    or (resolution is not null and resolved_at is not null)
+  )
+);
+
 -- 본문에서 언급된 사람. 본문을 파싱하지 않는다 -- 에디터가 고른 대상의 profile id를 그대로 저장한다.
 -- 파싱하려면 유니크 handle이 필요한데 profiles엔 name뿐이고 유니크도 아니라 동명이인을 가를 수가
 -- 없다(게다가 코드블록·이메일 오탐이 따라붙는다). 이 테이블이 없으면 space_members의 기본
@@ -106,6 +131,11 @@ where deleted_at is not null;
 -- purge_deleted_content가 재귀/잎벗기기마다 돈다 -- 없으면 매 레벨이 comments 전체 스캔이다.
 create index idx_comments_parent on public.comments (parent_id)
 where parent_id is not null;
+-- 신고함은 미처리 행만 post별로 집계한다. unique(post_id,reporter_id)가 post FK와 전체 집계는
+-- 받치고, 이 부분 인덱스가 종료된 신고를 작업 집합에서 떼어낸다.
+create index idx_post_reports_pending_post_created_at
+on public.post_reports (post_id, created_at desc, id desc)
+where resolution is null;
 -- 멘션 PK의 선두가 post_id/comment_id라 소유자 기준 조회는 이미 빠르다. 역방향만 따로 인덱싱한다.
 create index idx_post_mentions_user on public.post_mentions (user_id);
 create index idx_comment_mentions_user on public.comment_mentions (user_id);
@@ -371,6 +401,7 @@ alter table public.post_attachments enable row level security;
 alter table public.comments enable row level security;
 alter table public.post_mentions enable row level security;
 alter table public.comment_mentions enable row level security;
+alter table public.post_reports enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
@@ -444,8 +475,10 @@ grant select, delete on public.post_mentions, public.comment_mentions to authent
 grant insert (post_id,user_id) on public.post_mentions to authenticated;
 grant insert (comment_id,user_id) on public.comment_mentions to authenticated;
 grant usage, select on sequence public.comments_id_seq to authenticated;
-grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions to service_role;
-grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
+-- post_reports는 authenticated 테이블 grant와 정책이 모두 없다. 신고자와 관리자 모두 아래의
+-- 목적별 RPC만 통과하므로 reporter_id/resolved_by를 직접 읽거나 처리 상태를 위조할 수 없다.
+grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions, public.post_reports to service_role;
+grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq, public.post_reports_id_seq to service_role;
 
 -- 읽기 경로가 RPC인 이유는 두 가지다.
 -- 1) 익명. author_id의 select grant를 회수했으므로 작성자를 붙여줄 수 있는 건 security definer
@@ -464,6 +497,115 @@ revoke execute on function private.post_author(bigint,boolean) from public, anon
 -- 반응 요약 헬퍼(private.post_reaction_summary / comment_reaction_summary)는 post_reactions·
 -- comment_reactions를 참조하므로 04-reactions.sql에 산다(그 테이블들이 이 파일보다 늦게 생긴다).
 -- list_space_posts·get_post·get_post_comments가 lateral join으로 호출한다.
+
+-- 신고 제출은 외부 식별자인 pub_id를 받는다. 접근 가능한 활성 글이면서 남의 글인 경우에만
+-- 삽입하고, 없는 글·접근 불가·내 글·중복은 모두 false라서 비공개 space의 존재 오라클이 되지 않는다.
+create function public.report_post(
+  p_post_pub_id uuid,
+  p_reason public.post_report_reason,
+  p_details text default null
+)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  inserted boolean := false;
+begin
+  insert into public.post_reports(post_id,reporter_id,reason,details)
+  select p.id,caller_id,p_reason,nullif(btrim(p_details),'')
+  from public.posts p
+  where p.pub_id=p_post_pub_id
+    and p.deleted_at is null
+    and p.author_id<>caller_id
+    and private.can_participate_space(p.space_id)
+  for key share of p
+  on conflict(post_id,reporter_id) do nothing
+  returning true into inserted;
+
+  return coalesce(inserted,false);
+end;
+$$;
+
+-- 배지는 신고 행 수가 아니라 처리해야 할 게시물(사건) 수다. 삭제된 글은 이미 목적이 달성됐으므로
+-- 대기함에서 제외되고 7일 hard purge 때 report 행도 FK cascade로 함께 사라진다.
+create function public.count_pending_post_report_cases(p_space_id bigint)
+returns bigint language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+
+  return (
+    select count(distinct r.post_id)
+    from public.post_reports r
+    join public.posts p on p.id=r.post_id
+    where p.space_id=p_space_id and p.deleted_at is null and r.resolution is null
+  );
+end;
+$$;
+
+-- 신고자는 숨긴 채 게시물별로 묶는다. reports 배열은 판단에 필요한 사유·설명·시각만 담는다.
+-- 페이지 커서는 사건의 첫 신고 시각과 post_id 쌍이다. 첫 시각은 신고가 더 붙어도 움직이지 않아
+-- 페이지 사이에서 사건이 커서 앞으로 이동해 누락되지 않는다. 둘 중 하나만 주면 경계가 모호하다.
+create function public.list_pending_post_report_cases(
+  p_space_id bigint,
+  p_before_reported_at timestamptz default null,
+  p_before_post_id bigint default null,
+  p_limit int4 default 20
+)
+returns table(
+  post_id bigint,
+  pub_id uuid,
+  title text,
+  content text,
+  is_anonymous boolean,
+  author_attribution public.author_attribution,
+  post_created_at timestamptz,
+  report_count bigint,
+  first_reported_at timestamptz,
+  last_reported_at timestamptz,
+  reports jsonb
+)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_current_profile(true);
+  if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
+  if p_limit is null or p_limit not between 1 and 100 then raise exception 'limit must be between 1 and 100'; end if;
+  if (p_before_reported_at is null) <> (p_before_post_id is null) then
+    raise exception 'report cursor must include timestamp and post id';
+  end if;
+
+  return query
+  with cases as (
+    select
+      p.id as post_id,
+      p.pub_id,
+      p.title,
+      p.content,
+      p.is_anonymous,
+      p.author_attribution,
+      p.created_at as post_created_at,
+      count(*) as report_count,
+      min(r.created_at) as first_reported_at,
+      max(r.created_at) as last_reported_at,
+      jsonb_agg(
+        jsonb_build_object(
+          'reason',r.reason,
+          'details',r.details,
+          'created_at',r.created_at
+        ) order by r.created_at,r.id
+      ) as reports
+    from public.post_reports r
+    join public.posts p on p.id=r.post_id
+    where p.space_id=p_space_id and p.deleted_at is null and r.resolution is null
+    group by p.id
+  )
+  select c.*
+  from cases c
+  where p_before_reported_at is null
+     or (c.first_reported_at,c.post_id) < (p_before_reported_at,p_before_post_id)
+  order by c.first_reported_at desc,c.post_id desc
+  limit p_limit;
+end;
+$$;
 
 -- 그룹 피드. 로더를 붙일 때 밟기 쉬운 함정이 둘 있다.
 --
@@ -1181,6 +1323,37 @@ begin
 end;
 $$;
 
+-- 한 게시물에 열린 신고는 하나의 사건으로 함께 끝낸다. 삭제를 선택하면 기존 soft delete 경로를
+-- 그대로 타므로 첨부 cleanup queue, 반응 정리, 삭제 알림 규칙이 신고 처리에서도 갈라지지 않는다.
+create function public.resolve_post_reports(
+  p_post_id bigint,
+  p_resolution public.post_report_resolution
+)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare
+  caller_id bigint := private.require_current_profile(true);
+  resolved_count bigint;
+begin
+  -- 권한 조건을 조회에 합쳐 없는 글·다른 비공개 space 글을 같은 0으로 만든다.
+  perform 1
+  from public.posts p
+  where p.id=p_post_id and p.deleted_at is null and private.can_manage_space(p.space_id)
+  for update;
+  if not found then return 0; end if;
+
+  update public.post_reports
+  set resolution=p_resolution,resolved_at=now(),resolved_by=caller_id
+  where post_id=p_post_id and resolution is null;
+  get diagnostics resolved_count = row_count;
+
+  if resolved_count > 0 and p_resolution='post_removed' then
+    perform public.soft_delete_post(p_post_id);
+  end if;
+
+  return resolved_count;
+end;
+$$;
+
 create function public.soft_delete_comment(p_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
@@ -1460,8 +1633,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
-grant execute on function public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
+revoke execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) from public, anon, authenticated, service_role;
+grant execute on function public.report_post(uuid,public.post_report_reason,text), public.count_pending_post_report_cases(bigint), public.list_pending_post_report_cases(bigint,timestamptz,bigint,int4), public.resolve_post_reports(bigint,public.post_report_resolution), public.set_post_pinned(bigint,boolean), public.soft_delete_post(bigint), public.soft_delete_comment(bigint), public.suspend_post_author_anonymity(bigint), public.suspend_comment_author_anonymity(bigint), public.undo_post_anonymity_suspension(bigint), public.undo_comment_anonymity_suspension(bigint) to authenticated;
 
 revoke execute on function public.purge_deleted_content(interval,int4) from public, anon, authenticated, service_role;
 grant execute on function public.purge_deleted_content(interval,int4) to service_role;

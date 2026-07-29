@@ -10,6 +10,7 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 - `post_attachments` — 첨부 metadata (blob은 Storage `post-files`)
 - `post_attachment_mime_types` — 받아들이는 MIME과 타입별 `max_bytes`. `post_attachments.content_type`이 FK를 걸어 **글이 안 받는 타입은 저장 자체가 불가**. 행은 seed라 migration에 산다
 - `comments` — `parent_id` self-reference (최대 30단계). **`content`가 nullable**인 이유는 아래 tombstone 참고
+- `post_reports` — 게시물 신고. `(post_id, reporter_id)`가 유일해 한 사용자는 한 글을 한 번만 신고한다. 신고자·처리자 신원은 테이블 내부에만 있고 authenticated에는 테이블 grant가 없다
 - `post_mentions` / `comment_mentions` — 언급된 사람 `(post_id|comment_id, user_id)`. **본문을 파싱하지 않는다** — 에디터가 고른 profile id를 그대로 저장한다. `profiles.name`엔 유니크 제약이 없어 동명이인을 가를 수 없고, 파싱은 코드블록·이메일 오탐을 부른다. `required` 공간에서는 의미론적 멘션 행을 만들 수 없다
 
 ## RPC
@@ -51,6 +52,21 @@ space 안의 게시글 계층: `posts → comments`, 첨부, 멘션. 익명·sof
 | `undo_post_anonymity_suspension(post_id)`            | 관리자                                | O    | 오판 취소. 현재 정지 행을 삭제하며 **void**                                                        |
 | `suspend_comment_author_anonymity(comment_id)`       | 관리자                                | O    | 위와 같음 (댓글)                                                                                   |
 | `undo_comment_anonymity_suspension(comment_id)`      | 관리자                                | O    | 위와 같음 (댓글)                                                                                   |
+
+### 게시물 신고
+
+| 함수                                                                    | 인증              | 쓰기 | 목적                                                                                                             |
+| ----------------------------------------------------------------------- | ----------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
+| `report_post(post_pub_id, reason, details?)`                             | post 접근 권한     | O    | 남의 활성 글을 신고. 생성했으면 `true`, 내 글·중복·미존재·접근 불가이면 존재 오라클 없이 `false`                |
+| `count_pending_post_report_cases(space_id)`                              | Space owner/admin | X    | 미처리 신고 행 수가 아니라 신고된 게시물 수                                                                     |
+| `list_pending_post_report_cases(space_id, before_reported_at?, before_post_id?, limit?)` | Space owner/admin | X    | 미처리 신고를 게시물별로 집계. 신고자 없이 사유·설명·시각만 `reports` 배열로 반환                               |
+| `resolve_post_reports(post_id, resolution)`                              | Space owner/admin | O    | 그 게시물의 미처리 신고를 일괄 `dismissed` 또는 `post_removed` 처리. 삭제는 기존 `soft_delete_post`를 함께 실행 |
+
+사유는 `spam`, `harassment`, `privacy`, `harmful`, `other` 다섯 가지이며 상세 설명은 선택이고 최대 1,000자다. `manager`는 카테고리·고정 권한만 가진 큐레이터이므로 신고함을 읽거나 처리할 수 없다.
+
+신고자는 관리자에게도 공개하지 않는다. `post_reports`에는 authenticated 정책·테이블 grant가 없고 네 RPC만 열려 있다. 관리자 목록의 `reports` JSON에도 `reporter_id`가 없다. 처리자 `resolved_by` 역시 RPC 반환에 포함하지 않는다.
+
+여러 사람이 같은 글을 신고해도 관리자 화면에서는 한 사건이다. 처리하면 현재 미처리 행을 모두 같은 결과·시각·처리자로 닫으며, 처리 후에도 `(post_id, reporter_id)` 유일 제약이 남아 같은 사용자가 같은 글을 반복 신고할 수 없다. 대기함 페이지 커서는 첫 신고 시각과 `post_id`를 함께 사용한다. 첫 신고 시각은 이후 신고가 추가돼도 변하지 않아 페이지 사이에서 사건이 앞으로 이동하며 누락되지 않는다.
 
 ### 운영 정리
 
@@ -119,7 +135,7 @@ blob은 `post-files/{space.pub_id}/{uuid}`에 **글보다 먼저** 올라가고,
 - **blob이 먼저다.** 첨부는 `storage-maintenance`가 걷어간다. 그래서 이 RPC는 **첨부 행이 남은 글을 건너뛴다**(`cleanup_conversation`은 예외를 던지지만, 여기는 배치라 글 하나 때문에 전체가 죽으면 안 된다).
 - **댓글은 잎부터 벗긴다.** `parent_id`가 restrict라 2단계로는 임의 깊이를 못 지운다. 자식 없는 것만 지우는 루프를 반복한다.
 - **살아 있는 답글이 달린 tombstone은 남는다** — 자식이 있으면 잎이 아니다. 그게 정확히 그 tombstone을 계속 보여주는 조건이기도 하다. 전부 죽은 서브트리는 잎부터 걷혀 통째로 사라진다.
-- 글을 지우면 살아 있는 댓글도 같이 간다(글이 없으면 어차피 못 보고, `post_id`가 restrict라 남기면 글을 못 지운다). `notifications`·`*_mentions`는 cascade.
+- 글을 지우면 살아 있는 댓글도 같이 간다(글이 없으면 어차피 못 보고, `post_id`가 restrict라 남기면 글을 못 지운다). `notifications`·`*_mentions`·`post_reports`는 cascade.
 - 삭제된 space의 글은 `purge_due_spaces`(spaces 도메인)가 걷는다 — soft delete 7일 뒤, 그 공간의 blob이 Storage에서 실제로 나간 다음에.
 
 무엇이 언제 실제로 사라지는지는 [삭제·보존 정책](../deletion-policy.md)에 있다.

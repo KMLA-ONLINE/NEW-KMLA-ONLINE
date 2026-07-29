@@ -10,6 +10,7 @@
 | 프로필       | PII·`user_keys` 제거, `withdrawn` 전환        | 없음                               | 익명화된 profile과 작성 콘텐츠·메시지 관계 |
 | Space        | `deleted_at` 설정                              | 7일 뒤 Storage 정리 후 hard delete | 파일 정리 전의 종속 행                      |
 | 게시글       | 첨부 metadata·반응 삭제, soft delete          | 7일 뒤 hard delete                 | 유예 중 글·댓글·멘션·알림                |
+| 게시물 신고  | 기각 시 처리 상태 보존, 삭제 결정 시 글 soft delete | 대상 글 hard delete 시 cascade | 글이 남아 있는 동안의 신고·처리 기록       |
 | 최상위 댓글  | 하위 답글·반응까지 함께 soft delete           | 7일 뒤 하위 트리와 hard delete     | 없음                                        |
 | 답글         | 본문·반응 삭제, tombstone 전환                | 7일 뒤 가능한 행만 hard delete     | 활성 하위 답글의 조상 tombstone             |
 | 메시지       | 본문/암호문·첨부 metadata·반응·키 봉투 삭제 | 시간 기반 hard delete 없음         | 메시지 관계·시각·삭제 metadata            |
@@ -46,7 +47,9 @@ hard purge는 댓글·반응·알림·글·가입 요청·초대·익명 정지 
 
 - post 첨부를 queue에 넣은 뒤 `post_attachments`와 `post_reactions`를 삭제한다.
 - `posts.deleted_at`/`deleted_by`만 설정한다. 댓글·멘션·알림은 남지만 일반 조회에서는 접근할 수 없다.
-- `purge_deleted_content()`는 기본 7일이 지난 글 중 첨부 metadata가 없는 글만 hard delete한다. 그 글의 댓글·반응도 지우며 notifications/mentions는 FK cascade로 제거된다.
+- `purge_deleted_content()`는 기본 7일이 지난 글 중 첨부 metadata가 없는 글만 hard delete한다. 그 글의 댓글·반응도 지우며 notifications/mentions/post reports는 FK cascade로 제거된다.
+
+게시물 신고는 별도의 영구 감사 로그가 아니라 대상 글에 종속된 모더레이션 기록이다. `dismissed` 신고는 글이 남아 있는 동안 보존되어 같은 사용자의 반복 신고를 막는다. `post_removed` 처리는 신고 상태와 처리 시각·처리자를 기록한 뒤 기존 게시물 soft delete를 실행하며, 7일 뒤 글이 hard purge될 때 신고도 함께 삭제된다. 이미 삭제된 글은 대기 신고함과 배지에서 제외된다.
 
 `soft_delete_comment()`은 댓글 위치에 따라 다르게 동작한다.
 

@@ -27,6 +27,7 @@ declare
   home_id bigint;
   outside_id bigint;
   home_post_id bigint;
+  home_post_pub uuid;
   rpc_post_pub uuid;
   like_id bigint;
   leaked bigint;
@@ -51,7 +52,7 @@ begin
   -- alice가 익명으로 글을 쓴다. bob은 이 글을 읽을 수 있지만 **누가 썼는지는 알 수 없어야** 한다.
   insert into public.posts (space_id, author_id, title, content, is_anonymous)
   values (home_id, alice_id, '익명 글', '본문', true)
-  returning id into home_post_id;
+  returning id,pub_id into home_post_id,home_post_pub;
 
   insert into public.space_members (space_id, user_id, role) values (home_id, bob_id, 'member');
   update public.spaces set member_count = 2 where id = home_id;
@@ -103,6 +104,20 @@ begin
   );
   if not exists(select 1 from public.posts where pub_id=rpc_post_pub) then
     raise exception 'authenticated must be able to create a text-only post through the RPC';
+  end if;
+
+  -- 신고 원본 행은 신고자 자신에게도 직접 열지 않고, 목적별 RPC만 authenticated에 연다.
+  if has_any_column_privilege(current_user,'public.post_reports','SELECT') then
+    raise exception 'authenticated must not have direct SELECT privileges on post_reports';
+  end if;
+  begin
+    perform reporter_id from public.post_reports;
+    raise exception 'authenticated must not be able to read post report identities';
+  exception when insufficient_privilege then
+    null;
+  end;
+  if not public.report_post(home_post_pub,'other','RLS RPC 신고') then
+    raise exception 'authenticated members must be able to report another member post through the RPC';
   end if;
 
   -- -------------------------------------------------------------------------

@@ -28,6 +28,12 @@ declare
   suspended_until_before timestamptz; suspended_until_after timestamptz;
   suspension_notification_count bigint;
   too_many_attachments jsonb;
+  report_pub uuid; pagination_report_pub uuid; removal_report_pub uuid;
+  report_post_id bigint; pagination_report_post_id bigint; removal_report_post_id bigint;
+  report_inserted boolean;
+  pending_case_count bigint; grouped_report_count bigint; resolved_report_count bigint;
+  grouped_reports jsonb;
+  report_cursor_at timestamptz; report_cursor_post_id bigint; next_report_post_id bigint;
 begin
   insert into auth.users (id, email, raw_user_meta_data) values
     (user1, 'post-check-1@example.com', '{"name":"Post Check 1"}'::jsonb),
@@ -41,11 +47,12 @@ begin
   update public.profiles set type='teacher', status='accepted'
   where id in (profile1, profile2, profile3, profile4);
 
-  -- space1: user1 owner, user2 member. other_space: user3 owner (= space1 비멤버).
+  -- space1: user1 owner, user2/user4 member. other_space: user3 owner (= space1 비멤버).
   insert into public.spaces (type, name) values ('group','테스트 공간') returning id into space1;
   insert into public.spaces (type, name) values ('group','다른 공간') returning id into other_space;
   insert into public.space_members (space_id, user_id, role) values
     (space1, profile1, 'owner'), (space1, profile2, 'member'),
+    (space1, profile4, 'member'),
     (other_space, profile3, 'owner');
   insert into public.space_categories (space_id, name, sort_order) values (space1,'공지',0) returning id into cat1;
   insert into public.space_categories (space_id, name, sort_order) values (other_space,'잡담',0) returning id into other_cat;
@@ -90,6 +97,157 @@ begin
   if result_author is null or (result_author->>'id')::bigint <> profile1 then
     raise exception 'named post must expose its author';
   end if;
+
+  -- -------------------------------------------------------------------------
+  -- 게시물 신고: 사용자별 한 번, 신고자 은닉, owner/admin만 게시물 단위로 처리
+  -- -------------------------------------------------------------------------
+  report_pub := public.create_post_with_attachments(space1,'신고 대상','신고 판단 본문','[]'::jsonb,null,false);
+  pagination_report_pub := public.create_post_with_attachments(space1,'신고 페이지 대상','본문','[]'::jsonb,null,false);
+  select post_id into report_post_id from public.get_post(report_pub);
+  select post_id into pagination_report_post_id from public.get_post(pagination_report_pub);
+
+  if has_any_column_privilege('authenticated','public.post_reports','SELECT')
+    or has_any_column_privilege('authenticated','public.post_reports','INSERT')
+    or has_any_column_privilege('authenticated','public.post_reports','UPDATE')
+  then
+    raise exception 'post_reports must only be accessible through purpose-built RPCs';
+  end if;
+
+  -- 작성자는 자기 글을 신고할 수 없고, 실패 이유는 false 하나로 뭉친다.
+  select public.report_post(report_pub,'other','self report') into report_inserted;
+  if report_inserted then raise exception 'an author must not report their own post'; end if;
+
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  select public.report_post(report_pub,'harassment','  구체적인 신고 맥락  ') into report_inserted;
+  if not report_inserted then raise exception 'a participating member must be able to report an active post'; end if;
+  select public.report_post(report_pub,'spam',null) into report_inserted;
+  if report_inserted then raise exception 'the same member must not report one post twice'; end if;
+  if not public.report_post(pagination_report_pub,'spam',null) then
+    raise exception 'the pagination test report must be created';
+  end if;
+  if (select details from public.post_reports where post_id=report_post_id and reporter_id=profile2)
+    <> '구체적인 신고 맥락'
+  then
+    raise exception 'report details must be trimmed';
+  end if;
+
+  -- 비멤버에게도 없는 글과 똑같이 false만 돌려 존재 오라클을 만들지 않는다.
+  perform set_config('request.jwt.claim.sub', user3::text, true);
+  select public.report_post(report_pub,'privacy',null) into report_inserted;
+  if report_inserted then raise exception 'a non-member must not report an inaccessible post'; end if;
+
+  perform set_config('request.jwt.claim.sub', user4::text, true);
+  select public.report_post(report_pub,'privacy',null) into report_inserted;
+  if not report_inserted then raise exception 'a second member report must be stored separately'; end if;
+  -- 첫 신고 시각은 페이지 정렬 키, 마지막 신고 시각은 화면 정보다. 값을 벌려 이후 신고가
+  -- last_reported_at을 앞으로 움직여도 first_reported_at 커서가 사건을 누락하지 않는지 본다.
+  update public.post_reports set created_at='2026-01-03 00:00:00+00'
+  where post_id=report_post_id and reporter_id=profile2;
+  update public.post_reports set created_at='2026-01-04 00:00:00+00'
+  where post_id=report_post_id and reporter_id=profile4;
+  update public.post_reports set created_at='2026-01-02 00:00:00+00'
+  where post_id=pagination_report_post_id and reporter_id=profile2;
+
+  -- manager는 게시판 큐레이터일 뿐 사람·콘텐츠 모더레이션 관리자가 아니다.
+  update public.space_members set role='manager' where space_id=space1 and user_id=profile4;
+  begin
+    perform public.count_pending_post_report_cases(space1);
+    raise exception 'a space manager role must not read the report queue';
+  exception when others then
+    if sqlerrm <> 'space manager required' then raise; end if;
+  end;
+  begin
+    perform public.list_pending_post_report_cases(space1,null,null,20);
+    raise exception 'a space manager role must not list report cases';
+  exception when others then
+    if sqlerrm <> 'space manager required' then raise; end if;
+  end;
+
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+  select public.count_pending_post_report_cases(space1) into pending_case_count;
+  if pending_case_count <> 2 then raise exception 'report count must be grouped by pending post cases'; end if;
+
+  select post_id,first_reported_at into report_cursor_post_id,report_cursor_at
+  from public.list_pending_post_report_cases(space1,null,null,1);
+  if report_cursor_post_id is distinct from report_post_id then
+    raise exception 'the first report page must use first_reported_at descending';
+  end if;
+
+  -- 둘째 사건에 새 신고를 붙여 last_reported_at을 커서보다 앞으로 옮긴다. first_reported_at은
+  -- 그대로라 다음 페이지에서 여전히 잡혀야 한다.
+  perform set_config('request.jwt.claim.sub', user4::text, true);
+  if not public.report_post(pagination_report_pub,'other',null) then
+    raise exception 'a later report must join its existing post case';
+  end if;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+  select post_id into next_report_post_id
+  from public.list_pending_post_report_cases(space1,report_cursor_at,report_cursor_post_id,1);
+  if next_report_post_id is distinct from pagination_report_post_id then
+    raise exception 'a later report must not move an existing case across the pagination cursor';
+  end if;
+  begin
+    perform public.list_pending_post_report_cases(space1,report_cursor_at,null,20);
+    raise exception 'a partial report cursor must be rejected';
+  exception when others then
+    if sqlerrm <> 'report cursor must include timestamp and post id' then raise; end if;
+  end;
+
+  select report_count,reports into grouped_report_count,grouped_reports
+  from public.list_pending_post_report_cases(space1,null,null,20)
+  where post_id=report_post_id;
+  if grouped_report_count is distinct from 2 or jsonb_array_length(grouped_reports) is distinct from 2 then
+    raise exception 'the report queue must group all pending reports for a post';
+  end if;
+  if exists(
+    select 1 from jsonb_array_elements(grouped_reports) item
+    where item ? 'reporter_id' or item ? 'reporter'
+  ) then
+    raise exception 'the report queue must not expose reporter identity';
+  end if;
+
+  select public.resolve_post_reports(report_post_id,'dismissed') into resolved_report_count;
+  if resolved_report_count <> 2 then raise exception 'dismissing a case must resolve every pending report'; end if;
+  perform public.resolve_post_reports(pagination_report_post_id,'dismissed');
+  if (select deleted_at from public.posts where id=report_post_id) is not null then
+    raise exception 'dismissal must not delete the reported post';
+  end if;
+  if public.count_pending_post_report_cases(space1) <> 0 then
+    raise exception 'a dismissed case must leave the pending queue';
+  end if;
+
+  -- unique(post,reporter)는 처리 뒤에도 유지돼 같은 사람이 같은 글을 반복 신고하지 못한다.
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  select public.report_post(report_pub,'other',null) into report_inserted;
+  if report_inserted then raise exception 'a resolved report must still prevent repeat reporting'; end if;
+
+  perform set_config('request.jwt.claim.sub', user1::text, true);
+  removal_report_pub := public.create_post_with_attachments(space1,'삭제 신고 대상','본문','[]'::jsonb,null,false);
+  select post_id into removal_report_post_id from public.get_post(removal_report_pub);
+  perform set_config('request.jwt.claim.sub', user2::text, true);
+  if not public.report_post(removal_report_pub,'harmful',null) then
+    raise exception 'the removal test report must be created';
+  end if;
+  select public.resolve_post_reports(removal_report_post_id,'post_removed') into resolved_report_count;
+  if resolved_report_count <> 0 then raise exception 'a regular member must not resolve reports'; end if;
+
+  -- admin은 owner와 같은 can_manage_space 권한으로 처리하며 삭제는 기존 soft-delete 경로를 탄다.
+  update public.space_members set role='admin' where space_id=space1 and user_id=profile4;
+  perform set_config('request.jwt.claim.sub', user4::text, true);
+  select public.resolve_post_reports(removal_report_post_id,'post_removed') into resolved_report_count;
+  if resolved_report_count <> 1 then raise exception 'a space admin must resolve the pending report'; end if;
+  if (select deleted_at from public.posts where id=removal_report_post_id) is null then
+    raise exception 'post_removed resolution must soft-delete the post';
+  end if;
+  if not exists(
+    select 1 from public.post_reports
+    where post_id=removal_report_post_id and resolution='post_removed'
+      and resolved_at is not null and resolved_by=profile4
+  ) then
+    raise exception 'report resolution must stamp its outcome, time, and actor';
+  end if;
+  -- 아래 홈 피드 픽스처는 user4가 space1 비멤버라는 기존 전제를 사용한다.
+  delete from public.space_members where space_id=space1 and user_id=profile4;
+  perform set_config('request.jwt.claim.sub', user1::text, true);
 
   -- 다른 멤버가 봐도 익명 author는 null, is_mine은 false.
   perform set_config('request.jwt.claim.sub', user2::text, true);

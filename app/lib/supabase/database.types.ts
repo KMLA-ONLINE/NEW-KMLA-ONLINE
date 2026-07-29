@@ -1078,6 +1078,70 @@ export type Database = {
           },
         ]
       }
+      post_reports: {
+        Row: {
+          created_at: string
+          details: string | null
+          id: number
+          post_id: number
+          reason: Database["public"]["Enums"]["post_report_reason"]
+          reporter_id: number
+          resolution:
+            | Database["public"]["Enums"]["post_report_resolution"]
+            | null
+          resolved_at: string | null
+          resolved_by: number | null
+        }
+        Insert: {
+          created_at?: string
+          details?: string | null
+          id?: number
+          post_id: number
+          reason: Database["public"]["Enums"]["post_report_reason"]
+          reporter_id: number
+          resolution?:
+            | Database["public"]["Enums"]["post_report_resolution"]
+            | null
+          resolved_at?: string | null
+          resolved_by?: number | null
+        }
+        Update: {
+          created_at?: string
+          details?: string | null
+          id?: number
+          post_id?: number
+          reason?: Database["public"]["Enums"]["post_report_reason"]
+          reporter_id?: number
+          resolution?:
+            | Database["public"]["Enums"]["post_report_resolution"]
+            | null
+          resolved_at?: string | null
+          resolved_by?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_reports_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_reports_reporter_id_fkey"
+            columns: ["reporter_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_reports_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       posts: {
         Row: {
           author_attribution:
@@ -1753,6 +1817,10 @@ export type Database = {
       clear_space_cover: { Args: { p_space_id: number }; Returns: undefined }
       clear_space_image: { Args: { p_space_id: number }; Returns: undefined }
       complete_storage_cleanup: { Args: { p_id: number }; Returns: undefined }
+      count_pending_post_report_cases: {
+        Args: { p_space_id: number }
+        Returns: number
+      }
       count_pending_profiles: { Args: never; Returns: number }
       create_direct_conversation: {
         Args: { p_peer_id: number }
@@ -2036,6 +2104,27 @@ export type Database = {
           type: Database["public"]["Enums"]["notification_type"]
         }[]
       }
+      list_pending_post_report_cases: {
+        Args: {
+          p_before_post_id?: number
+          p_before_reported_at?: string
+          p_limit?: number
+          p_space_id: number
+        }
+        Returns: {
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
+          content: string
+          first_reported_at: string
+          is_anonymous: boolean
+          last_reported_at: string
+          post_created_at: string
+          post_id: number
+          pub_id: string
+          report_count: number
+          reports: Json
+          title: string
+        }[]
+      }
       list_pending_profiles: {
         Args: { p_after_id?: number; p_limit?: number }
         Returns: {
@@ -2111,6 +2200,14 @@ export type Database = {
         Args: { p_conversation_id: number; p_name: string }
         Returns: undefined
       }
+      report_post: {
+        Args: {
+          p_details?: string
+          p_post_pub_id: string
+          p_reason: Database["public"]["Enums"]["post_report_reason"]
+        }
+        Returns: boolean
+      }
       request_attachment_removal: {
         Args: { p_attachment_id: number; p_owner_type: string }
         Returns: undefined
@@ -2118,6 +2215,13 @@ export type Database = {
       reseal_user_keys: {
         Args: { p_wrapped_user_key: string }
         Returns: undefined
+      }
+      resolve_post_reports: {
+        Args: {
+          p_post_id: number
+          p_resolution: Database["public"]["Enums"]["post_report_resolution"]
+        }
+        Returns: number
       }
       review_profile: {
         Args: {
@@ -2274,6 +2378,13 @@ export type Database = {
         | "space_anonymity_suspended"
         | "post_removed"
         | "comment_removed"
+      post_report_reason:
+        | "spam"
+        | "harassment"
+        | "privacy"
+        | "harmful"
+        | "other"
+      post_report_resolution: "dismissed" | "post_removed"
       profile_gender: "male" | "female"
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
@@ -2435,6 +2546,8 @@ export const Constants = {
         "post_removed",
         "comment_removed",
       ],
+      post_report_reason: ["spam", "harassment", "privacy", "harmful", "other"],
+      post_report_resolution: ["dismissed", "post_removed"],
       profile_gender: ["male", "female"],
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
