@@ -1,5 +1,6 @@
 import {
   BellIcon,
+  CalendarClockIcon,
   ChevronRightIcon,
   FileTextIcon,
   KeyRoundIcon,
@@ -135,6 +136,7 @@ export default function MenuPage() {
 
       <MenuSection title="학교">
         <MenuRow icon={UtensilsCrossedIcon} label="오늘의 급식" to="/menu/meal" />
+        <MenuRow icon={CalendarClockIcon} label="공강·노래방" to="/util/gongang" />
       </MenuSection>
 
       {canApproveMembers ? (
