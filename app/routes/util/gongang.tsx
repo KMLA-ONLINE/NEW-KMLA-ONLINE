@@ -1,33 +1,42 @@
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
-import { useState, type Dispatch, type SetStateAction } from "react"
-import { useSearchParams } from "react-router"
+import { useMemo, useState } from "react"
+import { Link, useLocation, useRevalidator } from "react-router"
 import { toast } from "sonner"
 
+import { MenuSubHeader } from "~/components/menu/menu-sub-header"
 import { Button } from "~/components/ui/button"
-import { mockProfile } from "~/lib/profile/mock-data"
+import { createClient } from "~/lib/supabase/client"
+import type { Database } from "~/lib/supabase/database.types"
 import { cn } from "~/lib/utils"
 
-type PageTab = "gongang" | "karaoke"
-
-type GongangBooking = {
-  purpose: string
-  applicant: string
+export const handle = {
+  showMobileTabBar: false,
 }
 
-type KaraokeBooking = {
-  users: string
-  applicant: string
-}
+type BookingType = Database["public"]["Enums"]["utility_booking_type"]
+type GongangLocation = Database["public"]["Enums"]["gongang_location"]
+type AccessRow = Database["public"]["Functions"]["get_my_utility_access"]["Returns"][number]
+type BookingRow = Database["public"]["Functions"]["get_current_utility_bookings"]["Returns"][number]
+type CreateArgs = Database["public"]["Functions"]["create_utility_booking"]["Args"]
 
-type GongangBookingMap = Record<string, GongangBooking>
-type KaraokeBookingMap = Record<string, KaraokeBooking>
+type LoaderData = {
+  access: AccessRow
+  bookings: BookingRow[]
+}
 
 type TimeSlot = {
   id: string
   label: string
 }
 
-const FLOORS = ["지하 1층", "2층", "4층", "10층"] as const
+const FLOORS: {
+  id: GongangLocation
+  label: string
+}[] = [
+  { id: "floor_b1", label: "지하 1층" },
+  { id: "floor_2", label: "2층" },
+  { id: "floor_4", label: "4층" },
+  { id: "floor_10", label: "10층" },
+]
 
 const GONGANG_SLOTS: TimeSlot[] = [
   { id: "study-1", label: "1자습" },
@@ -48,11 +57,10 @@ function koreanHour(hour: number) {
 
 const WEEKEND_KARAOKE_SLOTS: TimeSlot[] = Array.from({ length: 11 }, (_, index) => {
   const start = index + 8
-  const end = start + 1
 
   return {
     id: `hour-${start}`,
-    label: `${koreanHour(start)} - ${koreanHour(end)}`,
+    label: `${koreanHour(start)} - ${koreanHour(start + 1)}`,
   }
 })
 
@@ -83,12 +91,11 @@ function addDays(date: Date, amount: number) {
 
 function startOfWeek(date: Date) {
   const day = date.getDay()
-  const distance = day === 0 ? -6 : 1 - day
-  return addDays(date, distance)
+  return addDays(date, day === 0 ? -6 : 1 - day)
 }
 
-function getWeekDates(weekStart: Date) {
-  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+function getWeekDates(date: Date) {
+  return Array.from({ length: 7 }, (_, index) => addDays(date, index))
 }
 
 function dateKey(date: Date) {
@@ -103,18 +110,45 @@ function isWeekend(date: Date) {
   return date.getDay() === 0 || date.getDay() === 6
 }
 
-function applicantName() {
-  return mockProfile.cohort === null
-    ? mockProfile.name
-    : `${mockProfile.cohort}기 ${mockProfile.name}`
+function bookingKey(
+  type: BookingType,
+  date: string,
+  slot: string,
+  location?: GongangLocation | null
+) {
+  return type === "gongang" ? `${date}:${slot}:${location}` : `${date}:${slot}`
 }
 
-function gongangKey(date: Date, slotId: string, floor: string) {
-  return `${dateKey(date)}:${slotId}:${floor}`
-}
+export async function clientLoader(): Promise<LoaderData> {
+  const supabase = createClient()
 
-function karaokeKey(date: Date, slotId: string) {
-  return `${dateKey(date)}:${slotId}`
+  const [accessResult, bookingsResult] = await Promise.all([
+    supabase.rpc("get_my_utility_access").single(),
+    supabase.rpc("get_current_utility_bookings"),
+  ])
+
+  if (accessResult.error) {
+    throw new Error(`권한을 확인하지 못했습니다. (${accessResult.error.code})`, {
+      cause: accessResult.error,
+    })
+  }
+
+  if (bookingsResult.error) {
+    throw new Error(`예약을 불러오지 못했습니다. (${bookingsResult.error.code})`, {
+      cause: bookingsResult.error,
+    })
+  }
+
+  const access = accessResult.data as AccessRow | null
+
+  if (!access) {
+    throw new Error("권한 정보를 불러오지 못했습니다.")
+  }
+
+  return {
+    access,
+    bookings: bookingsResult.data ?? [],
+  }
 }
 
 function DateCell({ date, rowSpan }: { date: Date; rowSpan: number }) {
@@ -127,29 +161,29 @@ function DateCell({ date, rowSpan }: { date: Date; rowSpan: number }) {
 }
 
 function ApplicantCell({
-  applicant,
+  booking,
   canManage,
-  isMine,
   applicantDraft,
+  pending,
   onApplicantChange,
   onReserve,
   onCancel,
 }: {
-  applicant?: string
+  booking?: BookingRow
   canManage: boolean
-  isMine: boolean
   applicantDraft: string
+  pending: boolean
   onApplicantChange: (value: string) => void
   onReserve: () => void
   onCancel: () => void
 }) {
-  if (applicant) {
+  if (booking) {
     return (
       <div className="flex min-w-48 items-center justify-between gap-2">
-        <span className="text-primary truncate text-sm">{applicant}</span>
+        <span className="text-primary truncate text-sm">{booking.owner_label}</span>
 
-        {canManage || isMine ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+        {canManage || booking.is_mine ? (
+          <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onCancel}>
             {canManage ? "초기화" : "취소"}
           </Button>
         ) : null}
@@ -162,12 +196,13 @@ function ApplicantCell({
       <div className="flex min-w-56 gap-2">
         <input
           value={applicantDraft}
+          disabled={pending}
           onChange={(event) => onApplicantChange(event.target.value)}
-          placeholder="신청자"
+          placeholder="30기 김민족"
           className="border-input bg-background h-9 min-w-0 flex-1 rounded-sm border px-2 text-sm outline-none focus:ring-2"
         />
 
-        <Button type="button" size="sm" onClick={onReserve}>
+        <Button type="button" size="sm" disabled={pending} onClick={onReserve}>
           등록
         </Button>
       </div>
@@ -175,7 +210,7 @@ function ApplicantCell({
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={onReserve}>
+    <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onReserve}>
       신청
     </Button>
   )
@@ -183,48 +218,27 @@ function ApplicantCell({
 
 function GongangTable({
   dates,
-  canManage,
   bookings,
-  setBookings,
+  canManage,
+  pendingKey,
+  onCreate,
+  onCancel,
 }: {
   dates: Date[]
+  bookings: Map<string, BookingRow>
   canManage: boolean
-  bookings: GongangBookingMap
-  setBookings: Dispatch<SetStateAction<GongangBookingMap>>
+  pendingKey: string | null
+  onCreate: (
+    date: Date,
+    slot: string,
+    location: GongangLocation,
+    detail: string,
+    ownerLabel: string
+  ) => Promise<boolean>
+  onCancel: (booking: BookingRow, key: string) => Promise<void>
 }) {
-  const [purposeDrafts, setPurposeDrafts] = useState<Record<string, string>>({})
-  const [applicantDrafts, setApplicantDrafts] = useState<Record<string, string>>({})
-
-  const reserve = (key: string) => {
-    const purpose = purposeDrafts[key]?.trim()
-    const applicant = canManage ? applicantDrafts[key]?.trim() : applicantName()
-
-    if (!purpose) {
-      toast.error("목적을 입력해 주세요.")
-      return
-    }
-
-    if (!applicant) {
-      toast.error("신청자를 입력해 주세요.")
-      return
-    }
-
-    setBookings((current) => ({
-      ...current,
-      [key]: { purpose, applicant },
-    }))
-
-    setPurposeDrafts((current) => ({ ...current, [key]: "" }))
-    setApplicantDrafts((current) => ({ ...current, [key]: "" }))
-  }
-
-  const cancel = (key: string) => {
-    setBookings((current) => {
-      const next = { ...current }
-      delete next[key]
-      return next
-    })
-  }
+  const [purposes, setPurposes] = useState<Record<string, string>>({})
+  const [applicants, setApplicants] = useState<Record<string, string>>({})
 
   return (
     <div className="overflow-x-auto">
@@ -243,8 +257,9 @@ function GongangTable({
           {dates.flatMap((date) =>
             GONGANG_SLOTS.flatMap((slot, slotIndex) =>
               FLOORS.map((floor, floorIndex) => {
-                const key = gongangKey(date, slot.id, floor)
-                const booking = bookings[key]
+                const key = bookingKey("gongang", dateKey(date), slot.id, floor.id)
+                const booking = bookings.get(key)
+                const pending = pendingKey === key
 
                 return (
                   <tr key={key}>
@@ -261,21 +276,22 @@ function GongangTable({
                       </td>
                     ) : null}
 
-                    <td className="border-border w-28 border px-3 py-3">{floor}</td>
+                    <td className="border-border w-28 border px-3 py-3">{floor.label}</td>
 
                     <td className="border-border border p-1">
                       {booking ? (
-                        <span className="block min-w-72 px-2 py-2">{booking.purpose}</span>
+                        <span className="block min-w-72 px-2 py-2">{booking.detail}</span>
                       ) : (
                         <input
-                          value={purposeDrafts[key] ?? ""}
+                          value={purposes[key] ?? ""}
+                          disabled={pending}
                           onChange={(event) =>
-                            setPurposeDrafts((current) => ({
+                            setPurposes((current) => ({
                               ...current,
                               [key]: event.target.value,
                             }))
                           }
-                          aria-label={`${slot.label} ${floor} 목적`}
+                          aria-label={`${slot.label} ${floor.label} 목적`}
                           className="border-input bg-background h-9 w-full min-w-72 rounded-sm border px-2 text-sm outline-none focus:ring-2"
                         />
                       )}
@@ -283,18 +299,48 @@ function GongangTable({
 
                     <td className="border-border w-64 border px-3 py-2">
                       <ApplicantCell
-                        applicant={booking?.applicant}
+                        booking={booking}
                         canManage={canManage}
-                        isMine={booking?.applicant === applicantName()}
-                        applicantDraft={applicantDrafts[key] ?? ""}
+                        applicantDraft={applicants[key] ?? ""}
+                        pending={pending}
                         onApplicantChange={(value) =>
-                          setApplicantDrafts((current) => ({
+                          setApplicants((current) => ({
                             ...current,
                             [key]: value,
                           }))
                         }
-                        onReserve={() => reserve(key)}
-                        onCancel={() => cancel(key)}
+                        onReserve={async () => {
+                          const purpose = purposes[key]?.trim()
+
+                          if (!purpose) {
+                            toast.error("목적을 입력해 주세요.")
+                            return
+                          }
+
+                          const saved = await onCreate(
+                            date,
+                            slot.id,
+                            floor.id,
+                            purpose,
+                            applicants[key]?.trim() ?? ""
+                          )
+
+                          if (saved) {
+                            setPurposes((current) => ({
+                              ...current,
+                              [key]: "",
+                            }))
+                            setApplicants((current) => ({
+                              ...current,
+                              [key]: "",
+                            }))
+                          }
+                        }}
+                        onCancel={() => {
+                          if (booking) {
+                            void onCancel(booking, key)
+                          }
+                        }}
                       />
                     </td>
                   </tr>
@@ -310,48 +356,21 @@ function GongangTable({
 
 function KaraokeTable({
   dates,
-  canManage,
   bookings,
-  setBookings,
+  canManage,
+  pendingKey,
+  onCreate,
+  onCancel,
 }: {
   dates: Date[]
+  bookings: Map<string, BookingRow>
   canManage: boolean
-  bookings: KaraokeBookingMap
-  setBookings: Dispatch<SetStateAction<KaraokeBookingMap>>
+  pendingKey: string | null
+  onCreate: (date: Date, slot: string, detail: string, ownerLabel: string) => Promise<boolean>
+  onCancel: (booking: BookingRow, key: string) => Promise<void>
 }) {
-  const [userDrafts, setUserDrafts] = useState<Record<string, string>>({})
-  const [applicantDrafts, setApplicantDrafts] = useState<Record<string, string>>({})
-
-  const reserve = (key: string) => {
-    const users = userDrafts[key]?.trim()
-    const applicant = canManage ? applicantDrafts[key]?.trim() : applicantName()
-
-    if (!users) {
-      toast.error("사용자 명단을 입력해 주세요.")
-      return
-    }
-
-    if (!applicant) {
-      toast.error("신청자를 입력해 주세요.")
-      return
-    }
-
-    setBookings((current) => ({
-      ...current,
-      [key]: { users, applicant },
-    }))
-
-    setUserDrafts((current) => ({ ...current, [key]: "" }))
-    setApplicantDrafts((current) => ({ ...current, [key]: "" }))
-  }
-
-  const cancel = (key: string) => {
-    setBookings((current) => {
-      const next = { ...current }
-      delete next[key]
-      return next
-    })
-  }
+  const [users, setUsers] = useState<Record<string, string>>({})
+  const [applicants, setApplicants] = useState<Record<string, string>>({})
 
   return (
     <div className="overflow-x-auto">
@@ -370,8 +389,9 @@ function KaraokeTable({
             const slots = isWeekend(date) ? WEEKEND_KARAOKE_SLOTS : WEEKDAY_KARAOKE_SLOTS
 
             return slots.map((slot, index) => {
-              const key = karaokeKey(date, slot.id)
-              const booking = bookings[key]
+              const key = bookingKey("karaoke", dateKey(date), slot.id)
+              const booking = bookings.get(key)
+              const pending = pendingKey === key
 
               return (
                 <tr key={key}>
@@ -381,12 +401,13 @@ function KaraokeTable({
 
                   <td className="border-border border p-1">
                     {booking ? (
-                      <span className="block min-w-[420px] px-2 py-2">{booking.users}</span>
+                      <span className="block min-w-[420px] px-2 py-2">{booking.detail}</span>
                     ) : (
                       <input
-                        value={userDrafts[key] ?? ""}
+                        value={users[key] ?? ""}
+                        disabled={pending}
                         onChange={(event) =>
-                          setUserDrafts((current) => ({
+                          setUsers((current) => ({
                             ...current,
                             [key]: event.target.value,
                           }))
@@ -399,18 +420,47 @@ function KaraokeTable({
 
                   <td className="border-border w-64 border px-3 py-2">
                     <ApplicantCell
-                      applicant={booking?.applicant}
+                      booking={booking}
                       canManage={canManage}
-                      isMine={booking?.applicant === applicantName()}
-                      applicantDraft={applicantDrafts[key] ?? ""}
+                      applicantDraft={applicants[key] ?? ""}
+                      pending={pending}
                       onApplicantChange={(value) =>
-                        setApplicantDrafts((current) => ({
+                        setApplicants((current) => ({
                           ...current,
                           [key]: value,
                         }))
                       }
-                      onReserve={() => reserve(key)}
-                      onCancel={() => cancel(key)}
+                      onReserve={async () => {
+                        const userList = users[key]?.trim()
+
+                        if (!userList) {
+                          toast.error("사용자 명단을 입력해 주세요.")
+                          return
+                        }
+
+                        const saved = await onCreate(
+                          date,
+                          slot.id,
+                          userList,
+                          applicants[key]?.trim() ?? ""
+                        )
+
+                        if (saved) {
+                          setUsers((current) => ({
+                            ...current,
+                            [key]: "",
+                          }))
+                          setApplicants((current) => ({
+                            ...current,
+                            [key]: "",
+                          }))
+                        }
+                      }}
+                      onCancel={() => {
+                        if (booking) {
+                          void onCancel(booking, key)
+                        }
+                      }}
                     />
                   </td>
                 </tr>
@@ -423,30 +473,108 @@ function KaraokeTable({
   )
 }
 
-export default function GongangPage() {
-  const [searchParams] = useSearchParams()
-  const [tab, setTab] = useState<PageTab>("gongang")
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()))
-  const [gongangBookings, setGongangBookings] = useState<GongangBookingMap>({})
-  const [karaokeBookings, setKaraokeBookings] = useState<KaraokeBookingMap>({})
+export default function UtilityBookingPage({ loaderData }: { loaderData: LoaderData }) {
+  const routeLocation = useLocation()
+  const revalidator = useRevalidator()
+  const supabase = useMemo(() => createClient(), [])
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
 
-  const canManage = searchParams.get("as") === "master"
-  const dates = getWeekDates(weekStart)
+  const tab: BookingType = routeLocation.pathname.endsWith("/karaoke") ? "karaoke" : "gongang"
+
+  const weekStart = useMemo(() => startOfWeek(new Date()), [])
+  const dates = useMemo(() => getWeekDates(weekStart), [weekStart])
   const weekEnd = dates[6]
+
+  const bookingMap = useMemo(() => {
+    const map = new Map<string, BookingRow>()
+
+    for (const booking of loaderData.bookings) {
+      map.set(
+        bookingKey(booking.booking_type, booking.booking_date, booking.slot_key, booking.location),
+        booking
+      )
+    }
+
+    return map
+  }, [loaderData.bookings])
+
+  const canUse = tab === "gongang" ? loaderData.access.can_gongang : loaderData.access.can_karaoke
+
+  const canManage =
+    tab === "gongang" ? loaderData.access.manages_gongang : loaderData.access.manages_karaoke
+
+  const createBooking = async (args: CreateArgs, key: string) => {
+    setPendingKey(key)
+
+    const { error } = await supabase.rpc("create_utility_booking", args)
+
+    if (error) {
+      toast.error(error.message)
+      setPendingKey(null)
+      return false
+    }
+
+    toast.success("신청했습니다.")
+    revalidator.revalidate()
+    setPendingKey(null)
+    return true
+  }
+
+  const cancelBooking = async (booking: BookingRow, key: string) => {
+    setPendingKey(key)
+
+    const { error } = await supabase.rpc("cancel_utility_booking", {
+      p_booking_id: booking.booking_id,
+    })
+
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success("취소했습니다.")
+      revalidator.revalidate()
+    }
+
+    setPendingKey(null)
+  }
+
+  const resetBookings = async () => {
+    const key = `reset-${tab}`
+    setPendingKey(key)
+
+    const { error } = await supabase.rpc("reset_current_utility_bookings", {
+      p_booking_type: tab,
+    })
+
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success("초기화했습니다.")
+      revalidator.revalidate()
+    }
+
+    setPendingKey(null)
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl">
-      <h1 className="text-3xl font-semibold">공강</h1>
+      <MenuSubHeader title={tab === "gongang" ? "공강" : "노래방"} />
 
       <nav className="mt-6 flex border-b" aria-label="공강 서비스">
         {[
-          { id: "gongang" as const, label: "공강" },
-          { id: "karaoke" as const, label: "노래방" },
+          {
+            id: "gongang" as const,
+            label: "공강",
+            to: "/util/gongang",
+          },
+          {
+            id: "karaoke" as const,
+            label: "노래방",
+            to: "/util/karaoke",
+          },
         ].map((item) => (
-          <button
+          <Link
             key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
+            to={item.to}
             className={cn(
               "-mb-px border-b-2 px-5 py-3 text-sm font-semibold",
               tab === item.id
@@ -455,49 +583,87 @@ export default function GongangPage() {
             )}
           >
             {item.label}
-          </button>
+          </Link>
         ))}
       </nav>
 
-      <div className="border-border my-4 flex items-center justify-between border p-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setWeekStart((current) => addDays(current, -7))}
-          aria-label="이전 주"
-        >
-          <ChevronLeftIcon aria-hidden />
-        </Button>
+      <div className="border-border my-4 grid grid-cols-[1fr_auto_1fr] items-center border p-2">
+        <span />
 
         <p className="text-sm font-semibold">
-          {shortDateFormatter.format(weekStart)} - {shortDateFormatter.format(weekEnd)}
+          {shortDateFormatter.format(weekStart)}
+          {" - "}
+          {shortDateFormatter.format(weekEnd)}
         </p>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setWeekStart((current) => addDays(current, 7))}
-          aria-label="다음 주"
-        >
-          <ChevronRightIcon aria-hidden />
-        </Button>
+        {canManage ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="justify-self-end"
+            disabled={pendingKey === `reset-${tab}`}
+            onClick={() => {
+              void resetBookings()
+            }}
+          >
+            초기화
+          </Button>
+        ) : (
+          <span />
+        )}
       </div>
 
-      {tab === "gongang" ? (
+      {!canUse ? (
+        <p className="text-muted-foreground py-16 text-center text-sm">권한이 없습니다.</p>
+      ) : tab === "gongang" ? (
         <GongangTable
           dates={dates}
+          bookings={bookingMap}
           canManage={canManage}
-          bookings={gongangBookings}
-          setBookings={setGongangBookings}
+          pendingKey={pendingKey}
+          onCreate={(date, slot, location, detail, ownerLabel) =>
+            createBooking(
+              {
+                p_booking_type: "gongang",
+                p_booking_date: dateKey(date),
+                p_slot_key: slot,
+                p_detail: detail,
+                p_location: location,
+                ...(ownerLabel
+                  ? {
+                      p_owner_label: ownerLabel,
+                    }
+                  : {}),
+              },
+              bookingKey("gongang", dateKey(date), slot, location)
+            )
+          }
+          onCancel={cancelBooking}
         />
       ) : (
         <KaraokeTable
           dates={dates}
+          bookings={bookingMap}
           canManage={canManage}
-          bookings={karaokeBookings}
-          setBookings={setKaraokeBookings}
+          pendingKey={pendingKey}
+          onCreate={(date, slot, detail, ownerLabel) =>
+            createBooking(
+              {
+                p_booking_type: "karaoke",
+                p_booking_date: dateKey(date),
+                p_slot_key: slot,
+                p_detail: detail,
+                ...(ownerLabel
+                  ? {
+                      p_owner_label: ownerLabel,
+                    }
+                  : {}),
+              },
+              bookingKey("karaoke", dateKey(date), slot)
+            )
+          }
+          onCancel={cancelBooking}
         />
       )}
     </div>

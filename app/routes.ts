@@ -31,6 +31,7 @@ export default [
     route("menu/licenses", "./routes/menu/licenses.tsx"),
     route("menu/meal", "./routes/menu/meal.tsx"),
     route("util/gongang", "./routes/util/gongang.tsx"),
+    route("util/karaoke", "./routes/util/karaoke.tsx"),
     route("menu/notifications", "./routes/menu/notifications.tsx"),
     route("menu/password", "./routes/menu/password.tsx"),
 
