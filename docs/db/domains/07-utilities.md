@@ -2,26 +2,30 @@
 
 Source: [`supabase/schemas/07-utilities.sql`](../../../supabase/schemas/07-utilities.sql)
 
-부가 기능: 공강 예약(`gongangs`)과 노래 신청(`song_requests`). 둘 다 permission 기반 접근.
+공강, 노래방 예약과 노래 신청을 관리한다.
 
 ## 테이블
 
-- `gongangs` — 장소/요일/시간 range. generated range 컬럼 + gist exclusion으로 같은 장소·요일·기간의 시간 겹침 금지
-- `song_requests` — https URL 신청
+- `gongangs` — 기존 장소·요일·시간 범위 데이터
+- `song_requests` — 노래 URL 신청
+- `utility_bookings` — 이번 주 공강·노래방 신청
+
+## 권한
+
+- `gongang` — 공강 조회·신청
+- `karaoke` — 노래방 조회·신청
+- `gongang_master` — 공강 신청자 지정·초기화
+- `karaoke_master` — 노래방 신청자 지정·초기화
+- 앱 관리자도 두 기능의 마스터로 처리한다.
 
 ## RPC
 
-없음. 모든 읽기/쓰기는 direct SQL + RLS로 처리한다.
+| 함수 | 용도 |
+| --- | --- |
+| `get_my_utility_access()` | 현재 사용자의 공강·노래방 권한 반환 |
+| `get_current_utility_bookings()` | 현재 주 예약 조회 |
+| `create_utility_booking()` | 공강 또는 노래방 신청 |
+| `cancel_utility_booking()` | 본인 또는 마스터가 예약 취소 |
+| `reset_current_utility_bookings()` | 마스터가 현재 주 예약 초기화 |
 
-## Private helper
-
-없음 (identity 도메인의 `has_permission('gongang')`/`has_permission('karaoke')`를 policy에서 사용).
-
-## Trigger
-
-없음.
-
-## 주의
-
-- permission row(`gongang`, `karaoke`)가 없으면 접근이 전부 막힌다 — seed는 baseline migration에 있다.
-- gongang 소유자만 자기 행을 insert/update/delete할 수 있다.
+현재 주는 한국 시간 기준 월요일부터 일요일이다. 새로운 주가 시작되면 이전 주 예약은 화면에 표시되지 않는다.

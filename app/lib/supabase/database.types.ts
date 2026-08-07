@@ -1724,6 +1724,57 @@ export type Database = {
           },
         ]
       }
+      utility_bookings: {
+        Row: {
+          booking_date: string
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          created_at: string
+          created_by: number
+          detail: string
+          id: number
+          location: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id: number
+          slot_key: string
+        }
+        Insert: {
+          booking_date: string
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          created_at?: string
+          created_by: number
+          detail: string
+          id?: number
+          location?: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id: number
+          slot_key: string
+        }
+        Update: {
+          booking_date?: string
+          booking_type?: Database["public"]["Enums"]["utility_booking_type"]
+          created_at?: string
+          created_by?: number
+          detail?: string
+          id?: number
+          location?: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id?: number
+          slot_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utility_bookings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utility_bookings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1737,6 +1788,10 @@ export type Database = {
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
+      }
+      cancel_utility_booking: {
+        Args: { p_booking_id: number }
+        Returns: boolean
       }
       claim_storage_cleanup: {
         Args: { p_limit?: number }
@@ -1798,6 +1853,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_utility_booking: {
+        Args: {
+          p_booking_date: string
+          p_booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          p_detail: string
+          p_location?: Database["public"]["Enums"]["gongang_location"]
+          p_owner_label?: string
+          p_slot_key: string
+        }
+        Returns: number
+      }
       edit_encrypted_message: {
         Args: { p_content_ciphertext: string; p_id: number }
         Returns: undefined
@@ -1844,6 +1910,20 @@ export type Database = {
           reads: Json
           sender: Json
           sender_id: number
+        }[]
+      }
+      get_current_utility_bookings: {
+        Args: never
+        Returns: {
+          booking_date: string
+          booking_id: number
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          detail: string
+          is_mine: boolean
+          location: Database["public"]["Enums"]["gongang_location"]
+          owner_id: number
+          owner_label: string
+          slot_key: string
         }[]
       }
       get_encrypted_message_bodies: {
@@ -1901,6 +1981,16 @@ export type Database = {
           track: Database["public"]["Enums"]["profile_track"]
           type: Database["public"]["Enums"]["profile_type"]
           updated_at: string
+        }[]
+      }
+      get_my_utility_access: {
+        Args: never
+        Returns: {
+          can_gongang: boolean
+          can_karaoke: boolean
+          manages_gongang: boolean
+          manages_karaoke: boolean
+          profile_id: number
         }[]
       }
       get_post: {
@@ -2119,6 +2209,12 @@ export type Database = {
         Args: { p_wrapped_user_key: string }
         Returns: undefined
       }
+      reset_current_utility_bookings: {
+        Args: {
+          p_booking_type: Database["public"]["Enums"]["utility_booking_type"]
+        }
+        Returns: number
+      }
       review_profile: {
         Args: {
           p_profile_id: number
@@ -2282,6 +2378,7 @@ export type Database = {
       space_join_policy: "public" | "request" | "invite_only"
       space_post_policy: "all" | "managers"
       space_type: "group" | "community"
+      utility_booking_type: "gongang" | "karaoke"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2443,6 +2540,7 @@ export const Constants = {
       space_join_policy: ["public", "request", "invite_only"],
       space_post_policy: ["all", "managers"],
       space_type: ["group", "community"],
+      utility_booking_type: ["gongang", "karaoke"],
     },
   },
 } as const
