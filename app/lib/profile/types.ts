@@ -80,6 +80,6 @@ export const TRACK_LABEL: Record<Database["public"]["Enums"]["profile_track"], s
 
 export const PROFILE_TYPE_LABEL: Record<Database["public"]["Enums"]["profile_type"], string> = {
   student: "학생",
-  teacher: "선생님",
+  teacher: "교사",
   alumni: "졸업생",
 }

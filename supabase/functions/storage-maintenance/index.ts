@@ -18,10 +18,10 @@ const MAX_ROUNDS = 20
 // **지운 익명 글의 author_id가 영구 보존된다**는 것이다 -- 익명은 시간이 지나도 익명이어야 한다.
 const CONTENT_PURGE_LIMIT = 500
 
-// 읽은 지 60일 지난 알림의 하드 삭제. 알림은 트리거가 자동으로 만들어 내는 유일한 행이라, 상한을
+// 생성된 지 30일 지난 알림의 하드 삭제. 알림은 트리거가 자동으로 만들어 내는 유일한 행이라, 상한을
 // 한 번만 태우면 하루 생성량이 상한을 넘는 순간 백로그가 영영 안 줄어든다. 그래서 아래 두 purge도
 // blob 큐와 같이 "가득 찼으면 한 번 더" 라운드를 돈다.
-const READ_NOTIFICATION_PURGE_LIMIT = 1000
+const NOTIFICATION_PURGE_LIMIT = 1000
 
 // soft delete 7일이 지난 공간의 영구 삭제.
 const SPACE_PURGE_LIMIT = 20
@@ -38,7 +38,7 @@ export default {
       failed: 0,
       purgedPosts: 0,
       purgedComments: 0,
-      purgedReadNotifications: 0,
+      purgedNotifications: 0,
       purgedSpaces: 0,
       skippedSpaces: 0,
     }
@@ -120,12 +120,12 @@ export default {
     }
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const { data: purged, error: notificationError } = await db.rpc("purge_read_notifications", {
-        p_limit: READ_NOTIFICATION_PURGE_LIMIT,
+      const { data: purged, error: notificationError } = await db.rpc("purge_notifications", {
+        p_limit: NOTIFICATION_PURGE_LIMIT,
       })
       if (notificationError) return abort(notificationError.message)
-      summary.purgedReadNotifications += purged ?? 0
-      if ((purged ?? 0) < READ_NOTIFICATION_PURGE_LIMIT) break
+      summary.purgedNotifications += purged ?? 0
+      if ((purged ?? 0) < NOTIFICATION_PURGE_LIMIT) break
     }
 
     const { data: spaces, error: spaceError } = await db.rpc("purge_due_spaces", {

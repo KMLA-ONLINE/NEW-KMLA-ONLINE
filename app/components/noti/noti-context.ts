@@ -4,10 +4,9 @@ import type { AppNotification } from "~/lib/noti/types"
 
 export type NotiContextValue = {
   notifications: AppNotification[]
-  /** read_at is null인 알림 수. 내비 뱃지가 이걸 쓴다(= get_unread_notification_count()). */
+  /** 최근 24시간 안에 생성됐고 read_at이 null인 알림 수. 내비 뱃지가 이걸 쓴다. */
   unreadCount: number
   markRead: (id: number) => void
-  markAllRead: () => void
 }
 
 export const NotiContext = createContext<NotiContextValue | null>(null)

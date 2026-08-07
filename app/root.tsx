@@ -3,6 +3,7 @@ import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration }
 
 import type { Route } from "./+types/root"
 import "./app.css"
+import { ErrorPage } from "~/components/error/error-page"
 import { TooltipProvider } from "~/components/ui/tooltip"
 import { Toaster } from "~/components/ui/sonner"
 
@@ -14,7 +15,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html lang="ko-KR" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <Meta />
         <Links />
       </head>
@@ -44,28 +45,14 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!"
-  let details = "An unexpected error occurred."
+  let status: number | undefined
   let stack: string | undefined
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error"
-    details =
-      error.status === 404 ? "The requested page could not be found." : error.statusText || details
+    status = error.status
   } else if (import.meta.env.DEV && error && error instanceof Error) {
-    details = error.message
     stack = error.stack
   }
 
-  return (
-    <main className="container mx-auto p-4 pt-16">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full overflow-x-auto p-4">
-          <code>{stack}</code>
-        </pre>
-      )}
-    </main>
-  )
+  return <ErrorPage status={status} onRetry={() => window.location.reload()} stack={stack} />
 }

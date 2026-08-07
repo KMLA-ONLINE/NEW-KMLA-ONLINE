@@ -8,10 +8,20 @@ import {
 } from "lucide-react"
 import { useRef, useState } from "react"
 
+import { ImageCropper } from "~/components/image/image-cropper"
+import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
-import type { GroupCategory, GroupSpace } from "~/lib/group/types"
+import type { GroupAnonymityPolicy, GroupCategory, GroupSpace } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
 // 관리자 전용 그룹 설정. 실수로 바꾸기 쉽지 않게 각 섹션은 읽기 모드가 기본이고, "편집"을
@@ -21,6 +31,9 @@ import { cn } from "~/lib/utils"
 // TODO(backend): 지금 이름/설명/카테고리 편집은 각 섹션 로컬 state에만 커밋돼(joinPolicy만 부모로
 // 리프팅됨) 헤더·사이드바·칩과 어긋나고 탭 전환 시 사라진다. 붙일 때는 action으로 저장 후 loader
 // revalidate가 단일 소스를 갱신하게 해 이 로컬-only 편집을 대체한다(그때 UI 불일치도 자연 해소).
+
+const GROUP_ICON_CROP = { aspect: 1, maxOutputEdge: 512 }
+const GROUP_COVER_CROP = { aspect: 4, maxOutputEdge: 1600 }
 
 const JOIN_POLICY_OPTIONS: {
   value: GroupSpace["joinPolicy"]
@@ -95,10 +108,12 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 
 function ImageControls({
   url,
-  onReplace,
+  onSelect,
+  onRemove,
 }: {
   url: string | null
-  onReplace: (next: string | null) => void
+  onSelect: (file: File) => void
+  onRemove: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -122,7 +137,7 @@ function ImageControls({
             size="sm"
             className="text-destructive"
             onClick={() => {
-              onReplace(null)
+              onRemove()
               // 같은 파일을 다시 골라도 change가 뜨도록 입력을 비운다.
               if (inputRef.current) inputRef.current.value = ""
             }}
@@ -138,7 +153,8 @@ function ImageControls({
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0]
-          if (file) onReplace(URL.createObjectURL(file))
+          if (file) onSelect(file)
+          event.currentTarget.value = ""
         }}
       />
     </div>
@@ -147,6 +163,9 @@ function ImageControls({
 
 function ImageSection({ group }: { group: GroupSpace }) {
   const [url, replace] = useImageDraft(group.imageUrl)
+  const crop = useImageCrop({
+    onCropped: (file) => replace(URL.createObjectURL(file)),
+  })
 
   return (
     <SettingsCard>
@@ -155,25 +174,44 @@ function ImageSection({ group }: { group: GroupSpace }) {
         <div className="bg-muted flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-xl font-semibold">
           {url ? <img src={url} alt="" className="size-full object-cover" /> : group.name.charAt(0)}
         </div>
-        <ImageControls url={url} onReplace={replace} />
+        <ImageControls url={url} onSelect={crop.start} onRemove={() => replace(null)} />
       </div>
+      {crop.cropperProps ? (
+        <ImageCropper
+          {...crop.cropperProps}
+          aspect={GROUP_ICON_CROP.aspect}
+          maxOutputEdge={GROUP_ICON_CROP.maxOutputEdge}
+          title="그룹 아이콘"
+        />
+      ) : null}
     </SettingsCard>
   )
 }
 
 function CoverSection({ group }: { group: GroupSpace }) {
   const [url, replace] = useImageDraft(group.coverImageUrl)
+  const crop = useImageCrop({
+    onCropped: (file) => replace(URL.createObjectURL(file)),
+  })
 
   return (
     <SettingsCard>
       <h2 className="mb-3 text-sm font-semibold">그룹 커버</h2>
       <div className="flex flex-col gap-3">
         {/* 헤더와 같은 그라디언트를 폴백으로 써서, 올리기 전에도 결과가 어떻게 보일지 그대로 보인다. */}
-        <div className="from-primary/30 to-primary/5 h-24 w-full overflow-hidden rounded-lg border bg-linear-to-br sm:h-28">
+        <div className="from-primary/30 to-primary/5 aspect-[4/1] w-full overflow-hidden rounded-lg border bg-linear-to-br">
           {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
         </div>
-        <ImageControls url={url} onReplace={replace} />
+        <ImageControls url={url} onSelect={crop.start} onRemove={() => replace(null)} />
       </div>
+      {crop.cropperProps ? (
+        <ImageCropper
+          {...crop.cropperProps}
+          aspect={GROUP_COVER_CROP.aspect}
+          maxOutputEdge={GROUP_COVER_CROP.maxOutputEdge}
+          title="그룹 커버"
+        />
+      ) : null}
     </SettingsCard>
   )
 }
@@ -492,45 +530,95 @@ function PostPolicySection({
   )
 }
 
-// spaces.allow_anonymous_posts. 다른 섹션과 달리 edit 모드가 없다 -- 값이 하나뿐이라 토글이 곧
-// 저장이다. TODO(backend): action에서 spaces.allow_anonymous_posts를 update(매니저 컬럼 grant).
+const ANONYMITY_OPTIONS: {
+  value: GroupAnonymityPolicy
+  label: string
+  description: string
+}[] = [
+  { value: "disabled", label: "실명만", description: "게시물, 댓글, 반응에 프로필을 표시합니다." },
+  {
+    value: "optional",
+    label: "작성할 때 선택",
+    description: "게시물과 댓글은 익명을 선택하고 반응은 실명으로 남깁니다.",
+  },
+  {
+    value: "required",
+    label: "항상 익명",
+    description: "게시물, 댓글, 반응 모두 신원을 표시하지 않습니다.",
+  },
+]
+
+// TODO(wiring): 확인 후 spaces.anonymity_policy를 갱신한다. RLS가 owner/admin만 허용한다.
 function AnonymousSection({
-  allowed,
+  policy,
   onChange,
 }: {
-  allowed: boolean
-  onChange: (next: boolean) => void
+  policy: GroupAnonymityPolicy
+  onChange: (next: GroupAnonymityPolicy) => void
 }) {
+  const [pendingPolicy, setPendingPolicy] = useState<GroupAnonymityPolicy | null>(null)
+  const pendingOption = ANONYMITY_OPTIONS.find((option) => option.value === pendingPolicy)
+
   return (
-    <SettingsCard>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">익명 글 허용</h2>
-          <p className="text-muted-foreground mt-1 text-xs">
-            끄면 새 익명 글과 익명 댓글을 쓸 수 없습니다. 이미 올라간 익명 글은 그대로 익명으로
-            남습니다.
-          </p>
+    <>
+      <SettingsCard>
+        <div className="flex flex-col gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">활동 신원</h2>
+            <p className="text-muted-foreground mt-1 text-xs">
+              정책을 바꿔도 이미 남긴 활동의 공개 범위는 바뀌지 않습니다.
+            </p>
+          </div>
+          <div role="radiogroup" aria-label="활동 신원" className="flex flex-col gap-1">
+            {ANONYMITY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={policy === option.value}
+                onClick={() => option.value !== policy && setPendingPolicy(option.value)}
+                className={cn(
+                  "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
+                  policy === option.value && "bg-muted"
+                )}
+              >
+                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-muted-foreground text-xs">{option.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={allowed}
-          aria-label="익명 글 허용"
-          onClick={() => onChange(!allowed)}
-          className={cn(
-            "focus-visible:ring-ring relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none",
-            allowed ? "bg-primary" : "bg-muted-foreground/30"
-          )}
-        >
-          <span
-            className={cn(
-              "bg-background absolute top-0.5 size-5 rounded-full shadow transition-[left]",
-              allowed ? "left-[1.375rem]" : "left-0.5"
-            )}
-          />
-        </button>
-      </div>
-    </SettingsCard>
+      </SettingsCard>
+
+      <Dialog
+        open={pendingPolicy !== null}
+        onOpenChange={(open) => !open && setPendingPolicy(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>활동 신원을 변경할까요?</DialogTitle>
+            <DialogDescription>
+              이후 활동은 <strong>{pendingOption?.label}</strong> 정책을 따릅니다. 기존 게시물,
+              댓글, 반응의 공개 범위는 바뀌지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingPolicy(null)}>
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (pendingPolicy) onChange(pendingPolicy)
+                setPendingPolicy(null)
+              }}
+            >
+              변경
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -545,8 +633,8 @@ export function GroupSettings({
   onJoinPolicyChange,
   postPolicy,
   onPostPolicyChange,
-  allowAnonymous,
-  onAllowAnonymousChange,
+  anonymityPolicy,
+  onAnonymityPolicyChange,
 }: {
   group: GroupSpace
   categories: GroupCategory[]
@@ -556,8 +644,8 @@ export function GroupSettings({
   onJoinPolicyChange: (next: GroupSpace["joinPolicy"]) => void
   postPolicy: GroupSpace["postPolicy"]
   onPostPolicyChange: (next: GroupSpace["postPolicy"]) => void
-  allowAnonymous: boolean
-  onAllowAnonymousChange: (next: boolean) => void
+  anonymityPolicy: GroupAnonymityPolicy
+  onAnonymityPolicyChange: (next: GroupAnonymityPolicy) => void
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -568,8 +656,8 @@ export function GroupSettings({
           <BasicInfoSection group={group} />
           <JoinPolicySection policy={joinPolicy} onChange={onJoinPolicyChange} />
           {/* 누가 들어오는가(가입) → 누가 쓰는가(글쓰기) → 어떻게 쓰는가(익명) 순이다. */}
+          <AnonymousSection policy={anonymityPolicy} onChange={onAnonymityPolicyChange} />
           <PostPolicySection policy={postPolicy} onChange={onPostPolicyChange} />
-          <AnonymousSection allowed={allowAnonymous} onChange={onAllowAnonymousChange} />
         </>
       ) : null}
       <CategorySection initial={categories} />

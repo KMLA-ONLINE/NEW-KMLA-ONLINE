@@ -13,10 +13,10 @@ import { Link } from "react-router"
 import { useImageCrop } from "~/hooks/use-image-crop"
 import { useImageDraft } from "~/hooks/use-image-draft"
 import { ImageCropper } from "~/components/image/image-cropper"
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
-import { formatPhoneNumber, profileInitials } from "~/lib/profile/format"
+import { formatPhoneNumber } from "~/lib/profile/format"
 import { GENDER_LABEL, PROFILE_TYPE_LABEL, TRACK_LABEL, type MyProfile } from "~/lib/profile/types"
 import { cn } from "~/lib/utils"
 
@@ -141,12 +141,10 @@ export function ProfileHero({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-5">
           <div className="flex min-w-0 items-start gap-4 sm:contents">
             <div className="relative -mt-12 w-fit shrink-0 sm:-mt-24">
-              <Avatar className="ring-card size-[6.5rem] ring-4 sm:size-[8.5rem]">
-                {avatar ? <AvatarImage src={avatar} alt="" className="object-cover" /> : null}
-                <AvatarFallback className="text-3xl font-semibold">
-                  {profileInitials(profile.name)}
-                </AvatarFallback>
-              </Avatar>
+              <ProfileAvatar
+                profile={{ name: profile.name, avatarUrl: avatar }}
+                className="ring-card size-[6.5rem] ring-4 sm:size-[8.5rem]"
+              />
               {isMe ? (
                 <>
                   <Button

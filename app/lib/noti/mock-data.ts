@@ -7,15 +7,29 @@ import type { AppNotification } from "~/lib/noti/types"
 // 근거는 supabase/schemas/06-notifications.sql 상단.
 
 // 고정 기준 시각. Date.now()로 잡으면 SSR과 브라우저가 다른 시계를 읽어 hydration이 어긋난다.
-const BASE = Date.parse("2026-07-12T09:00:00Z")
+const BASE = Date.parse("2026-07-24T09:00:00Z")
 const minutesAgo = (minutes: number) => new Date(BASE - minutes * 60_000).toISOString()
 
 export const mockNotifications: AppNotification[] = [
   {
+    id: 13,
+    type: "reaction_summary",
+    // 집계 알림에는 단일 actor가 없다. 익명 개인 행 대신 집계 창의 인원수만 payload에 둔다.
+    actor: null,
+    actorIsAnonymous: false,
+    space: { pubId: "student-council", name: "행정위원회", type: "group" },
+    post: { pubId: "c0ffee00-0000-4000-8000-000000000001", title: "기말고사 일정 안내" },
+    comment: null,
+    payload: { reaction_count: 3 },
+    readAt: null,
+    createdAt: minutesAgo(1),
+  },
+  {
     id: 12,
     type: "post_comment",
-    // 익명 댓글: 서버가 actor를 지워서 내린다. actor_id는 select grant에 없어 우회 조회도 안 된다.
+    // 운영진 댓글: 개인 actor는 지우고 게시 당시 운영진 귀속만 내려준다.
     actor: null,
+    actorAttribution: "staff",
     actorIsAnonymous: true,
     space: { pubId: "student-council", name: "행정위원회", type: "group" },
     post: { pubId: "c0ffee00-0000-4000-8000-000000000001", title: "기말고사 일정 안내" },
@@ -74,7 +88,7 @@ export const mockNotifications: AppNotification[] = [
     space: { pubId: "market", name: "민사고 먹9 사9 팔9", type: "community" },
     post: null,
     comment: null,
-    payload: { suspended_until: new Date(BASE + 2 * 24 * 60 * 60_000).toISOString() },
+    payload: { suspended_until: new Date(BASE + 7 * 24 * 60 * 60_000).toISOString() },
     readAt: null,
     createdAt: minutesAgo(300),
   },

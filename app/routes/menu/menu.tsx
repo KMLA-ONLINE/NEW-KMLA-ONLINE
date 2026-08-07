@@ -1,5 +1,6 @@
 import {
   BellIcon,
+  CalendarClockIcon,
   ChevronRightIcon,
   FileTextIcon,
   KeyRoundIcon,
@@ -16,12 +17,13 @@ import type { ComponentType, ReactNode } from "react"
 import { Link } from "react-router"
 
 import { ThemeSelect } from "~/components/menu/theme-select"
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { mockAppAdmins, mockPendingProfiles } from "~/lib/admin/mock-data"
 import { getMyClubAccess } from "~/lib/club/access"
 import { profileInitials } from "~/lib/profile/format"
 import { mockProfile, mockProfileEmail } from "~/lib/profile/mock-data"
+import { mockProfile, mockProfileAvatarUrl, mockProfileEmail } from "~/lib/profile/mock-data"
 import { cn } from "~/lib/utils"
 
 import type { Route } from "./+types/menu"
@@ -109,13 +111,16 @@ export default function MenuPage({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <h1 className="text-2xl font-semibold">메뉴</h1>
+
       <Link
         to="/profile"
         className="bg-card hover:bg-muted/60 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors"
       >
-        <Avatar className="size-12">
-          <AvatarFallback className="text-base">{profileInitials(mockProfile.name)}</AvatarFallback>
-        </Avatar>
+        <ProfileAvatar
+          profile={{ name: mockProfile.name, avatarUrl: mockProfileAvatarUrl }}
+          className="size-12"
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">
             {mockProfile.name}
@@ -146,6 +151,7 @@ export default function MenuPage({ loaderData }: Route.ComponentProps) {
       <MenuSection title="학교">
         <MenuRow icon={ShapesIcon} label="동아리" to="/clubs" />
         <MenuRow icon={UtensilsCrossedIcon} label="오늘의 급식" to="/menu/meal" />
+        <MenuRow icon={CalendarClockIcon} label="공강·노래방" to="/util/gongang" />
       </MenuSection>
 
       {canApproveMembers ? (

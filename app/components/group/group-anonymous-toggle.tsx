@@ -1,10 +1,21 @@
 import { ArrowLeftRightIcon } from "lucide-react"
+import { useState } from "react"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
+import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip"
 import { cn } from "~/lib/utils"
 
 // 아바타 자체가 익명 ↔ 실명 토글이다. 우하단의 작은 스왑 배지가 "눌러서 바꿀 수 있다"를 알린다.
+// 실명에서 익명으로 갈 때만 한 번 확인해 충동적 선택을 줄이고, 실명으로 돌아갈 때는 바로 바꾼다.
 //
 // 작성할 때만 바꿀 수 있다. posts.is_anonymous는 update 컬럼 grant에서 빠져 있고(comments는 애초에
 // content만 열려 있다) 서버가 전환을 받아주지 않는다 -- 익명으로 쓴 글을 나중에 실명으로 까거나
@@ -22,29 +33,68 @@ export function GroupAnonymousToggle({
   size?: "lg"
   className?: string
 }) {
+  const [isConfirming, setIsConfirming] = useState(false)
+
+  const requestToggle = () => {
+    if (anonymous) {
+      onToggle()
+      return
+    }
+    setIsConfirming(true)
+  }
+
+  const confirmAnonymous = () => {
+    setIsConfirming(false)
+    onToggle()
+  }
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-pressed={anonymous}
-          aria-label={
-            anonymous ? "익명으로 작성 중. 눌러서 실명으로" : "실명으로 작성 중. 눌러서 익명으로"
-          }
-          className={cn(
-            "focus-visible:ring-ring relative shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none",
-            className
-          )}
-        >
-          {/* 익명이면 마스크 아이콘, 아니면 "나". 아이콘·크기 규칙은 GroupAuthorAvatar 한 곳에만 둔다. */}
-          <GroupAuthorAvatar name="나" anonymous={anonymous} size={size} />
-          <span className="bg-background text-muted-foreground absolute -right-0.5 -bottom-0.5 flex rounded-full border p-0.5">
-            <ArrowLeftRightIcon className="size-2.5" aria-hidden="true" />
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{anonymous ? "익명으로 작성 중" : "실명으로 작성 중"}</TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={requestToggle}
+            aria-pressed={anonymous}
+            aria-label={
+              anonymous ? "익명으로 작성 중. 눌러서 실명으로" : "실명으로 작성 중. 눌러서 익명으로"
+            }
+            className={cn(
+              "focus-visible:ring-ring relative shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none",
+              className
+            )}
+          >
+            {anonymous ? (
+              <AnonymousAvatar size={size} />
+            ) : (
+              <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size={size} />
+            )}
+            <span className="bg-background text-muted-foreground absolute -right-0.5 -bottom-0.5 flex rounded-full border p-0.5">
+              <ArrowLeftRightIcon className="size-2.5" aria-hidden="true" />
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{anonymous ? "익명으로 작성 중" : "실명으로 작성 중"}</TooltipContent>
+      </Tooltip>
+
+      <Dialog open={isConfirming} onOpenChange={setIsConfirming}>
+        <DialogContent showCloseButton={false} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>익명으로 작성할까요?</DialogTitle>
+            <DialogDescription>
+              작성 후에는 실명과 익명 여부를 변경할 수 없습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsConfirming(false)}>
+              취소
+            </Button>
+            <Button type="button" onClick={confirmAnonymous}>
+              익명으로 변경
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

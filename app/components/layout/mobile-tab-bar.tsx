@@ -5,15 +5,24 @@ import { NavBadge } from "~/components/layout/nav-badge"
 import { useNavBadges } from "~/components/layout/use-nav-badges"
 import { cn } from "~/lib/utils"
 
-export function MobileTabBar() {
+export function MobileTabBar({
+  hidden = false,
+  onFocus,
+}: {
+  hidden?: boolean
+  onFocus?: () => void
+}) {
   const location = useLocation()
   const badges = useNavBadges()
 
   return (
     <nav
       aria-label="주요 메뉴"
-      className="bg-background/95 fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur md:hidden"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      onFocusCapture={onFocus}
+      className={cn(
+        "bg-background/95 fixed inset-x-0 bottom-0 z-30 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur transition-transform duration-200 ease-out motion-reduce:transition-none md:hidden",
+        hidden && "pointer-events-none translate-y-full"
+      )}
     >
       <ul className="grid h-16 grid-cols-5">
         {appNavItems.map((item) => {

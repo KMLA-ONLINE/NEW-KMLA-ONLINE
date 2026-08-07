@@ -403,18 +403,21 @@ export type Database = {
         Row: {
           comment_id: number
           created_at: string
+          is_anonymous: boolean
           reaction_type_id: number
           user_id: number
         }
         Insert: {
           comment_id: number
           created_at?: string
+          is_anonymous?: boolean
           reaction_type_id: number
           user_id: number
         }
         Update: {
           comment_id?: number
           created_at?: string
+          is_anonymous?: boolean
           reaction_type_id?: number
           user_id?: number
         }
@@ -444,6 +447,9 @@ export type Database = {
       }
       comments: {
         Row: {
+          author_attribution:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           content: string | null
           created_at: string
@@ -456,6 +462,9 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           content?: string | null
           created_at?: string
@@ -468,6 +477,9 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id?: number
           content?: string | null
           created_at?: string
@@ -1162,18 +1174,21 @@ export type Database = {
       post_reactions: {
         Row: {
           created_at: string
+          is_anonymous: boolean
           post_id: number
           reaction_type_id: number
           user_id: number
         }
         Insert: {
           created_at?: string
+          is_anonymous?: boolean
           post_id: number
           reaction_type_id: number
           user_id: number
         }
         Update: {
           created_at?: string
+          is_anonymous?: boolean
           post_id?: number
           reaction_type_id?: number
           user_id?: number
@@ -1204,6 +1219,9 @@ export type Database = {
       }
       posts: {
         Row: {
+          author_attribution:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           category_id: number | null
           content: string
@@ -1222,6 +1240,9 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id: number
           category_id?: number | null
           content: string
@@ -1240,6 +1261,9 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          author_attribution?:
+            | Database["public"]["Enums"]["author_attribution"]
+            | null
           author_id?: number
           category_id?: number | null
           content?: string
@@ -1469,7 +1493,6 @@ export type Database = {
         Row: {
           created_at: string
           space_id: number
-          strike_count: number
           suspended_by: number | null
           suspended_until: string
           user_id: number
@@ -1477,7 +1500,6 @@ export type Database = {
         Insert: {
           created_at?: string
           space_id: number
-          strike_count?: number
           suspended_by?: number | null
           suspended_until: string
           user_id: number
@@ -1485,7 +1507,6 @@ export type Database = {
         Update: {
           created_at?: string
           space_id?: number
-          strike_count?: number
           suspended_by?: number | null
           suspended_until?: string
           user_id?: number
@@ -1694,7 +1715,7 @@ export type Database = {
       }
       spaces: {
         Row: {
-          allow_anonymous_posts: boolean
+          anonymity_policy: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url: string | null
           created_at: string
           created_by: number | null
@@ -1712,7 +1733,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          allow_anonymous_posts?: boolean
+          anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
@@ -1730,7 +1751,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          allow_anonymous_posts?: boolean
+          anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           cover_image_url?: string | null
           created_at?: string
           created_by?: number | null
@@ -1842,6 +1863,57 @@ export type Database = {
           },
         ]
       }
+      utility_bookings: {
+        Row: {
+          booking_date: string
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          created_at: string
+          created_by: number
+          detail: string
+          id: number
+          location: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id: number
+          slot_key: string
+        }
+        Insert: {
+          booking_date: string
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          created_at?: string
+          created_by: number
+          detail: string
+          id?: number
+          location?: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id: number
+          slot_key: string
+        }
+        Update: {
+          booking_date?: string
+          booking_type?: Database["public"]["Enums"]["utility_booking_type"]
+          created_at?: string
+          created_by?: number
+          detail?: string
+          id?: number
+          location?: Database["public"]["Enums"]["gongang_location"] | null
+          owner_id?: number
+          slot_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utility_bookings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "utility_bookings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1855,6 +1927,10 @@ export type Database = {
       bootstrap_first_app_admin: {
         Args: { p_profile_id: number }
         Returns: undefined
+      }
+      cancel_utility_booking: {
+        Args: { p_booking_id: number }
+        Returns: boolean
       }
       claim_storage_cleanup: {
         Args: { p_limit?: number }
@@ -1879,6 +1955,7 @@ export type Database = {
       create_post_with_attachments: {
         Args: {
           p_attachments?: Json
+          p_author_attribution?: Database["public"]["Enums"]["author_attribution"]
           p_category_id?: number
           p_content: string
           p_is_anonymous?: boolean
@@ -1889,7 +1966,7 @@ export type Database = {
       }
       create_space: {
         Args: {
-          p_allow_anonymous_posts?: boolean
+          p_anonymity_policy?: Database["public"]["Enums"]["space_anonymity_policy"]
           p_description?: string
           p_join_policy?: Database["public"]["Enums"]["space_join_policy"]
           p_name: string
@@ -1914,6 +1991,17 @@ export type Database = {
           p_wrapped_user_key: string
         }
         Returns: undefined
+      }
+      create_utility_booking: {
+        Args: {
+          p_booking_date: string
+          p_booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          p_detail: string
+          p_location?: Database["public"]["Enums"]["gongang_location"]
+          p_owner_label?: string
+          p_slot_key: string
+        }
+        Returns: number
       }
       edit_encrypted_message: {
         Args: { p_content_ciphertext: string; p_id: number }
@@ -1961,6 +2049,20 @@ export type Database = {
           reads: Json
           sender: Json
           sender_id: number
+        }[]
+      }
+      get_current_utility_bookings: {
+        Args: never
+        Returns: {
+          booking_date: string
+          booking_id: number
+          booking_type: Database["public"]["Enums"]["utility_booking_type"]
+          detail: string
+          is_mine: boolean
+          location: Database["public"]["Enums"]["gongang_location"]
+          owner_id: number
+          owner_label: string
+          slot_key: string
         }[]
       }
       get_encrypted_message_bodies: {
@@ -2028,11 +2130,22 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_my_utility_access: {
+        Args: never
+        Returns: {
+          can_gongang: boolean
+          can_karaoke: boolean
+          manages_gongang: boolean
+          manages_karaoke: boolean
+          profile_id: number
+        }[]
+      }
       get_post: {
         Args: { p_pub_id: string }
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -2051,15 +2164,24 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_post_anonymous_reaction_counts: {
+        Args: { p_post_id: number }
+        Returns: {
+          reaction_count: number
+          reaction_type_id: number
+        }[]
+      }
       get_post_comments: {
         Args: { p_after_id?: number; p_limit?: number; p_post_id: number }
         Returns: {
           anonymous_label: string
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           comment_id: number
           content: string
           created_at: string
           is_anonymous: boolean
+          is_author_anonymity_suspended: boolean
           is_deleted: boolean
           is_mine: boolean
           my_reaction_id: number
@@ -2117,6 +2239,7 @@ export type Database = {
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -2181,6 +2304,7 @@ export type Database = {
         Returns: {
           attachments: Json
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           category: Json
           comment_count: number
           content: string
@@ -2212,12 +2336,16 @@ export type Database = {
           skipped: number
         }[]
       }
-      purge_read_notifications: {
+      purge_notifications: {
         Args: { p_limit?: number; p_older_than?: string }
         Returns: number
       }
       remove_group_member: {
         Args: { p_conversation_id: number; p_user_id: number }
+        Returns: undefined
+      }
+      rename_group_conversation: {
+        Args: { p_conversation_id: number; p_name: string }
         Returns: undefined
       }
       request_attachment_removal: {
@@ -2227,6 +2355,12 @@ export type Database = {
       reseal_user_keys: {
         Args: { p_wrapped_user_key: string }
         Returns: undefined
+      }
+      reset_current_utility_bookings: {
+        Args: {
+          p_booking_type: Database["public"]["Enums"]["utility_booking_type"]
+        }
+        Returns: number
       }
       review_profile: {
         Args: {
@@ -2264,6 +2398,7 @@ export type Database = {
         Args: { p_query: string; p_space_id: number }
         Returns: {
           author: Json
+          author_attribution: Database["public"]["Enums"]["author_attribution"]
           content_snippet: string
           created_at: string
           post_id: number
@@ -2338,19 +2473,11 @@ export type Database = {
       }
       suspend_comment_author_anonymity: {
         Args: { p_comment_id: number }
-        Returns: {
-          already_suspended: boolean
-          strike_count: number
-          suspended_days: number
-        }[]
+        Returns: undefined
       }
       suspend_post_author_anonymity: {
         Args: { p_post_id: number }
-        Returns: {
-          already_suspended: boolean
-          strike_count: number
-          suspended_days: number
-        }[]
+        Returns: undefined
       }
       transfer_space_ownership: {
         Args: { p_new_owner_id: number; p_space_id: number }
@@ -2370,6 +2497,7 @@ export type Database = {
     Enums: {
       app_role: "user" | "admin"
       attachment_kind: "image" | "audio" | "video" | "file"
+      author_attribution: "staff"
       club_type: "major" | "general"
       conversation_type: "direct" | "group"
       gongang_location: "floor_b1" | "floor_2" | "floor_4" | "floor_10"
@@ -2393,9 +2521,11 @@ export type Database = {
       profile_status: "none" | "pending" | "accepted" | "rejected" | "withdrawn"
       profile_track: "domestic" | "international"
       profile_type: "student" | "teacher" | "alumni"
+      space_anonymity_policy: "disabled" | "optional" | "required"
       space_join_policy: "public" | "request" | "invite_only"
       space_post_policy: "all" | "managers"
       space_type: "group" | "community"
+      utility_booking_type: "gongang" | "karaoke"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2528,6 +2658,7 @@ export const Constants = {
     Enums: {
       app_role: ["user", "admin"],
       attachment_kind: ["image", "audio", "video", "file"],
+      author_attribution: ["staff"],
       club_type: ["major", "general"],
       conversation_type: ["direct", "group"],
       gongang_location: ["floor_b1", "floor_2", "floor_4", "floor_10"],
@@ -2552,10 +2683,11 @@ export const Constants = {
       profile_status: ["none", "pending", "accepted", "rejected", "withdrawn"],
       profile_track: ["domestic", "international"],
       profile_type: ["student", "teacher", "alumni"],
+      space_anonymity_policy: ["disabled", "optional", "required"],
       space_join_policy: ["public", "request", "invite_only"],
       space_post_policy: ["all", "managers"],
       space_type: ["group", "community"],
+      utility_booking_type: ["gongang", "karaoke"],
     },
   },
 } as const
-

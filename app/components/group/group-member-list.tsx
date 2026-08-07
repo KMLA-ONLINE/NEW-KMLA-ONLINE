@@ -1,7 +1,7 @@
 import { ChevronDownIcon, SearchIcon } from "lucide-react"
 import { useState } from "react"
 
-import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar"
+import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import {
@@ -80,10 +80,7 @@ function MemberRow({
 
   return (
     <li className="flex items-center gap-3 py-2">
-      <Avatar>
-        {member.avatarUrl ? <AvatarImage src={member.avatarUrl} alt="" /> : null}
-        <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-      </Avatar>
+      <ProfileAvatar profile={member} />
       <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {member.name}
         {/* 기수. 동명이인이 흔하고 profiles.name엔 유니크 제약이 없어서, 이름만으로는 목록에서
@@ -197,7 +194,7 @@ export function GroupMemberList({
   const hasMore = visibleCount < regular.length
   const sentinelRef = useInfiniteScroll(
     () => setVisibleCount((count) => count + MEMBER_PAGE_SIZE),
-    hasMore
+    { enabled: hasMore }
   )
 
   const isEmpty = staff.length === 0 && regular.length === 0

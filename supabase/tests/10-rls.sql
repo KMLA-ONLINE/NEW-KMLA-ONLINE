@@ -26,7 +26,9 @@ declare
   applicant_id bigint;
   home_id bigint;
   outside_id bigint;
-  post_id bigint;
+  home_post_id bigint;
+  rpc_post_pub uuid;
+  like_id bigint;
   leaked bigint;
   invite_token text;
 begin
@@ -49,10 +51,16 @@ begin
   -- alice가 익명으로 글을 쓴다. bob은 이 글을 읽을 수 있지만 **누가 썼는지는 알 수 없어야** 한다.
   insert into public.posts (space_id, author_id, title, content, is_anonymous)
   values (home_id, alice_id, '익명 글', '본문', true)
-  returning id into post_id;
+  returning id into home_post_id;
 
   insert into public.space_members (space_id, user_id, role) values (home_id, bob_id, 'member');
   update public.spaces set member_count = 2 where id = home_id;
+
+  -- required로 전환한 뒤의 반응은 익명 스냅샷이며, 명부도 owner/admin 외에는 숨긴다.
+  update public.spaces set anonymity_policy='required' where id=home_id;
+  select id into like_id from public.reaction_types where key='like';
+  insert into public.post_reactions(post_id,user_id,reaction_type_id)
+  values(home_post_id,alice_id,like_id);
 
   -- alice의 익명 정지 기록. 관리자에게도 보이면 안 되고(그게 익명의 조건이다) bob에게는 더더욱.
   insert into public.space_anonymity_suspensions (space_id, user_id, suspended_until)
@@ -67,21 +75,64 @@ begin
   set local role authenticated;
 
   -- -------------------------------------------------------------------------
+  -- 게시글 생성은 RPC 하나로만 간다
+  -- -------------------------------------------------------------------------
+  if has_any_column_privilege(current_user,'public.posts','INSERT') then
+    raise exception 'authenticated must not have direct INSERT privileges on posts';
+  end if;
+  if has_sequence_privilege(current_user,'public.posts_id_seq','USAGE') then
+    raise exception 'authenticated must not have USAGE on posts_id_seq';
+  end if;
+  if has_function_privilege(current_user,'private.can_post_in_space(bigint)','EXECUTE') then
+    raise exception 'authenticated must not execute the RPC-internal posting helper directly';
+  end if;
+  if has_any_column_privilege(current_user,'public.post_attachments','INSERT') then
+    raise exception 'authenticated must not insert post attachment metadata directly';
+  end if;
+
+  begin
+    insert into public.posts(space_id,author_id,title,content)
+    values(home_id,bob_id,'직접 생성 시도','본문');
+    raise exception 'authenticated direct post INSERT must fail';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  rpc_post_pub := public.create_post_with_attachments(
+    home_id,'RPC 생성','본문','[]'::jsonb,null,false,null
+  );
+  if not exists(select 1 from public.posts where pub_id=rpc_post_pub) then
+    raise exception 'authenticated must be able to create a text-only post through the RPC';
+  end if;
+
+  -- -------------------------------------------------------------------------
   -- 익명: author_id는 컬럼 grant에서 회수돼 있다
   -- -------------------------------------------------------------------------
   -- is_anonymous는 표시 플래그일 뿐이라 RLS가 컬럼을 가려주지 못한다. 테이블 전체 select를 주면
   -- `select author_id from posts where is_anonymous`로 작성자 명단이 그대로 나온다. 그래서 select가
   -- 컬럼 단위다. 이 단언이 없으면 그 grant가 되살아나도(diff의 drop+create가 흔히 그런다) 조용하다.
   begin
-    select author_id into leaked from public.posts where id = post_id;
+    select author_id into leaked from public.posts where id = home_post_id;
     raise exception 'authenticated must not be able to read posts.author_id (% leaked)', leaked;
   exception when insufficient_privilege then
     null;
   end;
 
   -- 글 자체는 읽힌다. 위 검사가 "아무것도 못 읽는다"로 통과하는 가짜가 아니라는 뜻이다.
-  if not exists (select 1 from public.posts where id = post_id) then
+  if not exists (select 1 from public.posts where id = home_post_id) then
     raise exception 'a member must still be able to read the post itself';
+  end if;
+
+  -- required 명부에서 일반 멤버는 자기 행만 볼 수 있다.
+  if exists(select 1 from public.space_members where space_id=home_id and user_id=alice_id)
+    or not exists(select 1 from public.space_members where space_id=home_id and user_id=bob_id)
+  then
+    raise exception 'required-space member directory leaked to a regular member';
+  end if;
+
+  -- 다른 사람의 익명 반응 행은 직접 조회할 수 없다. 타입별 count는 전용 RPC로만 읽는다.
+  if exists(select 1 from public.post_reactions where post_id=home_post_id and user_id=alice_id) then
+    raise exception 'an anonymous reaction row leaked to another member';
   end if;
 
   -- -------------------------------------------------------------------------

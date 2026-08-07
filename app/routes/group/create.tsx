@@ -1,20 +1,28 @@
 import { ChevronLeftIcon } from "lucide-react"
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import { Button } from "~/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog"
 import { Input } from "~/components/ui/input"
 import { SLUG_HINT, isValidSlug, randomPubId, type SpaceDraft } from "~/lib/group/create"
 import { cn } from "~/lib/utils"
 
+export const handle = { showMobileTabBar: false }
+
 // 공간을 만드는 화면. 서버에는 create_space RPC 하나뿐이고 spaces에는 insert grant가 없다 --
 // 그래서 여기서 모으는 값이 곧 그 RPC의 인자다.
 //
-// TODO(backend): action에서 create_space(p_type, p_name, p_description, p_pub_id, p_join_policy,
-// p_post_policy, p_allow_anonymous_posts)를 호출하고 반환된 space id로 revalidate 후
-// /groups/{pub_id}로 보낸다. 지금은 로컬 state만 만지고 아무것도 저장하지 않는다.
-// TODO(backend): 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
+// TODO(wiring): clientAction에서 create_space를 호출한다. 지금은 로컬 state만 만지고 저장하지 않는다.
+// 이름/슬러그 충돌은 서버가 갈라 준다 -- 공식 그룹 이름은
 // spaces_active_group_name_key(unique), 슬러그는 'pub id already taken'. 프론트 검사는 형식까지다.
 
 const JOIN_POLICY_OPTIONS: { value: SpaceDraft["joinPolicy"]; label: string; hint: string }[] = [
@@ -28,6 +36,20 @@ const JOIN_POLICY_OPTIONS: { value: SpaceDraft["joinPolicy"]; label: string; hin
     value: "invite_only",
     label: "비공개 · 초대 전용",
     hint: "검색에 노출되지 않고 초대로만 가입합니다",
+  },
+]
+
+const ANONYMITY_POLICY_OPTIONS: {
+  value: SpaceDraft["anonymityPolicy"]
+  label: string
+  hint: string
+}[] = [
+  { value: "disabled", label: "실명만", hint: "게시물, 댓글, 반응에 프로필이 표시됩니다" },
+  { value: "optional", label: "작성할 때 선택", hint: "게시물과 댓글은 익명을 선택할 수 있습니다" },
+  {
+    value: "required",
+    label: "항상 익명",
+    hint: "게시물, 댓글, 반응 모두 신원을 표시하지 않습니다",
   },
 ]
 
@@ -69,24 +91,35 @@ export default function CreateSpacePage() {
   const isAppAdmin = searchParams.get("as") === "admin"
 
   const [type, setType] = useState<SpaceDraft["type"]>("community")
+  const [officialConfirmOpen, setOfficialConfirmOpen] = useState(false)
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [pubId, setPubId] = useState("")
-  const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("public")
+  const [joinPolicy, setJoinPolicy] = useState<SpaceDraft["joinPolicy"]>("invite_only")
   const [postPolicy, setPostPolicy] = useState<SpaceDraft["postPolicy"]>("all")
-  const [allowAnonymous, setAllowAnonymous] = useState(true)
+  // DB spaces.anonymity_policy의 기본값과 같다.
+  const [anonymityPolicy, setAnonymityPolicy] = useState<SpaceDraft["anonymityPolicy"]>("optional")
 
   const trimmedName = name.trim()
   const slugTouched = pubId.trim().length > 0
   const slugValid = !slugTouched || isValidSlug(pubId.trim())
   const canSubmit = trimmedName.length > 0 && slugValid
+  const joinPolicyLabel = JOIN_POLICY_OPTIONS.find((option) => option.value === joinPolicy)?.label
 
-  const submit = () => {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     if (!canSubmit) return
+    setCreateConfirmOpen(true)
+  }
+
+  const createSpace = () => {
     // 슬러그를 비우면 서버가 컬럼 default(랜덤 12자)를 채운다. 여기서 흉내만 낸다.
     const slug = slugTouched ? pubId.trim() : randomPubId()
     toast.success(`${type === "group" ? "공식 그룹" : "그룹"}을 만들었습니다`)
-    navigate(`/groups/${slug}`)
+    // 백엔드 미연동 미리보기에서 생성한 정책을 그룹 화면에 전달한다. 실제 생성 RPC가 붙으면
+    // loader가 spaces.anonymity_policy를 읽으므로 이 query parameter는 제거한다.
+    navigate(`/groups/${slug}?anonymity=${anonymityPolicy}&type=${type}`)
   }
 
   return (
@@ -102,33 +135,119 @@ export default function CreateSpacePage() {
         <h1 className="text-xl font-semibold sm:text-2xl">그룹 만들기</h1>
       </div>
 
-      {isAppAdmin ? (
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <input type="hidden" name="type" value={type} />
+        <input type="hidden" name="joinPolicy" value={joinPolicy} />
+        <input type="hidden" name="postPolicy" value={postPolicy} />
+        <input type="hidden" name="anonymityPolicy" value={anonymityPolicy} />
+
+        {isAppAdmin ? (
+          <Card>
+            <div role="radiogroup" aria-label="그룹 종류" className="flex flex-col gap-1">
+              <span className="text-sm font-medium">종류</span>
+              {(
+                [
+                  {
+                    value: "community",
+                    label: "비공식 그룹",
+                    hint: "학생들이 자유롭게 만드는 커뮤니티입니다",
+                  },
+                  {
+                    value: "group",
+                    label: "공식 그룹",
+                    hint: "학교 공식 그룹입니다",
+                  },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={type === option.value}
+                  onClick={() => {
+                    if (option.value === "group" && type !== "group") {
+                      setOfficialConfirmOpen(true)
+                      return
+                    }
+                    if (option.value === "community" && type !== "community") {
+                      setType("community")
+                      setJoinPolicy("invite_only")
+                      setPubId("")
+                      return
+                    }
+                    setType(option.value)
+                  }}
+                  className={cn(
+                    "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
+                    type === option.value && "bg-muted"
+                  )}
+                >
+                  <span className="text-sm font-medium">{option.label}</span>
+                  <span className="text-muted-foreground text-xs">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+          </Card>
+        ) : null}
+
         <Card>
-          <div role="radiogroup" aria-label="그룹 종류" className="flex flex-col gap-1">
-            <span className="text-sm font-medium">종류</span>
-            {(
-              [
-                {
-                  value: "community",
-                  label: "비공식 그룹",
-                  hint: "학생들이 자유롭게 만드는 커뮤니티입니다",
-                },
-                {
-                  value: "group",
-                  label: "공식 그룹",
-                  hint: "학교 조직을 그대로 옮긴 그룹입니다. 이름은 학교 전체에서 하나뿐이어야 합니다",
-                },
-              ] as const
+          <Field label="이름">
+            <Input
+              name="name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="예: 30기 민사 재학생"
+              maxLength={100}
+              required
+            />
+          </Field>
+
+          <Field label="설명" hint="비워둘 수 있습니다.">
+            <textarea
+              name="description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={5000}
+              placeholder="이 그룹이 무엇을 하는 곳인지 적어주세요."
+              className="border-input focus-visible:ring-ring min-h-24 resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2"
+            />
+          </Field>
+
+          {joinPolicy === "invite_only" ? null : (
+            <Field label="주소" hint={slugValid ? SLUG_HINT : undefined}>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground shrink-0 text-sm">/groups/</span>
+                <Input
+                  name="pubId"
+                  value={pubId}
+                  onChange={(event) => setPubId(event.target.value)}
+                  placeholder="비워두면 자동으로 정해집니다"
+                  aria-invalid={!slugValid}
+                />
+              </div>
+              {slugValid ? null : <span className="text-destructive text-xs">{SLUG_HINT}</span>}
+            </Field>
+          )}
+        </Card>
+
+        <Card>
+          <div role="radiogroup" aria-label="가입 정책" className="flex flex-col gap-1">
+            <span className="text-sm font-medium">가입 정책</span>
+            {JOIN_POLICY_OPTIONS.filter(
+              (option) => type === "community" || option.value === "public"
             ).map((option) => (
               <button
                 key={option.value}
                 type="button"
                 role="radio"
-                aria-checked={type === option.value}
-                onClick={() => setType(option.value)}
+                aria-checked={joinPolicy === option.value}
+                onClick={() => {
+                  setJoinPolicy(option.value)
+                  if (option.value === "invite_only") setPubId("")
+                }}
                 className={cn(
                   "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
-                  type === option.value && "bg-muted"
+                  joinPolicy === option.value && "bg-muted"
                 )}
               >
                 <span className="text-sm font-medium">{option.label}</span>
@@ -136,104 +255,102 @@ export default function CreateSpacePage() {
               </button>
             ))}
           </div>
-        </Card>
-      ) : null}
 
-      <Card>
-        <Field label="이름">
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="예: 30기 민사 재학생"
-            maxLength={100}
-          />
-        </Field>
-
-        <Field label="설명" hint="비워둘 수 있습니다.">
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            maxLength={5000}
-            placeholder="이 그룹이 무엇을 하는 곳인지 적어주세요."
-            className="border-input focus-visible:ring-ring min-h-24 resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2"
-          />
-        </Field>
-
-        <Field label="주소" hint={slugValid ? SLUG_HINT : undefined}>
-          <div className="flex items-center gap-1">
-            <span className="text-muted-foreground shrink-0 text-sm">/groups/</span>
-            <Input
-              value={pubId}
-              onChange={(event) => setPubId(event.target.value)}
-              placeholder="비워두면 자동으로 정해집니다"
-              aria-invalid={!slugValid}
-            />
+          <div role="radiogroup" aria-label="익명 정책" className="flex flex-col gap-1">
+            <span className="text-sm font-medium">활동 신원</span>
+            {ANONYMITY_POLICY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={anonymityPolicy === option.value}
+                onClick={() => setAnonymityPolicy(option.value)}
+                className={cn(
+                  "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
+                  anonymityPolicy === option.value && "bg-muted"
+                )}
+              >
+                <span className="text-sm font-medium">{option.label}</span>
+                <span className="text-muted-foreground text-xs">{option.hint}</span>
+              </button>
+            ))}
+            <span className="text-muted-foreground px-2.5 pt-1 text-xs">
+              정책을 바꿔도 기존 활동의 공개 범위는 바뀌지 않습니다.
+            </span>
           </div>
-          {slugValid ? null : <span className="text-destructive text-xs">{SLUG_HINT}</span>}
-        </Field>
-      </Card>
 
-      <Card>
-        <div role="radiogroup" aria-label="가입 정책" className="flex flex-col gap-1">
-          <span className="text-sm font-medium">가입 정책</span>
-          {JOIN_POLICY_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={joinPolicy === option.value}
-              onClick={() => setJoinPolicy(option.value)}
-              className={cn(
-                "hover:bg-muted flex flex-col items-start gap-0.5 rounded-lg p-2.5 text-left transition-colors",
-                joinPolicy === option.value && "bg-muted"
-              )}
-            >
-              <span className="text-sm font-medium">{option.label}</span>
-              <span className="text-muted-foreground text-xs">{option.hint}</span>
-            </button>
-          ))}
+          {/* 켜면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹). 댓글은 언제나 멤버 전원에게 열려 있다. */}
+          <label className="flex items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">글쓰기 제한</span>
+              <span className="text-muted-foreground mt-1 block text-xs">
+                매니저 이상만 게시물을 올릴 수 있습니다. 댓글, 반응은 모두 달 수 있습니다.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={postPolicy === "managers"}
+              onChange={(event) => setPostPolicy(event.target.checked ? "managers" : "all")}
+              className="mt-1 size-4 shrink-0"
+            />
+          </label>
+        </Card>
+
+        <div className="flex justify-end gap-2 px-4 sm:px-0">
+          <Button type="button" variant="ghost" onClick={() => navigate(groupsHomeTo)}>
+            취소
+          </Button>
+          <Button type="submit" disabled={!canSubmit}>
+            만들기
+          </Button>
         </div>
+      </form>
 
-        {/* 켜면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹). 댓글은 언제나 멤버 전원에게 열려 있다. */}
-        <label className="flex items-start justify-between gap-4">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">글쓰기 제한</span>
-            <span className="text-muted-foreground mt-1 block text-xs">
-              켜면 매니저 이상만 게시물을 올립니다. 댓글, 반응은 그대로 멤버 모두 달 수 있습니다.
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            checked={postPolicy === "managers"}
-            onChange={(event) => setPostPolicy(event.target.checked ? "managers" : "all")}
-            className="mt-1 size-4 shrink-0"
-          />
-        </label>
+      <Dialog open={officialConfirmOpen} onOpenChange={setOfficialConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>공식 그룹으로 전환할까요?</DialogTitle>
+            <DialogDescription>공식 그룹은 이름과 활동에 공식성이 부여됩니다.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOfficialConfirmOpen(false)}>
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setType("group")
+                setJoinPolicy("public")
+                setOfficialConfirmOpen(false)
+              }}
+            >
+              공식 그룹으로 전환
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <label className="flex items-start justify-between gap-4">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">익명 글 허용</span>
-            <span className="text-muted-foreground mt-1 block text-xs">
-              나중에 꺼도 이미 올라간 익명 글은 그대로 익명으로 남습니다.
-            </span>
-          </span>
-          <input
-            type="checkbox"
-            checked={allowAnonymous}
-            onChange={(event) => setAllowAnonymous(event.target.checked)}
-            className="mt-1 size-4 shrink-0"
-          />
-        </label>
-      </Card>
-
-      <div className="flex justify-end gap-2 px-4 sm:px-0">
-        <Button type="button" variant="ghost" onClick={() => navigate(groupsHomeTo)}>
-          취소
-        </Button>
-        <Button type="button" onClick={submit} disabled={!canSubmit}>
-          만들기
-        </Button>
-      </div>
+      <Dialog open={createConfirmOpen} onOpenChange={setCreateConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>이 그룹을 만들까요?</DialogTitle>
+          </DialogHeader>
+          <dl className="bg-muted/50 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg p-4 text-sm">
+            <dt className="text-muted-foreground">이름</dt>
+            <dd className="min-w-0 truncate font-medium">{trimmedName}</dd>
+            <dt className="text-muted-foreground">가입 정책</dt>
+            <dd>{joinPolicyLabel}</dd>
+          </dl>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateConfirmOpen(false)}>
+              돌아가기
+            </Button>
+            <Button type="button" onClick={createSpace}>
+              그룹 만들기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

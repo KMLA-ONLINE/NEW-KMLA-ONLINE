@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react"
 import { ArrowLeftIcon, SearchIcon } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Input } from "~/components/ui/input"
 import { formatMessageTime, getMessageAuthor, isDeletedMessage } from "~/lib/messenger/utils"
 import { cn } from "~/lib/utils"
-import type { Message, Room } from "~/lib/messenger/types"
+import type { Message, MessageId, Room } from "~/lib/messenger/types"
 
 export function MessageSearchPane({
   room,
@@ -17,7 +17,7 @@ export function MessageSearchPane({
   room: Room
   compact?: boolean
   onBack: () => void
-  onOpenMessage: (messageId: string) => void
+  onOpenMessage: (messageId: MessageId) => void
 }) {
   const [draftQuery, setDraftQuery] = useState("")
   const [submittedQuery, setSubmittedQuery] = useState("")
@@ -38,16 +38,16 @@ export function MessageSearchPane({
     const author = getMessageAuthor(room, message)
 
     return (
-      <button
+      <div
         key={message.id}
-        type="button"
-        onClick={() => onOpenMessage(message.id)}
         className="hover:bg-muted/60 flex w-full items-start gap-3 rounded-2xl p-2 text-left transition-colors"
       >
-        <Avatar size="sm">
-          <AvatarFallback>{author.initials}</AvatarFallback>
-        </Avatar>
-        <span className="min-w-0 flex-1">
+        <ProfileAvatarLink profile={author} size="sm" />
+        <button
+          type="button"
+          onClick={() => onOpenMessage(message.id)}
+          className="min-w-0 flex-1 text-left"
+        >
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{author.name}</span>
             <span className="text-muted-foreground shrink-0 text-xs">
@@ -57,8 +57,8 @@ export function MessageSearchPane({
           <span className="text-muted-foreground mt-0.5 line-clamp-2 text-sm">
             {message.content}
           </span>
-        </span>
-      </button>
+        </button>
+      </div>
     )
   }
 

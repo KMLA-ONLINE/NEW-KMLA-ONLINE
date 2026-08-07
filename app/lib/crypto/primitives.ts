@@ -32,6 +32,7 @@ export const NONCE_BYTES = 12
  */
 export const SEAL_VERSION = 1
 const VERSION_BYTES = 1
+const TAG_BYTES = 16
 
 /**
  * OWASP's minimum Argon2id configuration (19 MiB, 2 passes). Measured at ~470ms
@@ -151,7 +152,9 @@ export async function open(
   sealed: Uint8Array,
   label?: SealLabel
 ): Promise<Uint8Array> {
-  if (sealed.length <= VERSION_BYTES + NONCE_BYTES) throw new Error("sealed blob is truncated")
+  if (sealed.length < VERSION_BYTES + NONCE_BYTES + TAG_BYTES) {
+    throw new Error("sealed blob is truncated")
+  }
   // 버전을 먼저 읽는다. 지금은 하나뿐이지만, 이 분기가 있어야 나중에 형식을 올려도 옛 blob을
   // 옛 규칙으로 열 수 있다. 모르는 버전은 조용히 엉뚱하게 복호화하는 대신 명시적으로 실패한다.
   const version = sealed[0]

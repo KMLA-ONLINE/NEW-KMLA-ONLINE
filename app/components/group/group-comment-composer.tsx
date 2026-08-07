@@ -2,7 +2,11 @@ import { SendIcon } from "lucide-react"
 import { useRef, useState, type RefObject } from "react"
 
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
+import { GroupStaffAttributionToggle } from "~/components/group/group-staff-attribution-toggle"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
+import type { GroupAnonymityPolicy } from "~/lib/group/types"
 import { cn } from "~/lib/utils"
 
 const MAX_HEIGHT = 120
@@ -19,51 +23,81 @@ function resize(element: HTMLTextAreaElement) {
 
 // 로컬 상태라 타이핑이 상세 페이지 전체를 리렌더하지 않는다. 하단 댓글 입력에도, 각
 // 댓글의 인라인 답글에도 쓴다(className으로 프레임만 바꿈). 저장은 백엔드 붙일 때 --
-// 지금은 Enter로 전송하면 비우기만 한다(Shift+Enter는 줄바꿈).
+// 지금은 Enter로 전송하면 비우기만 한다(Shift+Enter는 줄바꿈). required 공간은 명시적 @멘션을
+// 허용하지 않는다. 답글의 @익명N 표시는 탐색용 UI이며 mention 행이나 알림을 만들지 않는다.
 export function GroupCommentComposer({
   placeholder = "댓글을 입력하세요…",
   autoFocus = false,
   onSubmit,
   className = "border-t p-3",
   inputRef,
+  anonymityPolicy = "optional",
+  canPostAnonymously = true,
+  staffAttributionMode = "none",
 }: {
   placeholder?: string
   autoFocus?: boolean
   /** 익명 여부까지 넘긴다 -- comments.is_anonymous는 insert에만 있고 나중에 못 바꾼다. */
-  onSubmit?: (text: string, anonymous: boolean) => void
+  onSubmit?: (text: string, anonymous: boolean, authorAttribution?: "staff") => void
   className?: string
   /** 바깥에서 포커스를 주려면 넘긴다(상세의 댓글 아이콘). 안 넘기면 내부 ref를 쓴다. */
   inputRef?: RefObject<HTMLTextAreaElement | null>
+  anonymityPolicy?: GroupAnonymityPolicy
+  canPostAnonymously?: boolean
+  /** TODO(backend): optional 선택은 요청값으로 받되 현재 역할을 다시 검사하고 게시 당시 귀속을 저장한다. */
+  staffAttributionMode?: "automatic" | "optional" | "none"
 }) {
   const [draft, setDraft] = useState("")
   // comments.is_anonymous. 글과 마찬가지로 작성 시점에만 정해진다(update grant는 content 하나뿐).
-  const [anonymous, setAnonymous] = useState(false)
+  const [anonymous, setAnonymous] = useState(anonymityPolicy === "required")
+  const [staffAttributed, setStaffAttributed] = useState(staffAttributionMode === "automatic")
   const fallbackRef = useRef<HTMLTextAreaElement>(null)
   const textareaRef = inputRef ?? fallbackRef
-  const canSend = draft.trim().length > 0
+  const canChooseAnonymity = anonymityPolicy === "optional" && canPostAnonymously
+  const isRequiredAndSuspended = anonymityPolicy === "required" && !canPostAnonymously
+  const effectiveAnonymous = anonymityPolicy === "required" || anonymous
+  const effectiveAuthorAttribution =
+    staffAttributionMode === "automatic" || staffAttributed ? "staff" : undefined
+  const canSend = draft.trim().length > 0 && !isRequiredAndSuspended
 
   const send = () => {
     if (!canSend) return
-    onSubmit?.(draft, anonymous)
+    onSubmit?.(draft, effectiveAnonymous, effectiveAuthorAttribution)
     setDraft("")
-    setAnonymous(false)
+    setAnonymous(anonymityPolicy === "required")
+    // 비공식 그룹의 운영진 귀속은 공식 입장을 실수로 이어 쓰지 않도록 매번 일반 익명으로 돌아간다.
+    setStaffAttributed(staffAttributionMode === "automatic")
     if (textareaRef.current) resize(textareaRef.current)
   }
 
   return (
     <div className={cn("flex items-end gap-2", className)}>
-      {/* 아바타를 눌러 익명 ↔ 실명. 보낸 뒤엔 못 바꾼다. */}
-      <GroupAnonymousToggle
-        anonymous={anonymous}
-        onToggle={() => setAnonymous((value) => !value)}
-        className="mb-0.5"
-      />
+      {staffAttributionMode === "optional" ? (
+        <GroupStaffAttributionToggle
+          staff={staffAttributed}
+          onToggle={() => setStaffAttributed((value) => !value)}
+          className="mb-0.5"
+        />
+      ) : staffAttributionMode === "automatic" ? (
+        <GroupStaffAvatar className="mb-0.5" />
+      ) : canChooseAnonymity ? (
+        <GroupAnonymousToggle
+          anonymous={anonymous}
+          onToggle={() => setAnonymous((value) => !value)}
+          className="mb-0.5"
+        />
+      ) : anonymityPolicy === "required" ? (
+        <AnonymousAvatar className="mb-0.5" />
+      ) : (
+        <ProfileAvatar profile={{ name: "나", avatarUrl: null }} className="mb-0.5" />
+      )}
       <textarea
         ref={textareaRef}
         value={draft}
         rows={1}
         autoFocus={autoFocus}
-        placeholder={placeholder}
+        placeholder={isRequiredAndSuspended ? "익명 작성이 제한되어 있습니다" : placeholder}
+        disabled={isRequiredAndSuspended}
         className="bg-muted placeholder:text-muted-foreground min-h-9 min-w-0 flex-1 resize-none overflow-y-hidden rounded-3xl px-4 py-2 text-sm leading-5 outline-none"
         onChange={(event) => {
           setDraft(event.target.value)
@@ -78,13 +112,13 @@ export function GroupCommentComposer({
       />
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         className="text-primary"
         aria-label="댓글 게시"
         disabled={!canSend}
         onClick={send}
       >
-        <SendIcon />
+        <SendIcon className="size-5" />
       </Button>
     </div>
   )

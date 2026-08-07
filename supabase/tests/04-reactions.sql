@@ -14,7 +14,7 @@ declare
   outsider   uuid := 'a4a4a4a4-4444-4222-8222-dddddddddddd';
   p_owner bigint; p_m2 bigint; p_m3 bigint; p_out bigint;
   space1 bigint; post1 bigint; like_id bigint;
-  ids bigint[]; cursor_user bigint;
+  ids bigint[]; cursor_user bigint; anonymous_count bigint;
 begin
   insert into auth.users (id, email) values
     (owner_user, 'react-owner@example.com'), (m2_user, 'react-m2@example.com'),
@@ -66,6 +66,23 @@ begin
   select array_agg(user_id) into ids from public.get_post_reactors(post1, null, cursor_user, 30);
   if ids is distinct from array[p_m2, p_owner] then
     raise exception 'keyset page must continue newest-first after the cursor without overlap, got %', ids;
+  end if;
+
+  -- required 이후에 찍힌 반응은 익명 스냅샷이다. 기존 실명 반응은 소급 변경하지 않는다.
+  insert into public.space_members(space_id,user_id,role) values(space1,p_out,'member');
+  update public.spaces set anonymity_policy='required' where id=space1;
+  insert into public.post_reactions(post_id,user_id,reaction_type_id)
+  values(post1,p_out,like_id);
+  if not (select is_anonymous from public.post_reactions where post_id=post1 and user_id=p_out) then
+    raise exception 'a required-space reaction must be stored anonymously';
+  end if;
+  if exists(select 1 from public.get_post_reactors(post1,null,null,30) where user_id=p_out) then
+    raise exception 'get_post_reactors must not expose an anonymous reactor';
+  end if;
+  select reaction_count into anonymous_count
+  from public.get_post_anonymous_reaction_counts(post1) where reaction_type_id=like_id;
+  if anonymous_count is distinct from 1 then
+    raise exception 'anonymous reactions must be exposed only as type counts';
   end if;
 end $$;
 

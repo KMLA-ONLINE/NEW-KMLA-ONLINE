@@ -104,19 +104,18 @@ export function GroupPostMenu({
             </>
           ) : null}
 
-          {/* 익명 악용 대응. 관리자는 이 글의 작성자가 누구인지 끝내 알 수 없고, 그 사람의 익명 권한만
-            뺏는다. 밴이 아닌 이유: 밴은 목록을 관리자가 봐야 하고, 그러면 새로 뜬 한 명이 곧 작성자라
-            익명이 깨진다. 익명 정지는 스스로 만료돼서 관리자가 볼 이유가 없다.
-            형량은 서버가 정한다(1→2→4→8일…) -- 초범인지 상습범인지 관리자는 모르니 고를 수가 없다. */}
+          {/* 익명 악용 대응. 관리자는 작성자를 모르고 그 사람의 익명 권한만 7일간 제한한다. */}
           {canManage && isAnonymous ? (
             <>
               <DropdownMenuSeparator />
-              {/* TODO(backend): 확인 후 suspend_post_author_anonymity(id). 응답의 suspended_days로
-      "N일간 익명 작성을 제한했습니다" 토스트를 띄운다. */}
-              <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
-                익명 작성 제한
-              </DropdownMenuItem>
-              {isAnonymitySuspended ? <DropdownMenuItem>익명 제한 취소</DropdownMenuItem> : null}
+              {/* TODO(wiring): 확인 후 suspend_post_author_anonymity(id). */}
+              {isAnonymitySuspended ? (
+                <DropdownMenuItem>익명 제한 취소</DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => setConfirmAction("suspend-anonymity")}>
+                  익명 작성 제한
+                </DropdownMenuItem>
+              )}
             </>
           ) : null}
         </DropdownMenuContent>
@@ -135,7 +134,7 @@ export function GroupPostMenu({
             <DialogDescription>
               {confirmAction === "delete"
                 ? "삭제된 게시물은 복구할 수 없습니다."
-                : "작성자는 익명으로 남습니다. 이 그룹에서 일정 기간 익명으로 글을 쓸 수 없게 됩니다."}
+                : "작성자는 익명으로 남습니다. 이 그룹에서 7일 동안 익명으로 글과 댓글을 쓸 수 없게 됩니다."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

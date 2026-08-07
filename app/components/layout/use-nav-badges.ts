@@ -6,7 +6,7 @@ import { seedRooms } from "~/lib/messenger/mock-data"
  *
  * 두 값 모두 백엔드에서도 같은 관계가 성립한다:
  * - 메시지: 대화별 unreadCount의 합 = get_unread_message_count() (대화당 100에서 자른다).
- * - 알림: read_at is null인 알림 수 = get_unread_notification_count() (100에서 자른다).
+ * - 알림: 최근 24시간의 read_at is null인 알림 수 = get_unread_notification_count() (100에서 자른다).
  * 그래서 나중에 값의 의미가 바뀌지 않는다.
  *
  * TODO(backend): _app 로더가 두 RPC를 호출해 내려주면 이 훅은 useRouteLoaderData("routes/_app")

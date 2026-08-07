@@ -1,10 +1,10 @@
 import type { GroupSpace } from "~/lib/group/types"
 
-/** create_space RPC가 받는 것과 같은 모양. 생성 화면과 설정 화면이 함께 쓴다. */
+/** 생성 화면 draft. TODO(backend)의 create_space 계약도 이 모양으로 맞춘다. */
 export type SpaceDraft = Pick<
   GroupSpace,
-  "type" | "name" | "description" | "pubId" | "joinPolicy" | "postPolicy"
-> & { allowAnonymous: boolean }
+  "type" | "name" | "description" | "pubId" | "joinPolicy" | "postPolicy" | "anonymityPolicy"
+>
 
 // spaces_pub_id_check와 같은 규칙: 소문자·숫자·하이픈, 3~50자, 하이픈으로 시작·끝나거나 연달 수 없다.
 // 서버가 어차피 다시 본다 -- 여기서 막는 건 왕복 한 번을 아끼는 것뿐이다.

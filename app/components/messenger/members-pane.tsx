@@ -1,6 +1,6 @@
 import { ArrowLeftIcon, UserPlusIcon } from "lucide-react"
 
-import { Avatar, AvatarFallback } from "~/components/ui/avatar"
+import { ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { cn } from "~/lib/utils"
 import type { Room } from "~/lib/messenger/types"
@@ -49,9 +49,7 @@ export function MembersPane({
               key={participant.id}
               className="hover:bg-muted/60 flex items-center gap-3 rounded-2xl p-2"
             >
-              <Avatar>
-                <AvatarFallback>{participant.initials}</AvatarFallback>
-              </Avatar>
+              <ProfileAvatarLink profile={participant} />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{participant.name}</p>
               </div>

@@ -66,7 +66,7 @@ function Filmstrip({
 
   return (
     <div className="shrink-0 scrollbar-none overflow-x-auto">
-      <div className="mx-auto flex w-max gap-2 px-3 py-3">
+      <div className="mx-auto flex w-max gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         {images.map((image, index) => {
           const isActive = index === activeIndex
 
@@ -331,7 +331,7 @@ export function ImageViewer({
         >
           <DialogPrimitive.Title className="sr-only">{activeImage.name}</DialogPrimitive.Title>
 
-          <header className="flex shrink-0 items-center gap-2 p-2 sm:p-3">
+          <header className="flex shrink-0 items-center gap-2 pt-[max(0.5rem,env(safe-area-inset-top))] pr-[max(0.5rem,env(safe-area-inset-right))] pb-2 pl-[max(0.5rem,env(safe-area-inset-left))] md:p-3">
             <div className="min-w-0 flex-1 px-2">
               <p className="truncate text-sm text-white">{activeImage.name}</p>
               {images.length > 1 ? (
@@ -412,7 +412,10 @@ export function ImageViewer({
           ) : (
             // Reserve the filmstrip's height (size-14 thumb + py-3) even with one
             // image, so the image area doesn't stretch to fill the extra space.
-            <div className="h-10 shrink-0" aria-hidden="true" />
+            <div
+              className="h-[calc(2.5rem+env(safe-area-inset-bottom))] shrink-0"
+              aria-hidden="true"
+            />
           )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

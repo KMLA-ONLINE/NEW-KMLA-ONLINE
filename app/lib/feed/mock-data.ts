@@ -1,4 +1,4 @@
-import { makeMockReactors } from "~/lib/group/mock-reactors"
+import { makeMockReactionDetails } from "~/lib/group/mock-reactors"
 import type { GroupCategory, GroupPost, GroupPostSpace } from "~/lib/group/types"
 
 // 홈 피드의 대역 데이터. 로더가 list_feed_posts로 "내가 가입한 space들의 글"을 최신순으로
@@ -43,7 +43,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "이번 주 저녁 점호 20분 앞당깁니다",
     content:
       "기말고사 기간 동안 저녁 점호를 21시 40분에서 21시 20분으로 앞당깁니다. 자습 연장을 신청한 학생은 사감실에 미리 알려주세요.",
-    author: { name: "이정민 사감" },
+    author: { id: 1001, name: "이정민 사감", avatarUrl: null },
     isPinned: false,
     createdAt: "2026-07-13T09:30:00.000Z",
     images: [],
@@ -59,7 +59,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "TI-84 그래픽 계산기 팝니다 (상태 좋음)",
     content:
       "졸업하는 선배한테 받은 거라 상태 깨끗해요. 커버랑 여분 배터리도 같이 드립니다. 자습 끝나고 기숙사 로비에서 거래 가능합니다.",
-    author: { name: "3-2 이현우" },
+    author: { id: 102, name: "3-2 이현우", avatarUrl: null },
     isPinned: false,
     createdAt: "2026-07-13T08:10:00.000Z",
     images: [{ src: mockImage("#0f766e", "#5eead4"), alt: "ti84-calculator.jpg" }],
@@ -75,7 +75,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "여름 축제 부스 신청 내일 마감",
     content:
       "부스를 운영할 동아리·학급은 내일 저녁 6시까지 신청해 주세요. 신청서는 학생회 링크에 있고, 부스 위치는 신청 순서대로 배정됩니다.",
-    author: { name: "김지원" },
+    author: { id: 101, name: "김지원", avatarUrl: null },
     isPinned: false,
     createdAt: "2026-07-13T05:00:00.000Z",
     images: [],
@@ -108,7 +108,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "신착 도서 30권 입고 — 오늘부터 대출 시작",
     content:
       "이번 달 신청받은 도서들이 들어왔습니다. 목록을 첨부하니 확인하시고, 인기 도서는 예약 걸어두세요. 대출은 1인 3권까지입니다.",
-    author: { name: "박서연" },
+    author: { id: 103, name: "박서연", avatarUrl: null },
     isPinned: false,
     createdAt: "2026-07-12T12:00:00.000Z",
     images: [],
@@ -132,7 +132,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "이번 학기 프로젝트 팀원 구해요",
     content:
       "웹앱 하나 같이 만들 사람 두세 명 찾습니다. 디자인이든 백엔드든 관심만 있으면 환영이에요. 매주 수요일 저녁에 모입니다.",
-    author: { name: "나" },
+    author: { id: 1, name: "나", avatarUrl: null },
     isMine: true,
     isPinned: false,
     createdAt: "2026-07-12T07:30:00.000Z",
@@ -166,7 +166,7 @@ const rawFeedPosts: GroupPost[] = [
     title: "기말 대비 열람실 자리 나눔 팁",
     content:
       "창가 자리는 오전엔 해가 안 들어서 오래 앉아 있기 좋아요. 콘센트는 3열이랑 7열에만 있으니 노트북 쓸 사람은 참고하세요.",
-    author: { name: "최유진" },
+    author: { id: 107, name: "최유진", avatarUrl: null },
     isPinned: false,
     createdAt: "2026-07-11T14:00:00.000Z",
     images: [],
@@ -176,24 +176,8 @@ const rawFeedPosts: GroupPost[] = [
   },
 ]
 
-// 반응자 목록은 reactionCount·topReactions에서 합성한다(group/mock-data.ts와 같은 대역).
+// 반응 상세는 reactionCount·topReactions에서 합성한다(group/mock-data.ts와 같은 대역).
 export const mockFeedPosts: GroupPost[] = rawFeedPosts.map((post) => ({
   ...post,
-  reactors: makeMockReactors(post.reactionCount, post.topReactions),
+  reactionDetails: makeMockReactionDetails(post.reactionCount, post.topReactions),
 }))
-
-// 오른쪽 사이드바의 급식 카드. 지금은 레이아웃용 mock -- 나중에 cron이 급식 API에서 받아 채운다.
-// 표시에 필요한 것만 담는다: 날짜 한 줄, 끼니별 메뉴 목록.
-export type MealMenu = {
-  label: string
-  items: string[]
-}
-
-export const mockMealPlan: { dateLabel: string; meals: MealMenu[] } = {
-  dateLabel: "7월 13일 (월)",
-  meals: [
-    { label: "조식", items: ["흑미밥", "된장찌개", "계란말이", "배추김치", "요구르트"] },
-    { label: "중식", items: ["백미밥", "제육볶음", "미역국", "코울슬로", "깍두기", "오렌지"] },
-    { label: "석식", items: ["김치볶음밥", "유부장국", "치킨텐더", "단무지", "청포도"] },
-  ],
-}

@@ -1,11 +1,10 @@
-import type { GroupPostReactor } from "~/lib/group/types"
+import type { GroupPostReactionDetails } from "~/lib/group/types"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
 
-// 반응자 목록 목데이터를 합성한다. 실제 백엔드는 모달을 열 때 get_post_reactors류 RPC로
-// post_reactions ⋈ profiles ⋈ reaction_types를 페이지 단위로 읽지만(GroupPost.reactors 주석 참고),
-// 목엔 그 로더가 없어 글의 reactionCount·topReactions에 아귀가 맞게 미리 만들어 둔다:
+// 반응 상세 목데이터를 합성한다. 실제 백엔드는 모달을 열 때 실명 반응자는 페이지 단위로 읽고,
+// 익명 반응은 타입별 count로만 내려준다. 목엔 그 로더가 없어 reactionCount·topReactions에 맞게 둔다:
 // 총원 = reactionCount, 눌린 아이콘 = topReactions(많은 순). PLACEHOLDER_REACTION_TYPES가
-// 진짜 reaction_types로 갈리는 날 이 파일만 지우면 된다(컴포넌트는 reactors를 props로만 받는다).
+// 진짜 reaction_types로 갈리는 날 이 파일만 지우면 된다.
 
 // topReactions는 아이콘 문자열이라, 반응자에 심을 reaction_type_id로 되짚는다. icon이 없는
 // 타입(seed 미비)은 요약에도 안 뜨니 지도에서 뺀다.
@@ -92,12 +91,15 @@ function distribute(reactionCount: number, iconCount: number): number[] {
   return perIcon
 }
 
-export function makeMockReactors(
+export function makeMockReactionDetails(
   reactionCount: number,
-  topReactions: string[]
-): GroupPostReactor[] {
+  topReactions: string[],
+  anonymousEvery = 0
+): GroupPostReactionDetails {
   const topIcons = topReactions.filter((icon) => ICON_TO_TYPE_ID.has(icon))
-  if (reactionCount <= 0 || topIcons.length === 0) return []
+  if (reactionCount <= 0 || topIcons.length === 0) {
+    return { identified: [], anonymousCounts: [] }
+  }
 
   // 꼬리 반응(요약 밖 소수 타입): 큰 글일수록 한둘 더 붙여 모달 탭을 다양하게 한다. 몫은 항상
   // 1~2명이라 상위 최소 몫보다 작고(그래서 top-3=topReactions가 유지된다), 총원은 상위에서
@@ -132,11 +134,29 @@ export function makeMockReactors(
   }
 
   // sequence[0]이 가장 최근. 이름은 seq로 뽑아 한 글 안에서 겹치지 않게 한다(풀 > 최대 인원).
-  return sequence.map((reactionTypeId, seq) => ({
-    id: 9000 + seq,
-    name: REACTOR_NAME_POOL[seq % REACTOR_NAME_POOL.length],
-    avatarUrl: null,
-    reactionTypeId,
-    createdAt: new Date(BASE_REACTION_TIME_MS - seq * REACTION_INTERVAL_MS).toISOString(),
-  }))
+  const identified: GroupPostReactionDetails["identified"] = []
+  const anonymousByType = new Map<number, number>()
+
+  sequence.forEach((reactionTypeId, seq) => {
+    const createdAt = new Date(BASE_REACTION_TIME_MS - seq * REACTION_INTERVAL_MS).toISOString()
+    if (anonymousEvery > 0 && seq % anonymousEvery === 0) {
+      anonymousByType.set(reactionTypeId, (anonymousByType.get(reactionTypeId) ?? 0) + 1)
+      return
+    }
+    identified.push({
+      id: 9000 + seq,
+      name: REACTOR_NAME_POOL[seq % REACTOR_NAME_POOL.length],
+      avatarUrl: null,
+      reactionTypeId,
+      createdAt,
+    })
+  })
+
+  return {
+    identified,
+    anonymousCounts: [...anonymousByType].map(([reactionTypeId, count]) => ({
+      reactionTypeId,
+      count,
+    })),
+  }
 }

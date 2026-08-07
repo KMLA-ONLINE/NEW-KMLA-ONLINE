@@ -1,14 +1,19 @@
 import { XIcon } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
+import { useOutletContext } from "react-router"
+
+import type { GroupOutletContext } from "~/routes/group/group"
 
 import { FileDropOverlay } from "~/components/file-drop-overlay"
 import { GroupAnonymousToggle } from "~/components/group/group-anonymous-toggle"
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
 import { GroupAttachmentButtons } from "~/components/group/group-attachment-buttons"
 import { GroupAttachmentPreview } from "~/components/group/group-attachment-preview"
 import { GroupCategorySelect } from "~/components/group/group-category-select"
 import { GroupContentEditor } from "~/components/group/group-content-editor"
 import { GroupDiscardDialog } from "~/components/group/group-discard-dialog"
+import { GroupStaffAvatar } from "~/components/group/group-staff-avatar"
+import { GroupStaffAttributionToggle } from "~/components/group/group-staff-attribution-toggle"
+import { AnonymousAvatar, ProfileAvatar } from "~/components/profile/profile-avatar"
 import { useFileAttachments } from "~/components/group/use-file-attachments"
 import { useCloseConfirmation } from "~/hooks/use-close-confirmation"
 import { useFileDrop } from "~/hooks/use-file-drop"
@@ -28,6 +33,8 @@ import { mockGroup, mockGroupCategories } from "~/lib/group/mock-data"
 export default function GroupNewPostPage() {
   // 열림 상태는 라우트가 정한다: 닫히면(X·배경·Esc·게시) 히스토리를 pop해 그룹으로 돌아간다.
   const close = useModalClose()
+  const { anonymityPolicy, canPostAnonymously, anonymitySuspendedUntil, staffAttributionMode } =
+    useOutletContext<GroupOutletContext>()
 
   // 제목/본문은 uncontrolled이라 타이핑엔 리렌더 없음. 첨부·카테고리만 로컬 상태. 저장은 백엔드 붙일 때.
   // ref는 닫으려 할 때 딱 한 번, 값이 비어있는지만 읽는다 -- 매 입력마다 리렌더를 만들지 않는다.
@@ -38,9 +45,12 @@ export default function GroupNewPostPage() {
   const [categoryId, setCategoryId] = useState<number | null>(null)
   // posts.is_anonymous. 작성 시점에만 정해지고 그 뒤로는 불변이다(update 컬럼 grant에서 빠져 있다).
   // 그룹이 익명을 껐거나 내가 익명 정지 중이면 애초에 못 고른다 -- 로더가 파생해 내려줄 값이다.
-  const canPostAnonymously = mockGroup.canPostAnonymously
-  const suspendedUntil = mockGroup.anonymitySuspendedUntil
-  const [anonymous, setAnonymous] = useState(false)
+  const [anonymous, setAnonymous] = useState(anonymityPolicy === "required")
+  const canChooseAnonymity = anonymityPolicy === "optional" && canPostAnonymously
+  // 운영진 귀속 글도 익명 작성 제한을 우회하지 않는다.
+  const isRequiredAndSuspended = anonymityPolicy === "required" && !canPostAnonymously
+  const [staffAttributed, setStaffAttributed] = useState(staffAttributionMode === "automatic")
+  const isStaffPost = staffAttributionMode === "automatic" || staffAttributed
 
   const checkIsDirty = useCallback(
     () =>
@@ -48,8 +58,16 @@ export default function GroupNewPostPage() {
       Boolean(contentRef.current?.value.trim()) ||
       attachments.length > 0 ||
       categoryId !== null ||
+      (anonymityPolicy === "optional" && anonymous) ||
+      (staffAttributionMode === "optional" && staffAttributed),
+    [
+      attachments.length,
+      categoryId,
+      anonymityPolicy,
       anonymous,
-    [attachments.length, categoryId, anonymous]
+      staffAttributionMode,
+      staffAttributed,
+    ]
   )
 
   // X·배경·Esc가 결국 부르는 close()(navigate)를 useBlocker가 가로챈다: 뒤로가기·다른 곳으로의
@@ -57,6 +75,11 @@ export default function GroupNewPostPage() {
   // (성공적으로 나가는 길이라 막으면 안 된다).
   const { isConfirmingDiscard, allowNextClose, confirmDiscard, cancelDiscard } =
     useCloseConfirmation(checkIsDirty)
+
+  const publish = () => {
+    allowNextClose()
+    close()
+  }
 
   const previewImages = attachments.flatMap((item) =>
     item.url ? [{ key: String(item.id), src: item.url, onRemove: () => remove(item.id) }] : []
@@ -93,13 +116,7 @@ export default function GroupNewPostPage() {
             {/* TODO(backend): create_post RPC 연동 시 성공 응답을 받은 뒤에만 close()를 부른다.
                 실패하면 모달을 닫지 않고 에러 토스트만 보여준 채 제목/본문/첨부/카테고리/익명
                 여부(draft)를 그대로 유지해, 사용자가 다시 시도하거나 고쳐 쓸 수 있게 한다. */}
-            <Button
-              size="sm"
-              onClick={() => {
-                allowNextClose()
-                close()
-              }}
-            >
+            <Button type="button" size="sm" disabled={isRequiredAndSuspended} onClick={publish}>
               게시
             </Button>
           </DialogHeader>
@@ -110,23 +127,38 @@ export default function GroupNewPostPage() {
                 그룹이 익명을 껐거나 내가 익명 정지 중이면 토글 자체가 없다: 서버 트리거가 어차피
                 거부하므로, 누를 수 있게 두면 눌러놓고 나서야 실패하는 UI가 된다. */}
             <div className="flex items-center gap-3">
-              {canPostAnonymously ? (
+              {/* DB 트리거가 required 공식 그룹의 운영진 귀속을 자동 적용하고 비공식 그룹의 선택 권한을 검증한다. */}
+              {staffAttributionMode === "optional" ? (
+                <GroupStaffAttributionToggle
+                  staff={staffAttributed}
+                  onToggle={() => setStaffAttributed((value) => !value)}
+                  size="lg"
+                />
+              ) : isStaffPost ? (
+                <GroupStaffAvatar size="lg" />
+              ) : canChooseAnonymity ? (
                 <GroupAnonymousToggle
                   anonymous={anonymous}
                   onToggle={() => setAnonymous((value) => !value)}
                   size="lg"
                 />
+              ) : anonymityPolicy === "required" ? (
+                <AnonymousAvatar size="lg" />
               ) : (
-                <GroupAuthorAvatar name="나" anonymous={false} size="lg" />
+                <ProfileAvatar profile={{ name: "나", avatarUrl: null }} size="lg" />
               )}
               <div className="text-sm leading-tight">
-                <p className="font-semibold">{anonymous ? "익명" : "나"}</p>
+                <p className="font-semibold">
+                  {isStaffPost ? "운영진" : anonymous ? "익명" : "나"}
+                </p>
                 <p className="text-muted-foreground text-xs">
-                  {suspendedUntil
-                    ? `익명 작성 제한 중 · ${new Date(suspendedUntil).toLocaleDateString("ko-KR")}까지`
-                    : mockGroup.allowAnonymous
-                      ? mockGroup.name
-                      : `${mockGroup.name} · 익명 작성이 꺼져 있습니다`}
+                  {anonymitySuspendedUntil
+                    ? `익명 작성 제한 중 · ${new Date(anonymitySuspendedUntil).toLocaleDateString("ko-KR")}까지`
+                    : anonymityPolicy === "required"
+                      ? `${mockGroup.name} · 모든 활동이 익명입니다`
+                      : anonymityPolicy === "optional"
+                        ? mockGroup.name
+                        : `${mockGroup.name} · 실명으로 작성합니다`}
                 </p>
               </div>
             </div>
@@ -139,6 +171,7 @@ export default function GroupNewPostPage() {
               placeholder="제목"
               className="placeholder:text-muted-foreground my-2 border-0 bg-transparent p-0 text-2xl font-semibold outline-none md:my-3"
             />
+            {/* required 공간에는 멘션 UI가 없고 DB 트리거도 직접 INSERT를 거부한다. */}
             <GroupContentEditor contentRef={contentRef} />
 
             <GroupAttachmentPreview images={previewImages} files={previewFiles} />

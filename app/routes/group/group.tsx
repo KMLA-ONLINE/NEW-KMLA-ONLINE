@@ -1,6 +1,13 @@
-import { Globe2Icon, LandmarkIcon, LockIcon, SearchIcon, UsersIcon } from "lucide-react"
+import {
+  ArrowLeftIcon,
+  Globe2Icon,
+  LandmarkIcon,
+  LockIcon,
+  SearchIcon,
+  UsersIcon,
+} from "lucide-react"
 import { useState } from "react"
-import { Link, Outlet, useSearchParams } from "react-router"
+import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import { GroupCategoryChips } from "~/components/group/group-category-chips"
@@ -19,7 +26,7 @@ import {
   mockGroupPosts,
   mockJoinRequests,
 } from "~/lib/group/mock-data"
-import type { GroupMemberRole } from "~/lib/group/types"
+import type { GroupAnonymityPolicy, GroupMemberRole } from "~/lib/group/types"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { PLACEHOLDER_REACTION_TYPES } from "~/lib/reactions"
@@ -29,14 +36,26 @@ const FEED_PAGE_SIZE = 6
 
 // 이 라우트는 모바일에서 상·좌·우 패딩을 없애 헤더·카드가 화면 가장자리까지 차게 한다(음수 마진 대신).
 // 특정 그룹으로 드릴인하면 하단 탭바를 숨겨 몰입형 공간으로 만든다(메신저 방 진입과 동일 규칙).
-export const handle = { mobileContentEdge: "bleed" as const, showMobileTabBar: false }
+export const handle = {
+  mobileContentEdge: "bleed" as const,
+  showMobileHeader: false,
+  mobileSafeAreaTop: false,
+  showMobileTabBar: false,
+}
 
 /**
  * group 라우트가 모달 자식(상세·수정)에 내려주는 컨텍스트. 자식은 useOutletContext로 읽는다.
  * 권한이 두 층이라 둘 다 내려준다 -- canManage(owner/admin: 삭제·익명 제한)와
  * canCurate(owner/admin/manager: 고정). 하나로 합치면 매니저가 남의 글 삭제 버튼을 보게 된다.
  */
-export type GroupOutletContext = { canManage: boolean; canCurate: boolean }
+export type GroupOutletContext = {
+  canManage: boolean
+  canCurate: boolean
+  anonymityPolicy: GroupAnonymityPolicy
+  canPostAnonymously: boolean
+  anonymitySuspendedUntil: string | null
+  staffAttributionMode: "automatic" | "optional" | "none"
+}
 
 type GroupTab = "posts" | "members" | "settings"
 
@@ -48,6 +67,12 @@ const TABS: { id: GroupTab; label: string; curateOnly?: boolean }[] = [
   { id: "members", label: "멤버" },
   { id: "settings", label: "그룹 설정", curateOnly: true },
 ]
+
+const GROUP_VIEW_SEARCH_PARAM = "view"
+
+type GroupViewLocationState = { groupViewPushed: true }
+
+const GROUP_VIEW_LOCATION_STATE: GroupViewLocationState = { groupViewPushed: true }
 
 // 고정 글은 정렬과 무관하게 항상 맨 위(FB식), 나머지는 최신순(created_at 내림차순). ISO
 // 문자열이라 사전식 비교가 곧 시간순이다. 정렬 옵션은 최신순 하나뿐이라 드롭다운은 없다.
@@ -61,10 +86,11 @@ function sortForFeed(posts: typeof mockGroupPosts) {
 // 라우트는 /groups/:pubId. 슬러그로 space·글·멤버를 읽는 로더는 백엔드 붙일 때 추가한다.
 export default function GroupPage() {
   const [viewMode, setViewMode] = usePostViewMode()
-  const [tab, setTab] = useState<GroupTab>("posts")
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [feedVisible, setFeedVisible] = useState(FEED_PAGE_SIZE)
   const [searchOpen, setSearchOpen] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
   const selectCategory = (id: number | null) => {
@@ -78,9 +104,20 @@ export default function GroupPage() {
   // spaces.post_policy. 'managers'면 owner/admin/manager만 메인 글을 쓴다(공지형 그룹).
   // 댓글은 이 정책과 무관하게 열려 있다 -- comments_insert는 can_access_post만 본다.
   const [postPolicy, setPostPolicy] = useState(mockGroup.postPolicy)
-  // spaces.allow_anonymous_posts. 끄면 새 익명 글/댓글이 안 만들어진다(서버 트리거가 강제).
-  // 기존 익명 글은 그대로 익명이다 -- is_anonymous는 불변이라 소급해서 까이지 않는다.
-  const [allowAnonymous, setAllowAnonymous] = useState(mockGroup.allowAnonymous)
+  // 생성 화면이 mock 상태로 넘긴 미리보기 값. 실제 연동 후에는 loader가 spaces.anonymity_policy를
+  // 내려주며 query parameter는 사라진다.
+  const anonymityPreview = searchParams.get("anonymity")
+  const initialAnonymityPolicy: GroupAnonymityPolicy =
+    anonymityPreview === "disabled" ||
+    anonymityPreview === "optional" ||
+    anonymityPreview === "required"
+      ? anonymityPreview
+      : mockGroup.anonymityPolicy
+  const [anonymityPolicy, setAnonymityPolicy] =
+    useState<GroupAnonymityPolicy>(initialAnonymityPolicy)
+  const typePreview = searchParams.get("type")
+  const groupType =
+    typePreview === "group" || typePreview === "community" ? typePreview : mockGroup.type
   // spaces.image_url. 업로드는 2단계다(Storage 직접 업로드 -> finalize_space_image). 지금은
   // 로컬 object URL이라 새로고침하면 사라진다.
   const imageUrl = mockGroup.imageUrl
@@ -99,20 +136,67 @@ export default function GroupPage() {
   const canManage = viewerRole === "owner" || viewerRole === "admin"
   // 게시판을 굴리는 일(글 고정, 카테고리)은 매니저까지.
   const canCurate = canManage || viewerRole === "manager"
-  // private.can_post_in_space와 같은 규칙. 여기서 막는 건 어디까지나 UI 정리이고, 실제 강제는
-  // 서버가 한다(posts_insert 정책 + create_post_with_attachments 양쪽).
-  const canPost = postPolicy === "all" ? viewerRole !== null : canCurate
+  const staffAttributionMode: GroupOutletContext["staffAttributionMode"] =
+    anonymityPolicy === "required" && canCurate
+      ? groupType === "group"
+        ? "automatic"
+        : "optional"
+      : "none"
+  // required 공간의 전체 명부는 owner/admin만 본다. RLS도 manager/member에게 자기 행만 허용한다.
+  const canViewMemberDirectory = anonymityPolicy !== "required" || canManage
+  const requestedTab = searchParams.get(GROUP_VIEW_SEARCH_PARAM)
+  const tab: GroupTab =
+    (requestedTab === "members" && canViewMemberDirectory) ||
+    (requestedTab === "settings" && canCurate)
+      ? requestedTab
+      : "posts"
+  const isPushedGroupViewEntry = Boolean(
+    (location.state as GroupViewLocationState | null)?.groupViewPushed
+  )
+  const setTab = (next: GroupTab) => {
+    if (next === tab) return
+
+    if (next === "posts" && isPushedGroupViewEntry) {
+      navigate(-1)
+      return
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams)
+    if (next === "posts") {
+      nextSearchParams.delete(GROUP_VIEW_SEARCH_PARAM)
+    } else {
+      nextSearchParams.set(GROUP_VIEW_SEARCH_PARAM, next)
+    }
+
+    navigate(
+      { search: `?${nextSearchParams}` },
+      {
+        replace: next === "posts",
+        state: next === "posts" ? undefined : GROUP_VIEW_LOCATION_STATE,
+        preventScrollReset: true,
+      }
+    )
+  }
+  // private.can_post_in_space와 같은 규칙. 여기서 막는 건 UI 정리이고, 실제 강제는 게시글 생성의
+  // 유일한 authenticated 진입점인 create_post_with_attachments가 한다.
+  const roleCanPost = postPolicy === "all" ? viewerRole !== null : canCurate
+  const canPostAnonymously =
+    anonymityPolicy !== "disabled" && mockGroup.anonymitySuspendedUntil === null
+  // 항상 익명인 그룹에서 익명 작성이 제한되면 실명으로 우회할 수 없으므로 글·댓글 작성도 막힌다.
+  // 공식 그룹 운영진도 예외가 아니다 -- 역할 권한으로 `운영진` 귀속 글을 써서 제재를 우회할 수 없다.
+  const canPost = roleCanPost && (anonymityPolicy !== "required" || canPostAnonymously)
 
   const liveGroup = {
     ...mockGroup,
+    type: groupType,
     imageUrl,
     joinPolicy,
     postPolicy,
     canPost,
     memberCount,
-    allowAnonymous,
+    anonymityPolicy,
     viewerRole,
-    canPostAnonymously: allowAnonymous && mockGroup.anonymitySuspendedUntil === null,
+    canPostAnonymously,
   }
 
   const isPrivate = joinPolicy === "invite_only"
@@ -125,12 +209,14 @@ export default function GroupPage() {
   const feedHasMore = feedVisible < feedPosts.length
   const feedSentinelRef = useInfiniteScroll(
     () => setFeedVisible((count) => count + FEED_PAGE_SIZE),
-    feedHasMore
+    { enabled: feedHasMore }
   )
 
   const showJoinRequests = canManage && joinPolicy === "request"
   // 그룹 설정 탭은 매니저까지 본다(카테고리 관리가 거기 있다). 운영 섹션은 탭 안에서 다시 가린다.
-  const visibleTabs = TABS.filter((item) => !item.curateOnly || canCurate)
+  const visibleTabs = TABS.filter(
+    (item) => (item.id !== "members" || canViewMemberDirectory) && (!item.curateOnly || canCurate)
+  )
 
   // 승인 → 멤버 승격(+member_count), 거절 → 목록에서 제거. 저장은 백엔드 붙일 때(approve_
   // join_request RPC / 요청 delete). id/이름/아바타는 그대로 옮기고 role=member.
@@ -172,16 +258,65 @@ export default function GroupPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl pt-[calc(2.75rem+env(safe-area-inset-top))] sm:pt-0">
+      <div className="bg-background/95 fixed inset-x-0 top-0 z-10 flex h-[calc(2.75rem+env(safe-area-inset-top))] items-center justify-between border-b pt-[env(safe-area-inset-top)] pr-[max(0.375rem,env(safe-area-inset-right))] pl-[max(0.375rem,env(safe-area-inset-left))] backdrop-blur sm:hidden">
+        <div className="flex min-w-0 items-center">
+          {tab === "posts" ? (
+            <Link
+              to="/groups"
+              className="text-muted-foreground hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-full transition-colors"
+              aria-label="그룹 목록으로 돌아가기"
+            >
+              <ArrowLeftIcon className="size-5" aria-hidden="true" />
+            </Link>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground shrink-0 gap-1 px-2"
+              onClick={() => setTab("posts")}
+            >
+              <ArrowLeftIcon className="size-4" aria-hidden="true" />
+              이전
+            </Button>
+          )}
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="bg-muted border-border flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border text-sm font-semibold">
+              {liveGroup.imageUrl ? (
+                <img src={liveGroup.imageUrl} alt="" className="size-full object-cover" />
+              ) : (
+                liveGroup.name.charAt(0)
+              )}
+            </div>
+            <span className="truncate text-base font-semibold">{liveGroup.name}</span>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground shrink-0"
+          onClick={() => setSearchOpen(true)}
+          aria-label="게시물 검색"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
+      </div>
+
       <GroupHeader
         group={liveGroup}
         className="border-0 sm:rounded-xl sm:border"
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onViewMembers={() => setTab("members")}
+        canViewMembers={canViewMemberDirectory}
+        canCurate={canCurate}
+        onViewSettings={() => setTab("settings")}
       />
 
-      <nav className="mx-2 mt-1 flex items-center gap-1 border-b md:mb-3" aria-label="그룹 메뉴">
+      <nav
+        className="mx-2 mt-1 hidden items-center gap-1 border-b sm:flex md:mb-3"
+        aria-label="그룹 메뉴"
+      >
         {visibleTabs.map((item) => (
           <button
             key={item.id}
@@ -205,7 +340,7 @@ export default function GroupPage() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground mb-1 ml-auto"
+          className="text-muted-foreground mb-1 ml-auto hidden sm:inline-flex"
           onClick={() => setSearchOpen(true)}
           aria-label="게시물 검색"
         >
@@ -238,7 +373,9 @@ export default function GroupPage() {
                 </Link>
               ) : (
                 <p className="text-muted-foreground bg-card border-foreground/20 sm:border-border rounded-none border-b-2 px-4 py-3 text-sm sm:rounded-xl sm:border sm:px-4">
-                  이 그룹은 매니저만 게시물을 올릴 수 있습니다. 댓글은 자유롭게 달 수 있어요.
+                  {roleCanPost
+                    ? "익명 작성이 제한되어 있어 현재 이 그룹에 게시물을 올릴 수 없습니다."
+                    : "이 그룹은 매니저만 게시물을 올릴 수 있습니다. 댓글은 자유롭게 달 수 있어요."}
                 </p>
               )}
 
@@ -308,8 +445,8 @@ export default function GroupPage() {
               onJoinPolicyChange={changeJoinPolicy}
               postPolicy={postPolicy}
               onPostPolicyChange={setPostPolicy}
-              allowAnonymous={allowAnonymous}
-              onAllowAnonymousChange={setAllowAnonymous}
+              anonymityPolicy={anonymityPolicy}
+              onAnonymityPolicyChange={setAnonymityPolicy}
             />
           )}
         </div>
@@ -336,7 +473,18 @@ export default function GroupPage() {
 
       {/* 모달 라우트(상세·수정)는 URL에 ?as=admin이 안 따라가므로 뷰어 권한을 context로 내려준다.
           백엔드 붙으면 부모 로더의 viewerRole이 그 자리를 대신한다. */}
-      <Outlet context={{ canManage, canCurate } satisfies GroupOutletContext} />
+      <Outlet
+        context={
+          {
+            canManage,
+            canCurate,
+            anonymityPolicy,
+            canPostAnonymously,
+            anonymitySuspendedUntil: mockGroup.anonymitySuspendedUntil,
+            staffAttributionMode,
+          } satisfies GroupOutletContext
+        }
+      />
 
       <GroupSearchDialog open={searchOpen} onOpenChange={setSearchOpen} posts={mockGroupPosts} />
     </div>

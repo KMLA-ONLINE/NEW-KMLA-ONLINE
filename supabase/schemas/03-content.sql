@@ -1,3 +1,5 @@
+create type public.author_attribution as enum ('staff');
+
 create table public.posts (
   id bigserial primary key,
   pub_id uuid not null default gen_random_uuid(),
@@ -11,6 +13,8 @@ create table public.posts (
   title_normalized text generated always as (private.normalize_search(title)) stored,
   content_normalized text generated always as (private.normalize_search(content)) stored,
   is_anonymous boolean not null default false,
+  -- required 공간의 운영진 귀속 스냅샷. null이면 일반 익명, staff면 개인 신원 대신 운영진으로 표시.
+  author_attribution public.author_attribution null,
   -- 이 글이 속한 그룹 게시판/말머리(선택). 카테고리 삭제 시 글은 남고 미분류로 떨어진다.
   -- 같은 space의 카테고리여야 한다 -- FK로 못 잡아 trg_validate_post_category가 검증.
   category_id bigint null references public.space_categories (id) on delete set null,
@@ -56,6 +60,7 @@ create table public.comments (
   -- (insert grant에 deleted_at이 없어 클라이언트가 빈 댓글을 만들 수는 없다).
   content text null,
   is_anonymous boolean not null default false,
+  author_attribution public.author_attribution null,
   created_at timestamptz not null default now(),
   updated_at timestamptz null,
   deleted_at timestamptz null,
@@ -68,8 +73,8 @@ create table public.comments (
 -- 없다(게다가 코드블록·이메일 오탐이 따라붙는다). 이 테이블이 없으면 space_members의 기본
 -- notification_setting인 'mentions'가 "아무 알림도 안 받음"과 같은 뜻이 된다.
 --
--- 익명 글/댓글도 멘션할 수 있다: 이 행은 "누가 언급됐나"만 담고 "누가 언급했나"는 담지 않는다.
--- 작성자는 여전히 posts/comments.author_id에만 있고 거기 select grant는 회수돼 있다.
+-- optional 공간의 익명 글/댓글도 멘션할 수 있지만 required 공간은 트리거가 멘션을 거부한다.
+-- 이 행은 대상만 담고 작성자 신원은 posts/comments.author_id 밖으로 노출하지 않는다.
 create table public.post_mentions (
   post_id bigint not null references public.posts (id) on delete cascade,
   user_id bigint not null references public.profiles (id) on delete cascade,
@@ -101,7 +106,7 @@ where deleted_at is not null;
 -- purge_deleted_content가 재귀/잎벗기기마다 돈다 -- 없으면 매 레벨이 comments 전체 스캔이다.
 create index idx_comments_parent on public.comments (parent_id)
 where parent_id is not null;
--- 멘션은 (owner, user)가 PK라 "이 글의 멘션"은 이미 빠르다. 역방향("나를 언급한 것들")만 인덱스가 없다.
+-- 멘션 PK의 선두가 post_id/comment_id라 소유자 기준 조회는 이미 빠르다. 역방향만 따로 인덱싱한다.
 create index idx_post_mentions_user on public.post_mentions (user_id);
 create index idx_comment_mentions_user on public.comment_mentions (user_id);
 create index idx_posts_title_search_gin on public.posts
@@ -117,7 +122,7 @@ create index idx_posts_content_search_gin on public.posts
 -- triggers -- which would take a row lock on the post for every comment, and
 -- serialise the two hundred people answering one announcement. The read contract
 -- is identical either way, so the cache can arrive the day a measurement asks for
--- it. spaces.member_count is cached because join/leave do go through an RPC.
+-- it. spaces.member_count is cached because membership changes go through RPCs.
 alter table public.posts
   add constraint posts_pub_id_key unique (pub_id),
   add constraint posts_title_check check (char_length(btrim(title)) between 1 and 200),
@@ -138,7 +143,21 @@ alter table public.post_attachments
   add constraint post_attachments_file_name_check check (char_length(btrim(file_name)) between 1 and 255),
   add constraint post_attachments_content_type_check check (char_length(btrim(content_type)) between 1 and 255),
   add constraint post_attachments_size_check check (size_bytes is null or size_bytes >= 0),
-  add constraint post_attachments_sort_order_check check (sort_order >= 0);
+  add constraint post_attachments_sort_order_check check (sort_order >= 0),
+  -- 이미지 카드는 두 값으로 종횡비를 미리 잡아 로딩 중 레이아웃이 튀지 않게 한다. 그래서
+  -- **함께 있거나 함께 없어야** 한다 -- 한쪽만 오면 비율을 못 구하고, 0·음수면 그 나눗셈이
+  -- 조용히 망가진다. 상한은 사용자 업로드에 존재하지 않는 크기다(한 변 65535px = 4기가픽셀).
+  -- validate_post_attachments가 이미 같은 규칙을 보지만 테이블에서도 막는다 -- service_role
+  -- 직접 삽입은 그 RPC를 지나가지 않는다(post_attachments 개수 상한과 같은 이유).
+  --
+  -- `between`을 쓰지 않고 비교를 늘어놓는 건 취향이 아니라 db diff 때문이다. `a between x and y`는
+  -- 중첩 AND로 파싱되는데, Postgres가 그 제약을 다시 텍스트로 뱉으면 AND가 평탄해진다. 그 텍스트로
+  -- 만든 마이그레이션과 이 파일이 서로 다른 파스 트리를 만들어, 의미가 같은데도 db diff가 매번
+  -- drop/재생성을 뱉는다. 평탄한 AND는 왕복해도 그대로다.
+  add constraint post_attachments_dimension_check check (
+    (width is null) = (height is null)
+    and (width is null or (width >= 1 and width <= 65535 and height >= 1 and height <= 65535))
+  );
 
 alter table public.comments
   add constraint comments_parent_check check (parent_id is null or parent_id <> id),
@@ -153,8 +172,8 @@ create function private.can_access_comment(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists(select 1 from public.comments c where c.id=p_comment_id and c.deleted_at is null and private.can_access_post(c.post_id))
 $$;
--- Comments nest to arbitrary depth, so a soft-deleted comment must stay visible (as a tombstone)
--- while any descendant at any depth is still active, otherwise the reply chain to it would orphan.
+-- Comments are capped at 30 levels on insert. A soft-deleted comment remains as a tombstone while
+-- any descendant is active, otherwise the reply chain would orphan.
 create function private.has_active_descendant(p_comment_id bigint)
 returns boolean language sql stable security definer set search_path = '' as $$
   with recursive descendants(id,deleted_at) as (
@@ -186,6 +205,23 @@ declare
   owner_id bigint := (to_jsonb(new) ->> owner_column)::bigint;
   existing int4;
 begin
+  if (
+    case tg_table_name
+      when 'post_mentions' then exists(
+        select 1 from public.posts p join public.spaces s on s.id=p.space_id
+        where p.id=owner_id and s.anonymity_policy='required'
+      )
+      else exists(
+        select 1 from public.comments c
+        join public.posts p on p.id=c.post_id
+        join public.spaces s on s.id=p.space_id
+        where c.id=owner_id and s.anonymity_policy='required'
+      )
+    end
+  ) then
+    raise exception 'mentions are not available in required-anonymity spaces';
+  end if;
+
   execute format('select count(*) from public.%I where %I = $1', tg_table_name, owner_column)
   into existing using owner_id;
   if existing >= private.max_mentions() then
@@ -203,25 +239,6 @@ for each row execute function private.enforce_mention_limit('post_id');
 create trigger trg_enforce_comment_mention_limit
 before insert on public.comment_mentions
 for each row execute function private.enforce_mention_limit('comment_id');
-
--- set_post_attachments가 이미 개수를 검사하지만, 테이블에서도 다시 막는다(service_role 직접 삽입 등).
--- 메시지와 달리 글은 이미지와 파일을 섞을 수 있어서(카드가 이미지 그리드와 파일 목록을 함께 렌더한다)
--- "여럿이면 전부 이미지" 규칙은 없고 개수 상한만 있다.
-create function private.enforce_post_attachment_shape()
-returns trigger language plpgsql security definer set search_path = '' as $$
-begin
-  if exists (
-    select 1
-    from (select distinct post_id from new_rows) touched
-    where (select count(*) from public.post_attachments a where a.post_id = touched.post_id)
-          > private.max_post_attachments()
-  ) then
-    raise exception 'a post carries at most % attachments', private.max_post_attachments();
-  end if;
-  return null;
-end;
-$$;
-revoke execute on function private.enforce_post_attachment_shape() from public, anon, authenticated, service_role;
 
 create function private.validate_comment_parent()
 returns trigger
@@ -348,11 +365,6 @@ for each row execute function private.mark_comment_edited();
 
 revoke execute on function private.mark_post_edited(), private.mark_comment_edited() from public, anon, authenticated, service_role;
 
-create trigger trg_enforce_post_attachment_shape
-after insert on public.post_attachments
-referencing new table as new_rows
-for each statement execute function private.enforce_post_attachment_shape();
-
 alter table public.posts enable row level security;
 alter table public.post_attachment_mime_types enable row level security;
 alter table public.post_attachments enable row level security;
@@ -361,9 +373,6 @@ alter table public.post_mentions enable row level security;
 alter table public.comment_mentions enable row level security;
 create policy post_attachment_mime_types_select on public.post_attachment_mime_types for select to authenticated using (private.is_accepted_user());
 create policy posts_select on public.posts for select to authenticated using (deleted_at is null and private.can_participate_space(space_id));
--- can_participate_space가 아니라 can_post_in_space다: post_policy='managers'인 공지형 그룹에서는
--- 멤버여도 메인 글을 못 쓴다(댓글은 comments_insert가 can_access_post로 여전히 열어 둔다).
-create policy posts_insert on public.posts for insert to authenticated with check (author_id=private.current_profile_id() and private.can_post_in_space(space_id));
 create policy posts_update on public.posts for update to authenticated using (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id)) with check (deleted_at is null and author_id=private.current_profile_id() and private.can_participate_space(space_id));
 create policy post_attachments_select on public.post_attachments for select to authenticated using (private.can_access_post(post_id));
 
@@ -419,23 +428,22 @@ create policy comment_mentions_delete on public.comment_mentions for delete to a
 -- 그래서 select를 컬럼 단위로 좁혀 author_id/deleted_by(모더레이터 신원)/pinned_by를 회수하고,
 -- 작성자 정보는 아래 읽기 RPC들이 익명이면 null로 지워서 내려준다. RLS 정책과 트리거는 테이블
 -- 소유자 권한으로 돌므로 이 회수에 영향받지 않는다.
-grant select (id,pub_id,space_id,title,content,is_anonymous,category_id,pinned_at,created_at,updated_at) on public.posts to authenticated;
-grant select (id,post_id,parent_id,content,is_anonymous,created_at,updated_at,deleted_at) on public.comments to authenticated;
+grant select (id,pub_id,space_id,title,content,is_anonymous,author_attribution,category_id,pinned_at,created_at,updated_at) on public.posts to authenticated;
+grant select (id,post_id,parent_id,content,is_anonymous,author_attribution,created_at,updated_at,deleted_at) on public.comments to authenticated;
 grant select on public.post_attachments, public.post_attachment_mime_types to authenticated;
-grant insert (space_id,author_id,title,content,is_anonymous,category_id) on public.posts to authenticated;
 -- is_anonymous는 update에서 뺀다. 작성 시점에만 정해지고 그 뒤로는 불변이다 -- 익명으로 쓴 글을
 -- 나중에 실명으로 까거나(작성자가 후회해도 이미 익명을 믿고 반응한 사람들이 있다) 실명 글을
 -- 익명으로 숨기는(이미 본 사람은 아는데 새로 보는 사람만 못 보는, 반쪽짜리 익명) 전환을 둘 다 막는다.
 -- 댓글은 update grant가 content 하나뿐이라 이미 불변이다.
 grant update (title,content,category_id) on public.posts to authenticated;
-grant insert (post_id,author_id,parent_id,content,is_anonymous) on public.comments to authenticated;
+grant insert (post_id,author_id,parent_id,content,is_anonymous,author_attribution) on public.comments to authenticated;
 grant update (content) on public.comments to authenticated;
 -- 멘션은 update가 없다(붙이거나 떼거나 둘 중 하나). insert는 컬럼 단위라 created_at을 클라이언트가
 -- 정할 수 없다 -- 정할 수 있으면 멘션 시각을 소급해 꾸밀 수 있다.
 grant select, delete on public.post_mentions, public.comment_mentions to authenticated;
 grant insert (post_id,user_id) on public.post_mentions to authenticated;
 grant insert (comment_id,user_id) on public.comment_mentions to authenticated;
-grant usage, select on sequence public.posts_id_seq, public.comments_id_seq to authenticated;
+grant usage, select on sequence public.comments_id_seq to authenticated;
 grant select, insert, update, delete on public.posts, public.post_attachment_mime_types, public.post_attachments, public.comments, public.post_mentions, public.comment_mentions to service_role;
 grant usage, select on sequence public.posts_id_seq, public.post_attachments_id_seq, public.comments_id_seq to service_role;
 
@@ -478,6 +486,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  author_attribution public.author_attribution,
   is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
@@ -504,8 +513,19 @@ begin
 
   -- 커서는 id 하나지만 정렬은 (created_at, id)다. 그 글의 created_at을 찾아 행 비교로 쓰면
   -- idx_posts_active_space_created_at을 그대로 탄다.
+  --
+  -- **못 찾으면 여기서 끊어야 한다.** null을 그대로 흘리면 아래 행 비교가
+  -- `(created_at, id) < (null, id)`가 되는데, 행 비교는 첫 원소가 null이면 false가 아니라 **null**
+  -- 이라 모든 행이 걸러진다 -- 예외 없이 빈 페이지가 나가고 클라이언트는 그걸 "끝에 도달"과
+  -- 구분할 수 없다. 바로 위 p_limit 가드와 정확히 같은 3값 논리 함정이다.
+  --
+  -- space 소속까지 보는 이유: 다른 space의 글을 커서로 주면 남의 타임스탬프를 기준으로 이 space를
+  -- 페이징하게 된다. 반대로 deleted_at은 **일부러 안 본다** -- 커서 글이 페이지 사이에 소프트
+  -- 삭제돼도 그 지점부터 계속 넘길 수 있어야 한다.
   if p_before_id is not null then
-    select p.created_at into before_created_at from public.posts p where p.id=p_before_id;
+    select p.created_at into before_created_at
+    from public.posts p where p.id=p_before_id and p.space_id=p_space_id;
+    if not found then raise exception 'cursor post not found in this space'; end if;
   end if;
 
   return query
@@ -533,6 +553,7 @@ begin
     page.title,
     page.content,
     page.is_anonymous,
+    page.author_attribution,
     -- 관리자에게만 뜨는 "익명 제한 취소" 메뉴 항목의 표시 여부. can_manage_space로 관리자가 아닌
     -- 호출자에게는 항상 false다 -- 그렇지 않으면 멤버 전원이 익명 글 목록을 훑어 "지금 정지 중인
     -- 사람이 쓴 글"을 공짜로 골라낼 수 있다. 이 함수가 이미 감수하기로 한 상습범 연결 유출(위
@@ -542,7 +563,7 @@ begin
       select 1 from public.space_anonymity_suspensions x
       where x.space_id=page.space_id and x.user_id=page.author_id and x.suspended_until > now()
     ),
-    private.post_author(page.author_id, page.is_anonymous),
+    private.post_author(page.author_id, page.is_anonymous or page.author_attribution='staff'),
     page.author_id=caller_id,
     case when cat.id is null then null else
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
@@ -598,6 +619,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  author_attribution public.author_attribution,
   is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
@@ -624,27 +646,57 @@ begin
 
   -- 커서는 id 하나지만 전체 피드는 (created_at, id) 내림차순이다. 시간도 함께 찾아 행 비교를
   -- 쓰면 각 space의 idx_posts_active_space_created_at을 그대로 이용할 수 있다.
+  --
+  -- 못 찾으면 끊는다 -- 이유는 list_space_posts 쪽 주석에 있다(null을 흘리면 행 비교가 null이 되어
+  -- 예외 없이 빈 페이지가 나간다). 여기는 여러 space를 가로지르는 흐름이라 소속으로 좁힐 컬럼이
+  -- 없고, 접근 경계는 아래 space_members 조인이 이미 잡는다.
   if p_before_id is not null then
     select p.created_at into before_created_at from public.posts p where p.id=p_before_id;
+    if not found then raise exception 'cursor post not found'; end if;
   end if;
 
   return query
+  with member_spaces as materialized (
+    select s.id, s.name, s.type, s.pub_id
+    from public.space_members sm
+    join public.spaces s on s.id=sm.space_id and s.deleted_at is null
+    where sm.user_id=caller_id and sm.banned_at is null
+  ),
+  page as materialized (
+    -- space마다 p_limit개면 전체 상위 p_limit개를 빠뜨릴 수 없다. 이 안쪽 limit은
+    -- idx_posts_active_space_created_at을 타서 각 space의 오래된 글을 전부 읽지 않게 하고,
+    -- 바깥 limit은 그 후보들을 홈 피드의 단일 시간순으로 합친다.
+    select candidate.*, ms.name as space_name, ms.type as space_type, ms.pub_id as space_pub_id
+    from member_spaces ms
+    cross join lateral (
+      select p.id, p.pub_id, p.space_id, p.author_id, p.title, p.content, p.is_anonymous,
+             p.author_attribution, p.category_id, p.pinned_at, p.created_at, p.updated_at
+      from public.posts p
+      where p.space_id=ms.id and p.deleted_at is null
+        and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
+      order by p.created_at desc, p.id desc
+      limit p_limit
+    ) candidate
+    order by candidate.created_at desc, candidate.id desc
+    limit p_limit
+  )
   select
     p.id,
     p.pub_id,
     p.title,
     p.content,
     p.is_anonymous,
+    p.author_attribution,
     -- list_space_posts와 같은 관리자 전용 게이트(private.can_manage_space) -- 주석은 그쪽에 있다.
     private.can_manage_space(p.space_id) and exists(
       select 1 from public.space_anonymity_suspensions x
       where x.space_id=p.space_id and x.user_id=p.author_id and x.suspended_until > now()
     ),
-    private.post_author(p.author_id, p.is_anonymous),
+    private.post_author(p.author_id, p.is_anonymous or p.author_attribution='staff'),
     p.author_id=caller_id,
     case when cat.id is null then null else
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
-    jsonb_build_object('name',s.name,'type',s.type,'pub_id',s.pub_id),
+    jsonb_build_object('name',p.space_name,'type',p.space_type,'pub_id',p.space_pub_id),
     p.pinned_at,
     p.created_at,
     p.updated_at,
@@ -653,10 +705,7 @@ begin
     coalesce(summary.top_reactions,'[]'::jsonb),
     summary.my_reaction_id,
     coalesce(files.items,'[]'::jsonb)
-  from public.posts p
-  join public.spaces s on s.id=p.space_id and s.deleted_at is null
-  join public.space_members sm
-    on sm.space_id=p.space_id and sm.user_id=caller_id and sm.banned_at is null
+  from page p
   left join public.space_categories cat on cat.id=p.category_id
   left join lateral (
     select
@@ -674,10 +723,7 @@ begin
     join public.mime_types mime on mime.content_type=a.content_type
     where a.post_id=p.id
   ) files on true
-  where p.deleted_at is null
-    and (p_before_id is null or (p.created_at, p.id) < (before_created_at, p_before_id))
-  order by p.created_at desc, p.id desc
-  limit p_limit;
+  order by p.created_at desc, p.id desc;
 end;
 $$;
 
@@ -689,6 +735,7 @@ returns table(
   title text,
   content text,
   is_anonymous boolean,
+  author_attribution public.author_attribution,
   is_author_anonymity_suspended boolean,
   author jsonb,
   is_mine boolean,
@@ -713,13 +760,13 @@ begin
 
   return query
   select
-    p.id, p.pub_id, p.space_id, p.title, p.content, p.is_anonymous,
+    p.id, p.pub_id, p.space_id, p.title, p.content, p.is_anonymous, p.author_attribution,
     -- list_space_posts와 같은 관리자 전용 게이트(private.can_manage_space) -- 주석은 그쪽에 있다.
     private.can_manage_space(p.space_id) and exists(
       select 1 from public.space_anonymity_suspensions x
       where x.space_id=p.space_id and x.user_id=p.author_id and x.suspended_until > now()
     ),
-    private.post_author(p.author_id, p.is_anonymous),
+    private.post_author(p.author_id, p.is_anonymous or p.author_attribution='staff'),
     p.author_id=caller_id,
     case when cat.id is null then null else
       jsonb_build_object('id',cat.id,'name',cat.name,'sort_order',cat.sort_order) end,
@@ -742,7 +789,7 @@ begin
 end;
 $$;
 
--- 평면으로 내린다. 트리는 parent_id로 클라이언트가 만든다(임의 깊이라 서버에서 접기 애매하고,
+-- 평면으로 내린다. 트리는 parent_id로 클라이언트가 만든다(최대 30단계라 서버에서 접기 애매하고,
 -- 화면도 어차피 전부 펼친다).
 --
 -- 페이지네이션은 **루트 댓글 단위**다. 평면 목록을 그냥 limit으로 자르면 부모가 잘려 나간 답글이
@@ -755,8 +802,10 @@ returns table(
   parent_id bigint,
   content text,
   is_anonymous boolean,
+  author_attribution public.author_attribution,
   author jsonb,
   anonymous_label text,
+  is_author_anonymity_suspended boolean,
   is_mine boolean,
   is_deleted boolean,
   created_at timestamptz,
@@ -781,8 +830,12 @@ begin
   select p.author_id, p.is_anonymous into post_author_id, post_is_anonymous
   from public.posts p where p.id=p_post_id;
 
+  -- 못 찾으면 끊는다 -- 이유는 list_space_posts 쪽 주석에 있다(null을 흘리면 행 비교가 null이 되어
+  -- 예외 없이 빈 페이지가 나간다). 커서는 이 글의 루트 댓글이어야 하므로 post 소속까지 본다.
   if p_after_id is not null then
-    select c.created_at into after_created_at from public.comments c where c.id=p_after_id;
+    select c.created_at into after_created_at
+    from public.comments c where c.id=p_after_id and c.post_id=p_post_id;
+    if not found then raise exception 'cursor comment not found in this post'; end if;
   end if;
 
   return query
@@ -831,17 +884,23 @@ begin
     c.parent_id,
     c.content,
     c.is_anonymous,
+    c.author_attribution,
     -- tombstone은 본문도 작성자도 내리지 않는다. 남는 건 "여기 삭제된 댓글이 있었다"는 사실뿐이다.
     case when c.deleted_at is not null then null
-         else private.post_author(c.author_id, c.is_anonymous) end,
+         else private.post_author(c.author_id, c.is_anonymous or c.author_attribution='staff') end,
     -- 익명 댓글의 표시 이름. 익명 글의 글쓴이가 자기 글에 단 댓글이면 "글쓴이"다 -- 신원은 여전히
     -- 안 드러나면서(어차피 익명 글이니까) 같은 사람임은 보인다. 글이 실명이면 "글쓴이"를 붙이면
     -- 안 된다: 글쓴이가 누군지 다 아는데 그 라벨을 달면 익명 댓글이 곧바로 까진다.
     case
-      when c.deleted_at is not null or not c.is_anonymous then null
+      when c.deleted_at is not null or not c.is_anonymous or c.author_attribution='staff' then null
       when post_is_anonymous and c.author_id=post_author_id then '글쓴이'
       else '익명' || (select ai.idx from anon_index ai where ai.author_id=c.author_id)
     end,
+    private.can_manage_space((select p.space_id from public.posts p where p.id=c.post_id)) and exists(
+      select 1 from public.space_anonymity_suspensions x
+      join public.posts p on p.space_id=x.space_id
+      where p.id=c.post_id and x.user_id=c.author_id and x.suspended_until>now()
+    ),
     c.author_id=caller_id and c.deleted_at is null,
     c.deleted_at is not null,
     c.created_at,
@@ -867,6 +926,7 @@ returns table(
   pub_id uuid,
   title text,
   content_snippet text,
+  author_attribution public.author_attribution,
   author jsonb,
   created_at timestamptz
 )
@@ -880,8 +940,8 @@ begin
   end if;
 
   return query
-  select p.id, p.pub_id, p.title, left(p.content,300),
-         private.post_author(p.author_id, p.is_anonymous),
+   select p.id, p.pub_id, p.title, left(p.content,300), p.author_attribution,
+          private.post_author(p.author_id, p.is_anonymous or p.author_attribution='staff'),
          p.created_at
   from public.posts p
   where p.space_id=p_space_id
@@ -931,6 +991,15 @@ begin
       or (item.value->>'size_bytes')::int8 is null
       or (item.value->>'size_bytes')::int8<0
       or (item.value->>'size_bytes')::int8>allowed.max_bytes
+      -- width/height는 선택이지만 규칙은 post_attachments_dimension_check와 같다: 함께 오고,
+      -- 오면 1..65535다. 여기서도 보는 이유는 실패 메시지다 -- 테이블 제약에만 맡기면 클라이언트가
+      -- 'invalid post attachment' 대신 제약 이름이 박힌 23514를 받는다.
+      -- 숫자가 아닌 값은 타입부터 걸러낸다(문자열이 오면 아래 ::int4가 raw 22P02로 터진다).
+      or coalesce(jsonb_typeof(item.value->'width'),'null') not in ('number','null')
+      or coalesce(jsonb_typeof(item.value->'height'),'null') not in ('number','null')
+      or (item.value->>'width' is null) <> (item.value->>'height' is null)
+      or (item.value->>'width')::int4 not between 1 and 65535
+      or (item.value->>'height')::int4 not between 1 and 65535
       or (
         not exists(
           select 1 from public.post_attachments a
@@ -954,9 +1023,7 @@ end;
 $$;
 revoke execute on function private.validate_post_attachments(bigint,text,jsonb) from public, anon, authenticated, service_role;
 
--- 첨부 행 삽입. 작성(create_post_with_attachments)과 수정(set_post_attachments)이 배열 순서를
--- sort_order로 매기는 같은 INSERT를 쓰므로 한 곳에 둔다. sort_order 매김 규칙이 두 군데로
--- 갈리면 조용히 어긋난다.
+-- 작성과 수정이 같은 첨부 삽입 규칙을 공유한다.
 create function private.insert_post_attachments(p_post_id bigint, p_attachments jsonb)
 returns void language sql security definer set search_path = '' as $$
   insert into public.post_attachments(post_id,storage_bucket,storage_path,file_name,content_type,size_bytes,sort_order,width,height)
@@ -982,7 +1049,8 @@ create function public.create_post_with_attachments(
   p_content text,
   p_attachments jsonb default '[]'::jsonb,
   p_category_id bigint default null,
-  p_is_anonymous boolean default false
+  p_is_anonymous boolean default false,
+  p_author_attribution public.author_attribution default null
 )
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
@@ -994,13 +1062,12 @@ begin
   select s.pub_id into space_pub_id
   from public.spaces s where s.id=p_space_id and s.deleted_at is null;
   if not found then raise exception 'space not found'; end if;
-  -- security definer라 posts_insert 정책이 적용되지 않는다 -- 같은 검사를 여기서 다시 해야
-  -- 이 RPC가 post_policy를 우회하는 뒷문이 되지 않는다.
+  -- security definer는 RLS를 우회하므로 이 함수가 post_policy를 직접 강제한다.
   if not private.can_post_in_space(p_space_id) then raise exception 'not allowed to post in this space'; end if;
 
   -- 길이 제약과 카테고리 동일 space 검사는 테이블 check와 trg_validate_post_category가 한다.
-  insert into public.posts(space_id,author_id,title,content,is_anonymous,category_id)
-  values(p_space_id,caller_id,p_title,p_content,coalesce(p_is_anonymous,false),p_category_id)
+  insert into public.posts(space_id,author_id,title,content,is_anonymous,author_attribution,category_id)
+  values(p_space_id,caller_id,p_title,p_content,coalesce(p_is_anonymous,false),p_author_attribution,p_category_id)
   returning id, pub_id into new_post_id, new_pub_id;
 
   perform private.validate_post_attachments(new_post_id, space_pub_id, p_attachments);
@@ -1010,8 +1077,7 @@ begin
 end;
 $$;
 
--- 수정용. 목록을 통째로 갈아끼운다 -- 첨부를 빼고 넣는 걸 한 번에 처리하려면 그게 가장 단순하고
--- sort_order도 배열 순서로 다시 매기면 된다. 빈 배열이면 첨부를 전부 없앤다.
+-- 수정 시 첨부 목록 전체를 원자적으로 교체한다.
 create function public.set_post_attachments(p_post_id bigint, p_attachments jsonb)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
@@ -1047,15 +1113,15 @@ begin
 end;
 $$;
 
-revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
-grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean), public.set_post_attachments(bigint,jsonb) to authenticated;
+revoke execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean,public.author_attribution), public.set_post_attachments(bigint,jsonb) from public, anon, authenticated, service_role;
+grant execute on function public.list_space_posts(bigint,bigint,bigint,int4), public.list_feed_posts(bigint,int4), public.get_post(uuid), public.get_post_comments(bigint,bigint,int4), public.search_posts(text,bigint), public.create_post_with_attachments(bigint,text,text,jsonb,bigint,boolean,public.author_attribution), public.set_post_attachments(bigint,jsonb) to authenticated;
 
 -- 고정·삭제는 컬럼 grant로 표현할 수 없어서 RPC로 둔다. posts_update/comments_update 정책이
 -- author_id=current_profile_id()라 "관리자가 남의 글을 고정하거나 지운다"가 정책에 안 들어가고,
 -- pinned_by/deleted_by는 클라이언트가 아니라 서버가 찍어야 한다. security definer로 정책을 우회하되
 -- 함수 안에서 권한을 직접 확인한다.
 
--- 고정은 순수 모더레이션이다 -- 작성자여도 자기 글을 고정할 수는 없다(can_manage_space만).
+-- 고정은 can_curate_space 권한이며 작성자 권한과는 무관하다.
 create function public.set_post_pinned(p_id bigint, p_pinned boolean)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
@@ -1165,117 +1231,108 @@ begin
 end;
 $$;
 
--- 익명 글/댓글의 작성자를 **모른 채로** 그 사람의 익명 권한만 한시적으로 뺏는다. 관리자는 효과만
--- 얻고 정보는 못 얻는다(space_anonymity_suspensions의 RLS가 본인에게만 행을 보여준다).
---
--- void를 돌려주고 이미 정지 중이어도 조용히 연장만 하는 게 중요하다. "이미 정지됨" 같은 신호를
--- 주면 관리자가 익명 글 A와 B에 각각 걸어보고 **둘이 같은 사람이 썼는지** 알아낼 수 있다.
--- 만료 시각도 greatest()로 늘리기만 해서, 응답이든 상태든 관리자가 관측할 수 있는 차이를 남기지 않는다.
--- 형량은 서버가 정한다: 1일 → 2일 → 4일 → 8일 … 2배씩, 90일 상한.
---
--- 관리자가 기간을 고르지 않는 이유: 고르게 하면 그 선택 자체가 신호가 된다. 그리고 애초에 고를 수가
--- 없다 -- 이 사람이 초범인지 상습범인지 관리자는 알 수 없으니까(그게 익명의 조건이다). 서버는 이력을
--- 아니까 대신 가중한다. 관리자는 "정지"만 누르고 결과를 관측하지 못한다.
---
--- 관리자에게 결과를 돌려준다: 며칠인지, 몇 번째 누범인지, 이미 정지 중이었는지. 이미 정지 중이면
--- 형량을 쌓지 않고 남은 기간만 알려준다.
---
--- 이건 의도적으로 감수하는 유출이다. 기간(=누범 횟수)과 "이미 정지됨"을 알려주면 관리자가 익명 글
--- A와 B에 각각 걸어보고 **둘이 같은 사람인지** 알아낼 수 있다 -- 이름은 몰라도 익명 글을 작성자별로
--- 묶을 수 있고, 그 중 하나만 어디선가 새면(글에 신원 단서가 섞이면) 그 사람의 익명 글이 전부 까진다.
---
--- 그래도 받아들이는 이유:
---   1) 신원(누구인가)은 여전히 안 샌다. 새는 건 연결(같은 사람인가)뿐이다.
---   2) probe가 공짜가 아니다. "B가 A와 같은 사람인가"를 확인하려면 실제로 B 작성자를 정지시켜야 하고,
---      다른 사람이면 애먼 사람이 처벌을 먹는다. 그 사람은 알게 되고 항의한다 -- 작성자 지도를 만들려면
---      무고한 사람들에게 처벌을 뿌려야 해서 시끄럽고 티가 난다.
---   3) 관리자가 초범과 상습범을 구분하지 못하면 모더레이션이 성립하지 않는다.
---
--- 다만 이 정보는 **관리자가 실제로 행동했을 때만** 준다. 익명 글 목록에 상시로 누범 횟수를 뿌리면
--- probe 비용 없이 공짜로 작성자 지도가 나온다 -- 그건 훨씬 나쁘다.
+-- 관리자는 작성자 신원을 열람하지 못하고 콘텐츠 id를 통해서만 조치한다. 정지는 항상 7일이며,
+-- 이미 정지 중이면 기한을 연장하거나 알림을 다시 만들지 않는다.
 create function private.suspend_anonymity(p_space_id bigint, p_author_id bigint)
-returns table(suspended_days int4, strike_count int4, already_suspended boolean)
-language plpgsql security definer set search_path = '' as $$
-declare
-  caller_id bigint := private.require_current_profile(true);
-  prior_strikes int4;
-  prior_until timestamptz;
-  effective_days int4;
+returns void language plpgsql security definer set search_path = '' as $$
+declare caller_id bigint := private.require_current_profile(true);
 begin
   if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
 
-  select x.strike_count, x.suspended_until into prior_strikes, prior_until
-  from public.space_anonymity_suspensions x
-  where x.space_id=p_space_id and x.user_id=p_author_id
-  for update;
-
-  -- 이미 정지 중 -> 형량을 쌓지 않는다. 남은 기간과 누범 횟수만 돌려준다.
-  if found and prior_until > now() then
-    return query select
-      ceil(extract(epoch from prior_until - now()) / 86400)::int4,
-      prior_strikes,
-      true;
-    return;
-  end if;
-
-  -- 시간이 지났다고 누범을 자동으로 지우지 않는다. 그러면 띄엄띄엄 반복하는 사람이 영원히 초범으로
-  -- 남는다. 오판이었다면 관리자가 reset_*_author_anonymity로 명시적으로 지운다.
-  if not found then prior_strikes := 0; end if;
-
-  -- 1일 → 2일 → 4일 → 8일 … 2배씩, 90일 상한.
-  effective_days := least((2 ^ least(prior_strikes, 7))::int4, 90);
-
-  insert into public.space_anonymity_suspensions(space_id,user_id,suspended_until,strike_count,suspended_by)
-  values (p_space_id, p_author_id, now() + make_interval(days => effective_days), prior_strikes + 1, caller_id)
+  insert into public.space_anonymity_suspensions(space_id,user_id,suspended_until,suspended_by)
+  values (p_space_id, p_author_id, now() + interval '7 days', caller_id)
   on conflict (space_id,user_id) do update
   set suspended_until=excluded.suspended_until,
-      strike_count=excluded.strike_count,
       suspended_by=excluded.suspended_by,
-      created_at=now();
-
-  return query select effective_days, prior_strikes + 1, false;
+      created_at=excluded.created_at
+  where public.space_anonymity_suspensions.suspended_until <= now();
 end;
 $$;
 revoke execute on function private.suspend_anonymity(bigint,bigint) from public, anon, authenticated, service_role;
 
--- 익명 글에만 쓴다. 실명 글이면 작성자가 이미 보이므로 이 우회로가 필요 없고(그냥 밴하면 된다),
--- 익명이 아닌 글에 허용하면 "이 글의 작성자"를 특정하는 도구가 하나 더 생길 뿐이다.
-create function public.suspend_post_author_anonymity(p_post_id bigint)
-returns table(suspended_days int4, strike_count int4, already_suspended boolean)
-language plpgsql security definer set search_path = '' as $$
-declare target public.posts;
+-- 익명 정지는 익명 콘텐츠에만 적용한다. 실명 콘텐츠에 열면 작성자 특정 도구만 하나 더 생긴다.
+--
+-- 진입점이 넷(정지·취소 × 글·댓글)이고 넷이 똑같이 "콘텐츠 id -> (space, author)"를 풀어야 한다.
+-- 그 해석과 권한 확인을 아래 두 helper로 모은다 -- 네 군데에 흩어져 있으면 한 군데만 고쳐지는
+-- 종류의 검사다.
+--
+-- **soft_delete_post와 달리 실패를 뭉개지 않는다.** 그쪽은 권한 조건을 SELECT에 합쳐 "없는 글"과
+-- "권한 없는 글"을 똑같이 0행으로 만든다 -- 비공개 space에 살아있는 글 수를 세는 오라클을 막기
+-- 위해서다. 여기서는 그 오라클을 **감수하기로 했다**: 새는 건 "이 id가 살아있는 익명 글인가"
+-- 한 비트뿐이고 신원도 내용도 어느 space인지도 알려주지 않는다. 대신 실패 이유가 갈려서
+-- 관리자 화면이 "이미 지워진 글입니다"와 "권한이 없습니다"를 다르게 말할 수 있다.
+--
+-- 권한 검사는 private.suspend_anonymity / private.undo_anonymity_suspension 안에도 그대로
+-- 남겨둔다. 저 둘은 (space_id, author_id)를 직접 받으므로 이 helper를 거치지 않는 호출자가
+-- 생기면 곧바로 무방비가 된다.
+create function private.require_anonymous_post_author(p_post_id bigint)
+returns table(space_id bigint, author_id bigint)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  target_space_id bigint;
+  target_author_id bigint;
+  target_is_anonymous boolean;
 begin
-  select * into target from public.posts
-  where id=p_post_id and deleted_at is null and is_anonymous;
-  if not found then raise exception 'anonymous post required'; end if;
-  return query select * from private.suspend_anonymity(target.space_id, target.author_id);
+  perform private.require_current_profile(true);
+
+  select p.space_id, p.author_id, p.is_anonymous
+    into target_space_id, target_author_id, target_is_anonymous
+  from public.posts p
+  where p.id = p_post_id and p.deleted_at is null;
+  if not found then raise exception 'post not found'; end if;
+  if not target_is_anonymous then raise exception 'anonymous post required'; end if;
+  if not private.can_manage_space(target_space_id) then raise exception 'space manager required'; end if;
+
+  return query select target_space_id, target_author_id;
+end;
+$$;
+
+create function private.require_anonymous_comment_author(p_comment_id bigint)
+returns table(space_id bigint, author_id bigint)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  target_space_id bigint;
+  target_author_id bigint;
+  target_is_anonymous boolean;
+begin
+  perform private.require_current_profile(true);
+
+  select p.space_id, c.author_id, c.is_anonymous
+    into target_space_id, target_author_id, target_is_anonymous
+  from public.comments c
+  join public.posts p on p.id = c.post_id
+  where c.id = p_comment_id and c.deleted_at is null;
+  if not found then raise exception 'comment not found'; end if;
+  if not target_is_anonymous then raise exception 'anonymous comment required'; end if;
+  if not private.can_manage_space(target_space_id) then raise exception 'space manager required'; end if;
+
+  return query select target_space_id, target_author_id;
+end;
+$$;
+
+revoke execute on function private.require_anonymous_post_author(bigint), private.require_anonymous_comment_author(bigint) from public, anon, authenticated, service_role;
+
+create function public.suspend_post_author_anonymity(p_post_id bigint)
+returns void
+language plpgsql security definer set search_path = '' as $$
+declare target record;
+begin
+  select * into target from private.require_anonymous_post_author(p_post_id);
+  perform private.suspend_anonymity(target.space_id, target.author_id);
 end;
 $$;
 
 create function public.suspend_comment_author_anonymity(p_comment_id bigint)
-returns table(suspended_days int4, strike_count int4, already_suspended boolean)
+returns void
 language plpgsql security definer set search_path = '' as $$
-declare target_space_id bigint; target_author_id bigint;
+declare target record;
 begin
-  select p.space_id, c.author_id into target_space_id, target_author_id
-  from public.comments c join public.posts p on p.id=c.post_id
-  where c.id=p_comment_id and c.deleted_at is null and c.is_anonymous;
-  if not found then raise exception 'anonymous comment required'; end if;
-  return query select * from private.suspend_anonymity(target_space_id, target_author_id);
+  select * into target from private.require_anonymous_comment_author(p_comment_id);
+  perform private.suspend_anonymity(target.space_id, target.author_id);
 end;
 $$;
 
--- 오판 취소. **현재 정지를 풀고 누범 단계를 하나 되돌린다** -- 전과 말소가 아니라 "이번 건 없던 일로"다.
--- 2회차(2일)를 취소하면 다음 위반은 다시 2회차(2일)로 들어간다. 통째로 지우면 상습범이 한 번
--- 봐줬다는 이유로 초범으로 돌아가 버린다. 단계가 0이 되면 행을 지운다(기록 없음 == 초범).
---
--- **반드시 void여야 한다.** "2회차를 취소했습니다"나 "기록이 없습니다" 같은 응답을 주면 그게 공짜
--- probe가 된다: 정지(suspend)는 다른 사람이면 애먼 사람을 처벌하는 비용이 들지만, 취소는 아무도
--- 다치지 않으므로 관리자가 익명 글을 마음껏 찔러 작성자별로 묶을 수 있다. 그건 감수하기로 한
--- 유출보다 훨씬 나쁘다. 기록이 없어도 조용히 넘어간다.
-
--- 관리자가 사후에 임의로 사면할 수는 없다(누가 누적을 갖고 있는지 못 보니까). 오직 그 글을 통해서만
--- 되돌릴 수 있고, 그게 이 버튼의 유일한 용도다.
+-- 오판 취소. 관리자는 정지 목록이나 신원을 볼 수 없으므로 같은 익명 콘텐츠를 통해서만 해제한다.
 create function private.undo_anonymity_suspension(p_space_id bigint, p_author_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
@@ -1283,10 +1340,6 @@ begin
   if not private.can_manage_space(p_space_id) then raise exception 'space manager required'; end if;
 
   delete from public.space_anonymity_suspensions
-  where space_id=p_space_id and user_id=p_author_id and strike_count <= 1;
-
-  update public.space_anonymity_suspensions
-  set suspended_until=now(), strike_count=strike_count-1
   where space_id=p_space_id and user_id=p_author_id;
 end;
 $$;
@@ -1294,37 +1347,31 @@ revoke execute on function private.undo_anonymity_suspension(bigint,bigint) from
 
 create function public.undo_post_anonymity_suspension(p_post_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
-declare target public.posts;
+declare target record;
 begin
-  select * into target from public.posts
-  where id=p_post_id and deleted_at is null and is_anonymous;
-  if not found then raise exception 'anonymous post required'; end if;
+  select * into target from private.require_anonymous_post_author(p_post_id);
   perform private.undo_anonymity_suspension(target.space_id, target.author_id);
 end;
 $$;
 
 create function public.undo_comment_anonymity_suspension(p_comment_id bigint)
 returns void language plpgsql security definer set search_path = '' as $$
-declare target_space_id bigint; target_author_id bigint;
+declare target record;
 begin
-  select p.space_id, c.author_id into target_space_id, target_author_id
-  from public.comments c join public.posts p on p.id=c.post_id
-  where c.id=p_comment_id and c.deleted_at is null and c.is_anonymous;
-  if not found then raise exception 'anonymous comment required'; end if;
-  perform private.undo_anonymity_suspension(target_space_id, target_author_id);
+  select * into target from private.require_anonymous_comment_author(p_comment_id);
+  perform private.undo_anonymity_suspension(target.space_id, target.author_id);
 end;
 $$;
 
 create trigger trg_enforce_anonymous_allowed_posts
 before insert on public.posts
-for each row execute function private.enforce_anonymous_allowed();
+for each row execute function private.enforce_content_anonymity();
 
 create trigger trg_enforce_anonymous_allowed_comments
 before insert on public.comments
-for each row execute function private.enforce_anonymous_allowed();
+for each row execute function private.enforce_content_anonymity();
 
--- 소프트 삭제된 글·댓글의 하드 정리. 이 경로가 없어서 지금까지 tombstone이 영원히 쌓였고,
--- 그중에는 익명 글의 author_id도 있다 -- 안 지우면 "지운 익명 글의 작성자"가 DB에 영구 보존된다.
+-- 소프트 삭제된 글·댓글을 하드 정리해 tombstone과 익명 author_id의 무기한 보존을 막는다.
 --
 -- blob은 여기서 안 지운다. storage-maintenance가 먼저 걷어간다(enqueue_due_storage_cleanup이
 -- 7일 지난 삭제 글의 첨부를 큐에 넣고, complete_storage_cleanup이 post_attachments 행을 지운다).
@@ -1346,8 +1393,8 @@ declare
   removed bigint;
 begin
   perform private.require_service_role();
-  if p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
-  if p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
+  if p_limit is null or p_limit not between 1 and 1000 then raise exception 'limit must be between 1 and 1000'; end if;
+  if p_older_than is null or p_older_than < interval '1 day' then raise exception 'purge cutoff must be at least 1 day'; end if;
   cutoff := now() - p_older_than;
 
   select array_agg(t.id) into target_posts

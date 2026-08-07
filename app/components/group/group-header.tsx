@@ -1,4 +1,10 @@
-import { BadgeCheckIcon, Globe2Icon, LockIcon, MoreHorizontalIcon } from "lucide-react"
+import {
+  BadgeCheckIcon,
+  Globe2Icon,
+  LockIcon,
+  MoreHorizontalIcon,
+  VenetianMaskIcon,
+} from "lucide-react"
 import { useState } from "react"
 
 import { GroupLeaveDialog } from "~/components/group/group-leave-dialog"
@@ -27,6 +33,9 @@ export function GroupHeader({
   viewMode,
   onViewModeChange,
   onViewMembers,
+  canViewMembers,
+  canCurate,
+  onViewSettings,
 }: {
   group: GroupSpace
   className?: string
@@ -34,6 +43,10 @@ export function GroupHeader({
   onViewModeChange: (mode: PostViewMode) => void
   /** "멤버 N명"을 누르면 멤버 탭으로. 탭은 부모(group 라우트)의 로컬 상태라 콜백으로 올린다. */
   onViewMembers: () => void
+  /** 항상 익명 그룹에서는 owner/admin만 실명 멤버 명부를 볼 수 있다. */
+  canViewMembers: boolean
+  canCurate: boolean
+  onViewSettings: () => void
 }) {
   // invite_only만 비공개(검색 노출 X). public·request(승인가입)는 검색에 노출되니 공개로 묶는다.
   const isPrivate = group.joinPolicy === "invite_only"
@@ -46,16 +59,14 @@ export function GroupHeader({
 
   return (
     <section className={cn("bg-card overflow-hidden", className)}>
-      {/* 커버가 없으면 그라디언트가 그대로 배너가 된다 -- 빈 회색 사각형보다 낫다. */}
-      <div className="from-primary/30 to-primary/5 h-32 w-full overflow-hidden bg-linear-to-br sm:h-44">
+      <div className="from-primary/30 to-primary/5 aspect-4/1 w-full overflow-hidden bg-linear-to-br">
         {group.coverImageUrl ? (
           <img src={group.coverImageUrl} alt="" className="size-full object-cover" />
         ) : null}
       </div>
-      <div className="flex items-start gap-3 p-4">
-        <div className="bg-muted ring-card -mt-12 hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl text-2xl font-semibold ring-4 sm:-mt-14 sm:flex sm:size-20">
+      <div className="flex items-start gap-5 p-4 py-2 sm:py-4">
+        <div className="bg-muted border-border hidden size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border text-2xl font-semibold shadow-xs sm:flex sm:size-20">
           {group.imageUrl ? (
-            // 이름이 바로 옆에 있으니 장식이다 -- 스크린리더가 같은 말을 두 번 읽지 않게 alt는 빈다.
             <img src={group.imageUrl} alt="" className="size-full object-cover" />
           ) : (
             group.name.charAt(0)
@@ -84,11 +95,21 @@ export function GroupHeader({
             <VisibilityIcon className="size-3.5 shrink-0" aria-hidden="true" />
             <span>
               {visibilityLabel} ·{" "}
-              <button type="button" onClick={onViewMembers} className="hover:underline">
-                멤버 {group.memberCount}명
-              </button>
+              {canViewMembers ? (
+                <button type="button" onClick={onViewMembers} className="hover:underline">
+                  멤버 {group.memberCount}명
+                </button>
+              ) : (
+                <>멤버 {group.memberCount}명</>
+              )}
             </span>
           </p>
+          {group.anonymityPolicy === "required" ? (
+            <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-xs">
+              <VenetianMaskIcon className="size-3.5" aria-hidden="true" />
+              게시물, 댓글, 반응이 모두 익명입니다
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-1 pt-1">
           {/* 알림 설정 Dialog와 나가기 AlertDialog를 여는 메뉴라 non-modal이다. 메뉴와 뒤이어
@@ -116,6 +137,11 @@ export function GroupHeader({
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setNotiOpen(true)}>알림 설정</DropdownMenuItem>
+              {canCurate ? (
+                <DropdownMenuItem className="sm:hidden" onSelect={onViewSettings}>
+                  그룹 설정
+                </DropdownMenuItem>
+              ) : null}
               {/* 공식 그룹(학생회·사감부 등)은 소속이지 취향 가입이 아니라서 나가기가 없다 --
                 재가입도 초대·승인이 아니라 소속 변경(전학·부서 이동)으로 처리된다. */}
               {isOfficial ? null : (
@@ -128,7 +154,12 @@ export function GroupHeader({
         </div>
       </div>
 
-      <GroupNotificationsDialog open={notiOpen} onOpenChange={setNotiOpen} />
+      <GroupNotificationsDialog
+        open={notiOpen}
+        onOpenChange={setNotiOpen}
+        initialSetting={group.type === "group" ? "all" : "mentions"}
+        mentionsAllowed={group.anonymityPolicy !== "required"}
+      />
       <GroupLeaveDialog group={group} open={leaveOpen} onOpenChange={setLeaveOpen} />
     </section>
   )

@@ -72,11 +72,11 @@ export function SharedMediaPane({
   const filesHasMore = filesVisible < files.length
   const imagesSentinelRef = useInfiniteScroll(
     () => setImagesVisible((count) => count + SHARED_MEDIA_PAGE_SIZE),
-    imagesHasMore
+    { enabled: imagesHasMore }
   )
   const filesSentinelRef = useInfiniteScroll(
     () => setFilesVisible((count) => count + SHARED_MEDIA_PAGE_SIZE),
-    filesHasMore
+    { enabled: filesHasMore }
   )
 
   return (

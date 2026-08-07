@@ -1,11 +1,11 @@
 import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
-import { GroupAuthorAvatar } from "~/components/group/group-author-avatar"
+import { AnonymousAvatar, ProfileAvatarLink } from "~/components/profile/profile-avatar"
 import { Button } from "~/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog"
 import { Twemoji } from "~/components/ui/twemoji"
-import type { GroupPostReactor } from "~/lib/group/types"
+import type { GroupPostReactionDetails } from "~/lib/group/types"
 import { getReactionGlyph, type ReactionType } from "~/lib/reactions"
 import { cn } from "~/lib/utils"
 
@@ -44,12 +44,12 @@ function ReactionTab({
 export function GroupReactionListDialog({
   open,
   onOpenChange,
-  reactors,
+  reactionDetails,
   reactionTypes,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  reactors: GroupPostReactor[]
+  reactionDetails: GroupPostReactionDetails
   reactionTypes: ReactionType[]
 }) {
   const typeById = useMemo(
@@ -60,28 +60,41 @@ export function GroupReactionListDialog({
   // 탭: "전체" + 실제로 눌린 반응 타입만, 많은 순으로. 아무도 안 누른 타입은 탭을 만들지 않는다.
   const tabs = useMemo(() => {
     const counts = new Map<number, number>()
-    for (const reactor of reactors) {
+    for (const reactor of reactionDetails.identified) {
       counts.set(reactor.reactionTypeId, (counts.get(reactor.reactionTypeId) ?? 0) + 1)
+    }
+    for (const anonymous of reactionDetails.anonymousCounts) {
+      counts.set(
+        anonymous.reactionTypeId,
+        (counts.get(anonymous.reactionTypeId) ?? 0) + anonymous.count
+      )
     }
     return [...counts.entries()]
       .map(([id, count]) => ({ type: typeById.get(id), count }))
       .filter((tab): tab is { type: ReactionType; count: number } => Boolean(tab.type))
       .sort((a, b) => b.count - a.count)
-  }, [reactors, typeById])
+  }, [reactionDetails, typeById])
 
   // "전체"는 시간순(최신 반응이 위)으로 보여준다 -- 타입별로 뭉쳐 있으면 "누가 언제 눌렀나"가
   // 안 읽힌다. 타입 탭도 같은 정렬을 물려받는다(필터만 다르다). ISO 문자열이라 사전순=시간순.
   const ordered = useMemo(
-    () => [...reactors].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [reactors]
+    () => [...reactionDetails.identified].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [reactionDetails.identified]
   )
 
   // null = "전체", 아니면 특정 타입 id. 다른 글을 열 때 이전 선택이 남지 않게 닫힐 때 초기화한다.
   const [activeTypeId, setActiveTypeId] = useState<number | null>(null)
-  const visible =
+  const identifiedReactors =
     activeTypeId === null
       ? ordered
       : ordered.filter((reactor) => reactor.reactionTypeId === activeTypeId)
+  const anonymousCount = reactionDetails.anonymousCounts
+    .filter((item) => activeTypeId === null || item.reactionTypeId === activeTypeId)
+    .reduce((sum, item) => sum + item.count, 0)
+  const totalCount =
+    reactionDetails.identified.length +
+    reactionDetails.anonymousCounts.reduce((sum, item) => sum + item.count, 0)
+  const hasVisibleReactions = identifiedReactors.length > 0 || anonymousCount > 0
 
   return (
     <Dialog
@@ -96,8 +109,10 @@ export function GroupReactionListDialog({
         className="flex h-[70svh] flex-col gap-0 overflow-hidden p-0 max-sm:top-0 max-sm:left-0 max-sm:h-svh max-sm:max-h-svh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-0 sm:max-w-md"
       >
         {/* 제목/설명은 스크린리더용. 화면 헤더 역할은 아래 탭 줄이 한다(페북과 같은 배치). */}
-        <DialogTitle className="sr-only">반응한 사람</DialogTitle>
-        <DialogDescription className="sr-only">이 게시물에 반응한 사람 목록</DialogDescription>
+        <DialogTitle className="sr-only">게시물 반응</DialogTitle>
+        <DialogDescription className="sr-only">
+          이 게시물의 반응 종류와 공개된 반응자 목록
+        </DialogDescription>
 
         <div className="flex shrink-0 items-center border-b pr-2">
           <div
@@ -106,7 +121,7 @@ export function GroupReactionListDialog({
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden px-2"
           >
             <ReactionTab active={activeTypeId === null} onClick={() => setActiveTypeId(null)}>
-              전체 {reactors.length}
+              전체 {totalCount}
             </ReactionTab>
             {tabs.map((tab) => (
               <ReactionTab
@@ -131,20 +146,26 @@ export function GroupReactionListDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {visible.length > 0 ? (
+          {hasVisibleReactions ? (
             <ul className="flex flex-col">
-              {visible.map((reactor) => {
+              {/* 익명 반응은 개인 행·시각 없이 서버가 집계한 타입별 count만 한 줄로 표시한다. */}
+              {anonymousCount > 0 ? (
+                <li className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+                  <AnonymousAvatar size="lg" />
+                  <span className="text-sm font-semibold">익명 {anonymousCount}명</span>
+                </li>
+              ) : null}
+              {identifiedReactors.map((reactor) => {
                 const type = typeById.get(reactor.reactionTypeId)
                 return (
                   <li key={reactor.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                    <div className="relative shrink-0">
-                      <GroupAuthorAvatar name={reactor.name} anonymous={false} size="lg" />
+                    <ProfileAvatarLink profile={reactor} size="lg">
                       {type?.icon ? (
                         <span className="bg-background ring-background absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full ring-2">
                           <Twemoji text={type.icon} className="text-xs leading-none" />
                         </span>
                       ) : null}
-                    </div>
+                    </ProfileAvatarLink>
                     <span className="truncate text-sm font-semibold">{reactor.name}</span>
                   </li>
                 )

@@ -1,8 +1,6 @@
 -- 알림. supabase/schemas/06-notifications.sql
 --
--- 지금은 읽기 RPC의 상한 계약 하나만 찌른다. 이 파일이 없어서 list_notifications의 p_limit 가드가
--- null을 못 막는 채로 있었다 -- `p_limit not between 1 and 50`은 null이면 참이 아니라 null이라
--- 가드를 지나가고, `limit null`은 상한이 없다는 뜻이다.
+-- 읽기 RPC 상한, 최근 unread badge 범위, 30일 retention purge를 검증한다.
 
 begin;
 
@@ -43,15 +41,28 @@ begin
   update public.profiles set type='teacher', status='accepted' where id=profile1;
   insert into public.spaces (type,name) values ('group','notification retention') returning id into space1;
   insert into public.space_members (space_id,user_id,role) values (space1,profile1,'owner');
-  insert into public.notifications (recipient_id,type,space_id,read_at)
-  values (profile1,'space_role_changed',space1,now()-interval '61 days');
+  insert into public.notifications (recipient_id,type,space_id,read_at,created_at) values
+    (profile1,'space_role_changed',space1,null,now()-interval '31 days'),
+    (profile1,'space_role_changed',space1,now(),now()-interval '31 days'),
+    (profile1,'space_role_changed',space1,now(),now()-interval '29 days'),
+    (profile1,'space_role_changed',space1,null,now()-interval '1 hour');
+
+  perform set_config('request.jwt.claim.sub',user1::text,true);
+  if public.get_unread_notification_count() <> 1 then
+    raise exception 'unread badge must only count notifications from the last 24 hours';
+  end if;
 
   perform set_config('request.jwt.claim.role','service_role',true);
-  if public.purge_read_notifications() <> 1 then
-    raise exception 'read notification retention purge failed';
+  if public.purge_notifications() <> 2 then
+    raise exception 'notification retention purge failed';
   end if;
-  if exists (select 1 from public.notifications where recipient_id=profile1) then
-    raise exception 'read notification was not removed after 60 days';
+  if (select count(*) from public.notifications where recipient_id=profile1) <> 2
+    or not exists(
+      select 1 from public.notifications
+      where recipient_id=profile1 and created_at > now()-interval '30 days'
+    )
+  then
+    raise exception 'notifications must be removed by creation time after 30 days';
   end if;
 end $$;
 
