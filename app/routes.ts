@@ -16,7 +16,7 @@ export default [
     route("clubs", "./routes/club/index.tsx"),
     route("clubs/:clubId/edit", "./routes/club/edit.tsx"),
     route("clubs/:clubId", "./routes/club/club.tsx"),
-    route("noti", "./routes/_app.noti.tsx"),
+    route("noti", "./routes/noti/noti.tsx"),
     route("messenger", "./routes/messenger/messenger.tsx", [
       index("./routes/messenger/index.tsx"),
       route(":roomId", "./routes/messenger/room.tsx", [
