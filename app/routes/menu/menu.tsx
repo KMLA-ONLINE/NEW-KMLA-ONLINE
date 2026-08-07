@@ -6,20 +6,27 @@ import {
   KeyRoundIcon,
   LogOutIcon,
   PaletteIcon,
+  SettingsIcon,
   ShieldCheckIcon,
+  ShapesIcon,
   UserRoundIcon,
   UsersRoundIcon,
   UtensilsCrossedIcon,
 } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link } from "react-router"
 
 import { ThemeSelect } from "~/components/menu/theme-select"
 import { ProfileAvatar } from "~/components/profile/profile-avatar"
 import { Badge } from "~/components/ui/badge"
 import { mockAppAdmins, mockPendingProfiles } from "~/lib/admin/mock-data"
+import { getMyClubAccess } from "~/lib/club/access"
+import { profileInitials } from "~/lib/profile/format"
+import { mockProfile, mockProfileEmail } from "~/lib/profile/mock-data"
 import { mockProfile, mockProfileAvatarUrl, mockProfileEmail } from "~/lib/profile/mock-data"
 import { cn } from "~/lib/utils"
+
+import type { Route } from "./+types/menu"
 
 function MenuSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -85,12 +92,19 @@ function MenuRow({
   return <div className={cn(shared, disabled && "opacity-55")}>{body}</div>
 }
 
-export default function MenuPage() {
-  const [searchParams] = useSearchParams()
-  // 개발용 미리보기: ?as=admin 으로 운영 항목이 보이는 시점을 본다(group 라우트와 같은 규칙).
-  // TODO(backend): 로더가 profiles.role='admin'을 내려준다. permissions/user_permissions가 아니다 --
-  // 그건 gongang/karaoke용 기능 플래그고, 가입 승인은 앱 관리자(profiles.role)가 가른다.
-  const canApproveMembers = searchParams.get("as") === "admin"
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
+  const access = await getMyClubAccess()
+  const previewRole = import.meta.env.DEV ? new URL(request.url).searchParams.get("as") : null
+  const isAppAdminPreview = previewRole === "admin" || previewRole === "app-admin"
+
+  return {
+    isAppAdmin: access.isAppAdmin,
+    isAppAdminPreview,
+  }
+}
+
+export default function MenuPage({ loaderData }: Route.ComponentProps) {
+  const canApproveMembers = loaderData.isAppAdmin || loaderData.isAppAdminPreview
   // TODO(backend): count_pending_profiles(). 0이면 배지를 띄우지 않는다 -- 빈 배지는 볼 것이
   // 있다고 거짓말한다.
   const pendingCount = mockPendingProfiles.length
@@ -135,12 +149,19 @@ export default function MenuPage() {
       </MenuSection>
 
       <MenuSection title="학교">
+        <MenuRow icon={ShapesIcon} label="동아리" to="/clubs" />
         <MenuRow icon={UtensilsCrossedIcon} label="오늘의 급식" to="/menu/meal" />
         <MenuRow icon={CalendarClockIcon} label="공강·노래방" to="/util/gongang" />
       </MenuSection>
 
       {canApproveMembers ? (
         <MenuSection title="관리">
+          <MenuRow
+            icon={SettingsIcon}
+            label="동아리 관리"
+            hint="동아리 페이지 공개와 모집을 관리합니다"
+            to={loaderData.isAppAdminPreview ? "/clubs?as=app-admin" : "/clubs"}
+          />
           <MenuRow
             icon={ShieldCheckIcon}
             label="가입 승인"

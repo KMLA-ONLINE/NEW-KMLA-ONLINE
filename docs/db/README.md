@@ -101,7 +101,18 @@ Supabase DB의 source of truth는 declarative schema가 있는 **`supabase/schem
 
 `supabase/migrations/20260707000000_baseline_schema.sql`
 
-1:1 채팅 E2EE는 다음 도메인에 걸쳐 있다.
+| schema 파일            | 문서                                            | 주요 내용                                                      |
+| ---------------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `00-foundation.sql`    | [00-foundation](domains/00-foundation.md)       | 확장, 기본 권한 회수, private schema, `require_service_role()` |
+| `01-identity.sql`      | [01-identity](domains/01-identity.md)           | profiles/permissions, Auth trigger, profile lifecycle RPC      |
+| `02-spaces.sql`        | [02-spaces](domains/02-spaces.md)               | spaces/space_members, owner 검증 trigger                       |
+| `03-content.sql`       | [03-content](domains/03-content.md)             | posts/post_attachments/comments, 검색 인덱스                   |
+| `04-reactions.sql`     | [04-reactions](domains/04-reactions.md)         | reaction registry, post/comment reactions                      |
+| `05-chat.sql`          | [05-chat](domains/05-chat.md)                   | chat 전체 테이블, 검증 trigger, 메시지/채팅 RPC                |
+| `06-notifications.sql` | [06-notifications](domains/06-notifications.md) | notifications                                                  |
+| `07-utilities.sql`     | [07-utilities](domains/07-utilities.md)         | gongangs, song_requests                                        |
+| `08-clubs.sql`         | [08-clubs](domains/08-clubs.md)                 | clubs, 앱/동아리 관리자 분리, 모집 라운드·신청                 |
+| `09-storage.sql`       | [09-storage](domains/09-storage.md)             | storage policy, attachment cleanup queue와 정리 RPC            |
 
 - `01-identity.sql`: `user_keys`
 - `05-chat.sql`: `message_keys`
@@ -132,17 +143,7 @@ node supabase/tests/run.mjs 05-chat
 DB 테스트는 권한 누출, 암호화 키 노출, 잘못된 profile visibility, ownership invariant 위반처럼 조용히 발생할 수 있는 실패를 우선 검증한다.
 
 
-| 파일                   | Fixture | 검증 범위                                                  |
-| ------------------------ | --------- | ------------------------------------------------------------ |
-| `00-privileges.sql`    | 없음    | PostgreSQL catalog 기반 schema-wide privilege invariant    |
-| `01-identity.sql`      | 있음    | Auth trigger, profile lifecycle, approval queue, key vault |
-| `02-spaces.sql`        | 있음    | Space 생성, 가입 정책, 영구 삭제, owner invariant          |
-| `03-content.sql`       | 있음    | Post/comment read RPC, anonymous label, tombstone          |
-| `04-reactions.sql`     | 있음    | Reactor keyset, anonymous reaction snapshot and aggregation |
-| `05-chat.sql`          | 있음    | Group plaintext contract, 1:1 E2EE contract                |
-| `06-notifications.sql` | 있음    | Read limit, unread badge 범위, retention purge             |
-| `09-storage.sql`       | 있음    | Cleanup queue, attachment 제거, bucket/MIME registry 일치  |
-| `10-rls.sql`           | 있음    | Client 역할에서의 runtime RLS 동작                         |
+`04-reactions`·`07-utilities`에는 도메인 테스트가 없다. `08-clubs`는 앱 관리자와 동아리별 관리자 권한 분리를 별도 테스트한다. `00-privileges`의 전수 검사도 모든 도메인을 함께 훑는다.
 
 `07-utilities`, `08-clubs`에는 도메인별 테스트 파일이 없다. 대신 `00-privileges.sql`의 schema-wide 검사 대상에 포함된다.
 
